@@ -1,0 +1,10 @@
+{
+  "name": "Moon Glow",
+  "short_name": "Moon Glow",
+  "description": "Lantern-festival bubble shooter with rotating gravity, ripening lanterns, and a daily challenge.",
+  "scope": "/moon-glow/",
+  "start_url": "/moon-glow/?v=0.1.0",
+  "display": "standalone",
+  "background_color": "#0E1538",
+  "theme_color": "#0E1538"
+}

@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+.vscode/
+.idea/
+*.log
+.go.pid
+arcade-sdk.js
+.arcade-stage/

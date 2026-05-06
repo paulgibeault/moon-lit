@@ -1,0 +1,31 @@
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #0E1538;
+  color: #F4ECDA;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  touch-action: manipulation;
+}
+
+#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+body.reduced-motion *,
+body.reduced-motion *::before,
+body.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
