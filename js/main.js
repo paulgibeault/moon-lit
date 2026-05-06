@@ -1,16 +1,18 @@
 import { GAME_ID } from './constants.js';
-import { createBoard } from './board.js';
+import { createGame, step, PHASE } from './game.js';
 import { computeLayout, render } from './renderer.js';
+import { attachInput } from './input.js';
 
 await Arcade.ready;
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const board = createBoard();
+const game = createGame();
 
 let layout = null;
 let suspended = false;
 let dirty = true;
+let lastTime = 0;
 
 function readSettings() {
   return {
@@ -31,21 +33,32 @@ function resize() {
   dirty = true;
 }
 
-function frame() {
-  if (!suspended && dirty && layout) {
-    render(ctx, layout, board, settings);
-    dirty = false;
+function frame(now) {
+  if (!suspended && layout) {
+    const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
+    lastTime = now;
+    if (game.phase === PHASE.FLYING) {
+      step(game, dt, layout);
+      dirty = true;
+    }
+    if (dirty) {
+      render(ctx, layout, game, settings);
+      dirty = false;
+    }
+  } else {
+    lastTime = 0;
   }
   requestAnimationFrame(frame);
 }
 
 Arcade.onSuspend(() => { suspended = true; });
-Arcade.onResume(() => { suspended = false; dirty = true; });
+Arcade.onResume(() => { suspended = false; lastTime = 0; dirty = true; });
 Arcade.onStateReplaced(() => location.reload());
 Arcade.onSettingsChange(() => { settings = readSettings(); dirty = true; });
 
 window.addEventListener('resize', resize);
+attachInput(canvas, () => game, () => layout, () => { dirty = true; });
 resize();
 requestAnimationFrame(frame);
 
-console.info(`[${GAME_ID}] M2 board renderer ready — framed=${Arcade.context.framed}`);
+console.info(`[${GAME_ID}] M3 aim+shoot ready — framed=${Arcade.context.framed}`);

@@ -4,6 +4,7 @@ import {
   TRELLIS_HEIGHT, DEAD_LINE_OFFSET,
 } from './constants.js';
 import { hexToPixel, hexCorners, gridPixelSize } from './hex-math.js';
+import { launcherTip, traceAimLine, PHASE } from './game.js';
 
 export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows) {
   const availW = viewW - BOARD_MARGIN_SIDE * 2;
@@ -20,13 +21,19 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows) 
   return { size, originX, originY, cols, rows, viewW, viewH };
 }
 
-export function render(ctx, layout, board, settings) {
+export function render(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
   drawBackground(ctx, viewW, viewH);
   drawMoon(ctx, viewW, viewH, settings.reducedMotion);
   drawTrellis(ctx, layout);
-  drawBoard(ctx, layout, board);
+  drawBoard(ctx, layout, game.board);
   drawDeadLine(ctx, layout);
+  if (game.phase === PHASE.AIMING) {
+    drawAimLine(ctx, layout, game);
+  }
+  drawLauncher(ctx, layout, game);
+  drawShotQueue(ctx, layout, game);
+  if (game.shot) drawProjectile(ctx, game.shot, layout);
 }
 
 function drawBackground(ctx, w, h) {
@@ -118,28 +125,104 @@ function drawEmptyCell(ctx, cx, cy, size) {
 function drawLantern(ctx, cx, cy, size, colorKey) {
   const r = size * 0.78;
   const fill = COLORS[colorKey] || PALETTE.ember;
-
   const grad = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
   grad.addColorStop(0, mixWithWhite(fill, 0.35));
   grad.addColorStop(0.7, fill);
   grad.addColorStop(1, mixWithBlack(fill, 0.4));
-
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.strokeStyle = mixWithBlack(fill, 0.5);
   ctx.lineWidth = 1;
   ctx.stroke();
 }
 
-function mixWithWhite(hex, t) {
-  return mixHex(hex, '#FFFFFF', t);
+function drawLauncher(ctx, layout, game) {
+  const tip = launcherTip(layout);
+  const r = layout.size * 1.0;
+  const barrelLength = layout.size * 1.4;
+  const barrelWidth  = layout.size * 0.55;
+
+  // Barrel rotates with aim. Pointing "up" (negative Y) at angle 0.
+  ctx.save();
+  ctx.translate(tip.x, tip.y);
+  ctx.rotate(game.aimAngle);
+
+  ctx.fillStyle = PALETTE.launcher;
+  ctx.strokeStyle = PALETTE.launcherRim;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(-barrelWidth / 2, -barrelLength, barrelWidth, barrelLength + r * 0.4, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Loaded lantern rides at the barrel mouth.
+  drawLantern(ctx, 0, -barrelLength + layout.size * 0.78, layout.size, game.queue.current);
+  ctx.restore();
+
+  // Base disc.
+  ctx.fillStyle = PALETTE.launcherRim;
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = PALETTE.launcher;
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, r * 0.78, 0, Math.PI * 2);
+  ctx.fill();
 }
-function mixWithBlack(hex, t) {
-  return mixHex(hex, '#000000', t);
+
+function drawShotQueue(ctx, layout, game) {
+  const tip = launcherTip(layout);
+  const off = layout.size * 2.4;
+  const nx = tip.x + off;
+  const ny = tip.y;
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  drawLantern(ctx, nx, ny, layout.size * 0.7, game.queue.next);
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.6)';
+  ctx.font = `${10 * 1}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('next', nx, ny + layout.size * 0.95);
 }
+
+function drawAimLine(ctx, layout, game) {
+  const trace = traceAimLine(layout, game.board, game.aimAngle, 1);
+  if (!trace || trace.points.length < 2) return;
+
+  ctx.save();
+  ctx.strokeStyle = PALETTE.aimLine;
+  ctx.globalAlpha = 0.5;
+  ctx.setLineDash([3, 6]);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(trace.points[0].x, trace.points[0].y);
+  for (let i = 1; i < trace.points.length; i++) {
+    ctx.lineTo(trace.points[i].x, trace.points[i].y);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Faint ghost of where the projectile would land.
+  if (trace.snap) {
+    const p = hexToPixel(trace.snap.col, trace.snap.row, layout);
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    drawLantern(ctx, p.x, p.y, layout.size, game.queue.current);
+    ctx.restore();
+  }
+}
+
+function drawProjectile(ctx, shot, layout) {
+  drawLantern(ctx, shot.x, shot.y, layout.size, shot.color);
+}
+
+function mixWithWhite(hex, t) { return mixHex(hex, '#FFFFFF', t); }
+function mixWithBlack(hex, t) { return mixHex(hex, '#000000', t); }
 function mixHex(a, b, t) {
   const ra = parseInt(a.slice(1, 3), 16), ga = parseInt(a.slice(3, 5), 16), ba = parseInt(a.slice(5, 7), 16);
   const rb = parseInt(b.slice(1, 3), 16), gb = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);

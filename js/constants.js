@@ -23,6 +23,9 @@ export const PALETTE = Object.freeze({
   ember:        '#2A2A2A',
   emberRing:    '#5C2010',
   deadLine:     '#E8B770',
+  launcher:     '#3A2916',
+  launcherRim:  '#8C6B3A',
+  aimLine:      '#F5E9C9',
 });
 
 export const GRID = Object.freeze({
@@ -38,3 +41,10 @@ export const BOARD_MARGIN_SIDE = 16;
 
 export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;
+export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
+
+export const PROJECTILE_SPEED = 720;        // px/sec
+export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
+export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
+
+export const M3_DEFAULT_SEED = 0x4D6F6F6E;   // 'Moon' in ASCII; placeholder until M7
