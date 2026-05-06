@@ -1,7 +1,8 @@
 import { COLOR_KEYS, GRID, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED } from './constants.js';
 import { mulberry32, pick } from './prng.js';
-import { createBoard } from './board.js';
+import { createBoard, fillRandomTop } from './board.js';
 import { hexToPixel, pixelToHex, getNeighbors, inBounds } from './hex-math.js';
+import { popMatches, dropFloating, popScore, dropScore } from './match.js';
 
 export const PHASE = Object.freeze({
   AIMING: 'aiming',
@@ -12,6 +13,7 @@ export const PHASE = Object.freeze({
 export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
   const rng = mulberry32(seed);
   const board = createBoard();
+  fillRandomTop(board, rng, 5);
   return {
     rng,
     board,
@@ -22,6 +24,8 @@ export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
       next:    pick(rng, COLOR_KEYS),
     },
     shot: null,
+    score: 0,
+    lastResolution: null,
   };
 }
 
@@ -54,6 +58,7 @@ export function step(game, dtSec, layout) {
 
   if (trace.settled) {
     placeLantern(game.board, trace.snap, game.shot.color);
+    resolvePlacement(game, trace.snap);
     game.shot = null;
     advanceQueue(game);
     game.phase = PHASE.AIMING;
@@ -64,6 +69,18 @@ export function step(game, dtSec, layout) {
     game.shot.vy = trace.endVy;
   }
   return true;
+}
+
+function resolvePlacement(game, snap) {
+  if (!snap) {
+    game.lastResolution = { popped: [], dropped: [], gained: 0 };
+    return;
+  }
+  const popped = popMatches(game.board, snap.col, snap.row);
+  const dropped = popped.length ? dropFloating(game.board) : [];
+  const gained = popScore(popped) + dropScore(dropped);
+  game.score += gained;
+  game.lastResolution = { popped, dropped, gained };
 }
 
 function advanceQueue(game) {

@@ -61,4 +61,4 @@ attachInput(canvas, () => game, () => layout, () => { dirty = true; });
 resize();
 requestAnimationFrame(frame);
 
-console.info(`[${GAME_ID}] M3 aim+shoot ready — framed=${Arcade.context.framed}`);
+console.info(`[${GAME_ID}] M4 match+drop ready — framed=${Arcade.context.framed}`);

@@ -34,6 +34,18 @@ export function render(ctx, layout, game, settings) {
   drawLauncher(ctx, layout, game);
   drawShotQueue(ctx, layout, game);
   if (game.shot) drawProjectile(ctx, game.shot, layout);
+  drawScore(ctx, layout, game);
+}
+
+function drawScore(ctx, layout, game) {
+  const fontPx = Math.max(14, Math.round(layout.size * 0.95));
+  ctx.save();
+  ctx.fillStyle = PALETTE.moon;
+  ctx.font = `600 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(String(game.score | 0), 12, 8);
+  ctx.restore();
 }
 
 function drawBackground(ctx, w, h) {
