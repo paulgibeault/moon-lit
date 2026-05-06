@@ -10,6 +10,20 @@
   <meta name="theme-color" content="#0E1538">
   <link rel="manifest" href="manifest.json">
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Moon-glow does not register a service worker. A SW from the launcher
+    // (or a sibling game's `./ago`) may still be registered on this origin
+    // from an earlier dev session and intercept fetches. Wipe it on every
+    // load so dev sessions stay self-healing.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations()
+        .then(rs => rs.forEach(r => r.unregister()))
+        .catch(() => {});
+      if (window.caches) {
+        caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+      }
+    }
+  </script>
   <script src="/arcade-sdk.js"></script>
   <script>Arcade.init({ gameId: 'moon-glow' });</script>
 </head>

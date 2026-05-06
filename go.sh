@@ -90,6 +90,16 @@ if ! kill -0 "$NEW_PID" 2>/dev/null; then
   exit 1
 fi
 
+URL="http://127.0.0.1:$PORT/"
 echo "Server running (PID $NEW_PID)"
-echo "  URL: http://127.0.0.1:$PORT/"
+echo "  URL: $URL"
 echo "  Log: $LOG_FILE"
+echo
+echo "If the page renders the arcade launcher (not moon-glow), a stale"
+echo "service worker from a prior dev session is intercepting fetches:"
+echo "  Chrome → DevTools → Application → Service Workers → Unregister"
+echo "  then hard-reload (Cmd-Shift-R). moon-glow's index.html will then"
+echo "  auto-purge any SW for future loads."
+if command -v open >/dev/null 2>&1; then
+  open "$URL" >/dev/null 2>&1 || true
+fi
