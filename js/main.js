@@ -29,7 +29,7 @@ function resize() {
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  layout = computeLayout(w, h);
+  layout = computeLayout(w, h, undefined, undefined, game.board.parityFlip);
   dirty = true;
 }
 
@@ -37,8 +37,11 @@ function frame(now) {
   if (!suspended && layout) {
     const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
-    if (game.phase === PHASE.FLYING) {
+    if (game.phase === PHASE.FLYING || game.phase === PHASE.DESCENDING) {
       step(game, dt, layout);
+      // Sync parityFlip AFTER step so the render sees the value that
+      // matches the current cell positions (descent flips it mid-step).
+      layout.parityFlip = game.board.parityFlip;
       dirty = true;
     }
     if (dirty) {

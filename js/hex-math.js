@@ -1,5 +1,9 @@
 // Pointy-top hexagons with odd-r offset coordinates.
 // Reference: redblobgames.com/grids/hexagons (Conventions: "pointy", "odd-r").
+//
+// parityFlip (0 or 1) adjusts which rows are staggered. After each single-row
+// descent the parity flips so adjacency relationships remain consistent even
+// though cells physically shifted in the array.
 
 const SQRT3 = Math.sqrt(3);
 
@@ -11,11 +15,12 @@ export function hexHeight(size) {
   return 2 * size;
 }
 
-// Center pixel of cell (col, row). Layout = { size, originX, originY }.
+// Center pixel of cell (col, row). Layout = { size, originX, originY, parityFlip }.
 // originX/originY locate the center of cell (0, 0).
 export function hexToPixel(col, row, layout) {
   const { size, originX, originY } = layout;
-  const xOffset = (row & 1) ? SQRT3 * size * 0.5 : 0;
+  const pf = layout.parityFlip || 0;
+  const xOffset = ((row + pf) & 1) ? SQRT3 * size * 0.5 : 0;
   return {
     x: originX + col * SQRT3 * size + xOffset,
     y: originY + row * 1.5 * size,
@@ -26,26 +31,39 @@ export function hexToPixel(col, row, layout) {
 // outside the playable bounds; caller checks with inBounds.
 export function pixelToHex(x, y, layout) {
   const { size, originX, originY } = layout;
-  const px = (x - originX) / size;
-  const py = (y - originY) / size;
-  const qFrac = (SQRT3 / 3) * px - (1 / 3) * py;
-  const rFrac = (2 / 3) * py;
-  const { q, r } = axialRound(qFrac, rFrac);
-  return axialToOffset(q, r);
+  const pf = layout.parityFlip || 0;
+
+  // Estimate row from y, then determine parity-aware offset.
+  const approxRow = Math.round((y - originY) / (1.5 * size));
+  const xOffset = ((approxRow + pf) & 1) ? SQRT3 * size * 0.5 : 0;
+
+  // Try a few candidate rows around the estimate and pick closest center.
+  let best = null, bestDist = Infinity;
+  for (let dr = -1; dr <= 1; dr++) {
+    const r = approxRow + dr;
+    const rOffset = ((r + pf) & 1) ? SQRT3 * size * 0.5 : 0;
+    const cy = originY + r * 1.5 * size;
+    const approxCol = Math.round((x - originX - rOffset) / (SQRT3 * size));
+    for (let dc = -1; dc <= 1; dc++) {
+      const c = approxCol + dc;
+      const cx = originX + c * SQRT3 * size + rOffset;
+      const dx = x - cx, dy = y - cy;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) { bestDist = d; best = { col: c, row: r }; }
+    }
+  }
+  return best;
 }
 
-function axialRound(qFrac, rFrac) {
-  const sFrac = -qFrac - rFrac;
-  let q = Math.round(qFrac);
-  let r = Math.round(rFrac);
-  let s = Math.round(sFrac);
-  const dq = Math.abs(q - qFrac);
-  const dr = Math.abs(r - rFrac);
-  const ds = Math.abs(s - sFrac);
-  if (dq > dr && dq > ds) q = -r - s;
-  else if (dr > ds) r = -q - s;
-  return { q, r };
-}
+// Neighbor deltas for odd-r offset, indexed by (row & 1).
+const NEIGHBORS_EVEN_ROW = [
+  [+1,  0], [ 0, -1], [-1, -1],
+  [-1,  0], [-1, +1], [ 0, +1],
+];
+const NEIGHBORS_ODD_ROW = [
+  [+1,  0], [+1, -1], [ 0, -1],
+  [-1,  0], [ 0, +1], [+1, +1],
+];
 
 export function offsetToAxial(col, row) {
   const q = col - ((row - (row & 1)) >> 1);
@@ -59,18 +77,8 @@ export function axialToOffset(q, r) {
   return { col, row };
 }
 
-// Neighbor deltas for odd-r offset, indexed by (row & 1).
-const NEIGHBORS_EVEN_ROW = [
-  [+1,  0], [ 0, -1], [-1, -1],
-  [-1,  0], [-1, +1], [ 0, +1],
-];
-const NEIGHBORS_ODD_ROW = [
-  [+1,  0], [+1, -1], [ 0, -1],
-  [-1,  0], [ 0, +1], [+1, +1],
-];
-
-export function getNeighbors(col, row) {
-  const table = (row & 1) ? NEIGHBORS_ODD_ROW : NEIGHBORS_EVEN_ROW;
+export function getNeighbors(col, row, parityFlip = 0) {
+  const table = ((row + parityFlip) & 1) ? NEIGHBORS_ODD_ROW : NEIGHBORS_EVEN_ROW;
   return table.map(([dc, dr]) => ({ col: col + dc, row: row + dr }));
 }
 

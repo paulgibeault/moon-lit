@@ -10,6 +10,7 @@ export function findCluster(board, col, row) {
   const seed = board.cells[row][col];
   if (!seed) return [];
   const color = seed.color;
+  const pf = board.parityFlip || 0;
   const seen = new Set();
   const out = [];
   const queue = [{ col, row }];
@@ -17,7 +18,7 @@ export function findCluster(board, col, row) {
   while (queue.length) {
     const c = queue.shift();
     out.push(c);
-    for (const n of getNeighbors(c.col, c.row)) {
+    for (const n of getNeighbors(c.col, c.row, pf)) {
       if (!inBounds(n.col, n.row, board.cols, board.rows)) continue;
       const k = key(n.col, n.row);
       if (seen.has(k)) continue;
@@ -43,6 +44,7 @@ export function popMatches(board, col, row) {
 // (any color). Any populated cell not reached is "floating" and falls.
 // Mutates the board: cleared cells are returned as {col, row, color}.
 export function dropFloating(board) {
+  const pf = board.parityFlip || 0;
   const seen = new Set();
   const queue = [];
   for (let col = 0; col < board.cols; col++) {
@@ -54,7 +56,7 @@ export function dropFloating(board) {
   }
   while (queue.length) {
     const c = queue.shift();
-    for (const n of getNeighbors(c.col, c.row)) {
+    for (const n of getNeighbors(c.col, c.row, pf)) {
       if (!inBounds(n.col, n.row, board.cols, board.rows)) continue;
       const k = key(n.col, n.row);
       if (seen.has(k)) continue;

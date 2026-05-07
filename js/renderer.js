@@ -6,7 +6,7 @@ import {
 import { hexToPixel, hexCorners, gridPixelSize } from './hex-math.js';
 import { launcherTip, traceAimLine, PHASE } from './game.js';
 
-export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows) {
+export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows, parityFlip = 0) {
   const availW = viewW - BOARD_MARGIN_SIDE * 2;
   const availH = viewH - BOARD_MARGIN_TOP - BOARD_MARGIN_BOTTOM;
   const SQRT3 = Math.sqrt(3);
@@ -18,7 +18,7 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows) 
   const originX = BOARD_MARGIN_SIDE + size * SQRT3 * 0.5 + (availW - grid.width) / 2;
   const originY = BOARD_MARGIN_TOP + size;
 
-  return { size, originX, originY, cols, rows, viewW, viewH };
+  return { size, originX, originY, cols, rows, viewW, viewH, parityFlip };
 }
 
 export function render(ctx, layout, game, settings) {
@@ -152,12 +152,14 @@ function drawDeadLine(ctx, layout) {
 
 function drawBoard(ctx, layout, board) {
   const { size } = layout;
+  const animY = board.descentAnimY || 0;
   for (let row = 0; row < board.rows; row++) {
     for (let col = 0; col < board.cols; col++) {
       const { x, y } = hexToPixel(col, row, layout);
+      const dy = y + animY;
       const cell = board.cells[row][col];
-      if (cell) drawLantern(ctx, x, y, size, cell.color);
-      else drawEmptyCell(ctx, x, y, size);
+      if (cell) drawLantern(ctx, x, dy, size, cell.color);
+      else if (!animY) drawEmptyCell(ctx, x, dy, size);
     }
   }
 }

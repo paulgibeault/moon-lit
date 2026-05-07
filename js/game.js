@@ -8,9 +8,13 @@ export const PHASE = Object.freeze({
   AIMING: 'aiming',
   FLYING: 'flying',
   SETTLING: 'settling',
+  DESCENDING: 'descending',
   WIN: 'win',
   GAME_OVER: 'gameOver',
 });
+
+// Speed of the descent drift in pixels/sec.
+const DESCENT_DRIFT_SPEED = 120;
 
 export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
   const rng = mulberry32(seed);
@@ -52,8 +56,25 @@ export function fire(game, layout) {
 }
 
 // Step the in-flight projectile by dtSec. Returns true if a render-affecting
-// state change happened (movement, settle).
+// state change happened (movement, settle, descent animation).
 export function step(game, dtSec, layout) {
+  // Drive descent animation.
+  if (game.phase === PHASE.DESCENDING) {
+    const rowH = layout.size * 1.5;
+    const step = DESCENT_DRIFT_SPEED * dtSec;
+    game.board.descentAnimY = Math.min(0, game.board.descentAnimY + step);
+    if (game.board.descentAnimY >= 0) {
+      game.board.descentAnimY = 0;
+      // After animation, drop any floating lanterns.
+      const postDrop = dropFloating(game.board);
+      if (postDrop.length) {
+        game.score += dropScore(postDrop);
+      }
+      game.phase = PHASE.AIMING;
+    }
+    return true;
+  }
+
   if (game.phase !== PHASE.FLYING || !game.shot) return false;
   const speed = projectileSpeed();
   const distance = speed * dtSec;
@@ -75,9 +96,14 @@ export function step(game, dtSec, layout) {
         game.phase = PHASE.GAME_OVER;
         return true;
       }
+      // Start smooth descent animation. descentAnimY is negative (cells are
+      // visually one row above their logical position) and drifts toward 0.
+      game.board.descentAnimY = -(layout.size * 1.5);
+      game.phase = PHASE.DESCENDING;
       game.shotsUntilDescent = DESCENT_SHOTS;
+    } else {
+      game.phase = PHASE.AIMING;
     }
-    game.phase = PHASE.AIMING;
   } else {
     game.shot.x = trace.endX;
     game.shot.y = trace.endY;
@@ -93,7 +119,9 @@ function resolvePlacement(game, snap) {
     return;
   }
   const popped = popMatches(game.board, snap.col, snap.row);
-  const dropped = popped.length ? dropFloating(game.board) : [];
+  // Always check for floating lanterns — not just after a match — so stray
+  // placements near the cluster edge never linger disconnected.
+  const dropped = dropFloating(game.board);
   const gained = popScore(popped) + dropScore(dropped);
   game.score += gained;
   game.lastResolution = { popped, dropped, gained };
@@ -111,16 +139,11 @@ function placeLantern(board, hex, color) {
 }
 
 function projectileSpeed() {
-  // Imported lazily so tests can stub if needed; here just return constant.
-  // Kept as a function for future per-shot speed mods (e.g. Twin Lanterns).
   return 720;
 }
 
 // ─── Trajectory: continuous step until settle ────────────────────────────
 
-// Single short-duration step along the projectile path, with early-out on
-// collision. Returns either { settled: false, endX, endY, endVx, endVy }
-// or { settled: true, snap: {col,row}, endX, endY }.
 function traceFromShot(layout, board, shot, distance) {
   const r = layout.size * 0.78;
   const stepSize = Math.max(1, r * 0.25);
@@ -165,9 +188,6 @@ function traceFromShot(layout, board, shot, distance) {
 
 // ─── Aim-line preview: full trajectory for HUD ───────────────────────────
 
-// Simulate a shot from the launcher tip at the given angle. Returns the
-// list of segment endpoints (including bounce points) and the final snap
-// target, without mutating the board. Used for the aim-line preview.
 export function traceAimLine(layout, board, angle, maxBounces = 1) {
   const origin = launcherTip(layout);
   const r = layout.size * 0.78;
@@ -234,7 +254,6 @@ export function launcherTip(layout) {
 function lanternCollision(layout, board, x, y, r) {
   const lr = layout.size * 0.78;
   const sq = (r + lr) * (r + lr);
-  // Bounding-box prefilter: only check cells within ~3 cell widths.
   const SQRT3 = Math.sqrt(3);
   const reach = SQRT3 * layout.size * 1.5;
   for (let row = 0; row < board.rows; row++) {
@@ -251,12 +270,36 @@ function lanternCollision(layout, board, x, y, r) {
 }
 
 export function snapNearestEmpty(layout, board, x, y) {
+  const pf = board.parityFlip || 0;
   const home = pixelToHex(x, y, layout);
-  const candidates = [home, ...getNeighbors(home.col, home.row)];
+  // Gather candidates: home cell + neighbors of home + neighbors of neighbors,
+  // so we have a wide enough search area even when the collision fires early.
+  const seen = new Set();
+  const candidates = [];
+  const addCandidate = (col, row) => {
+    const k = row * 1000 + col;
+    if (seen.has(k)) return;
+    seen.add(k);
+    if (inBounds(col, row, board.cols, board.rows)) candidates.push({ col, row });
+  };
+  addCandidate(home.col, home.row);
+  for (const n of getNeighbors(home.col, home.row, pf)) addCandidate(n.col, n.row);
+  // Second ring for safety.
+  const firstRing = [...candidates];
+  for (const c of firstRing) {
+    for (const n of getNeighbors(c.col, c.row, pf)) addCandidate(n.col, n.row);
+  }
+
+  // Only accept cells that are anchored: row 0 (ceiling) or adjacent to an
+  // existing lantern. This prevents placing shots in disconnected positions.
   let best = null, bestDist = Infinity;
   for (const c of candidates) {
-    if (!inBounds(c.col, c.row, board.cols, board.rows)) continue;
-    if (board.cells[c.row][c.col]) continue;
+    if (board.cells[c.row][c.col]) continue; // must be empty
+    const anchored = c.row === 0 ||
+      getNeighbors(c.col, c.row, pf).some(
+        n => inBounds(n.col, n.row, board.cols, board.rows) && board.cells[n.row][n.col]
+      );
+    if (!anchored) continue;
     const p = hexToPixel(c.col, c.row, layout);
     const d = (p.x - x) ** 2 + (p.y - y) ** 2;
     if (d < bestDist) { bestDist = d; best = c; }

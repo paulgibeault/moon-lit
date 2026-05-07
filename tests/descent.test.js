@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBoard, descend, isCleared } from '../js/board.js';
 import { mulberry32 } from '../js/prng.js';
+import { getNeighbors } from '../js/hex-math.js';
 
 test('descend shifts every populated cell down by one row', () => {
   const b = createBoard();
@@ -21,6 +22,15 @@ test('descend seeds a fresh top row from the rng', () => {
   }
 });
 
+test('descend flips parityFlip each time', () => {
+  const b = createBoard();
+  assert.equal(b.parityFlip, 0);
+  descend(b, mulberry32(1));
+  assert.equal(b.parityFlip, 1);
+  descend(b, mulberry32(2));
+  assert.equal(b.parityFlip, 0);
+});
+
 test('descend returns false when the bottom row already holds lanterns', () => {
   const b = createBoard();
   b.cells[b.rows - 1][0] = { color: 'red' };
@@ -29,6 +39,22 @@ test('descend returns false when the bottom row already holds lanterns', () => {
   // Board should be untouched on failure.
   assert.equal(b.cells[b.rows - 1][0].color, 'red');
   assert.equal(b.cells[0][0], null);
+  assert.equal(b.parityFlip, 0);
+});
+
+test('neighbor symmetry is preserved after descent via parityFlip', () => {
+  const b = createBoard();
+  descend(b, mulberry32(1)); // parityFlip is now 1
+  // Verify neighbor relation is still symmetric with the flipped parity.
+  for (let row = 0; row < 6; row++) {
+    for (let col = 1; col < 6; col++) {
+      for (const n of getNeighbors(col, row, b.parityFlip)) {
+        const back = getNeighbors(n.col, n.row, b.parityFlip);
+        const found = back.some(bk => bk.col === col && bk.row === row);
+        assert.ok(found, `pf=${b.parityFlip}: (${col},${row})->(${n.col},${n.row}) not symmetric`);
+      }
+    }
+  }
 });
 
 test('isCleared is true only when no cells are populated', () => {

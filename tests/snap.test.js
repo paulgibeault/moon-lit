@@ -14,7 +14,9 @@ function emptyBoard() {
 
 test('snapNearestEmpty picks the cell whose center is closest', () => {
   const b = emptyBoard();
-  // Stand right on top of cell (3, 4)
+  // Place a lantern adjacent so the target has an anchor.
+  b.cells[3][3] = { color: 'red' };
+  // Stand right on top of cell (3, 4) — empty and adjacent to (3, 3).
   const target = hexToPixel(3, 4, layout);
   const snap = snapNearestEmpty(layout, b, target.x, target.y);
   assert.deepEqual(snap, { col: 3, row: 4 });
@@ -35,11 +37,12 @@ test('snapNearestEmpty skips populated cells and falls back to nearest empty nei
   assert.equal(b.cells[snap.row][snap.col], null);
 });
 
-test('snapNearestEmpty returns null if all candidates are populated', () => {
+test('snapNearestEmpty returns null if all nearby cells are populated', () => {
   const b = emptyBoard();
-  // Fill (col, row) and all 6 neighbors of (3, 4).
-  const fill = [[3,4],[4,4],[2,4],[3,3],[2,3],[3,5],[2,5]];
-  for (const [c, r] of fill) b.cells[r][c] = { color: 'red' };
+  // Fill a dense block so no empty cell within 2 rings is available.
+  for (let r = 2; r <= 6; r++) {
+    for (let c = 1; c <= 5; c++) b.cells[r][c] = { color: 'red' };
+  }
   const center = hexToPixel(3, 4, layout);
   const snap = snapNearestEmpty(layout, b, center.x, center.y);
   assert.equal(snap, null);
