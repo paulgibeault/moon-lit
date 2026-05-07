@@ -35,6 +35,48 @@ export function render(ctx, layout, game, settings) {
   drawShotQueue(ctx, layout, game);
   if (game.shot) drawProjectile(ctx, game.shot, layout);
   drawScore(ctx, layout, game);
+  drawDescentMeter(ctx, layout, game);
+  if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
+    drawEndOverlay(ctx, layout, game);
+  }
+}
+
+function drawDescentMeter(ctx, layout, game) {
+  if (game.shotsUntilDescent == null) return;
+  const fontPx = Math.max(11, Math.round(layout.size * 0.55));
+  ctx.save();
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.55)';
+  ctx.font = `500 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`descent in ${game.shotsUntilDescent}`, layout.viewW - 12, 10);
+  ctx.restore();
+}
+
+function drawEndOverlay(ctx, layout, game) {
+  const { viewW, viewH } = layout;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.78)';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  const won = game.phase === PHASE.WIN;
+  const title = won ? 'Trellis cleared' : 'Trellis collapsed';
+  const titleColor = won ? PALETTE.moon : PALETTE.deadLine;
+  const titlePx = Math.max(28, Math.round(layout.size * 1.6));
+  const subPx   = Math.max(14, Math.round(layout.size * 0.7));
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = titleColor;
+  ctx.font = `700 ${titlePx}px "Segoe UI", system-ui, sans-serif`;
+  ctx.fillText(title, viewW / 2, viewH / 2 - titlePx * 0.6);
+
+  ctx.fillStyle = PALETTE.moon;
+  ctx.font = `500 ${subPx}px "Segoe UI", system-ui, sans-serif`;
+  ctx.fillText(`Score ${game.score | 0}`, viewW / 2, viewH / 2 + subPx * 0.4);
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.7)';
+  ctx.fillText('click to restart', viewW / 2, viewH / 2 + subPx * 2.2);
+  ctx.restore();
 }
 
 function drawScore(ctx, layout, game) {

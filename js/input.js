@@ -13,23 +13,38 @@ export function attachInput(canvas, getGame, getLayout, requestRender) {
     requestRender();
   };
 
-  const onMove = (e) => aimAt(e.clientX, e.clientY);
-  const onDown = (e) => {
+  const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
+
+  const onMove = (e) => {
+    if (isGameOver(getGame())) return;
     aimAt(e.clientX, e.clientY);
+  };
+  const onDown = (e) => {
     const game = getGame();
+    if (isGameOver(game)) {
+      location.reload();
+      return;
+    }
+    aimAt(e.clientX, e.clientY);
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
       requestRender();
     }
   };
   const onTouchMove = (e) => {
+    if (isGameOver(getGame())) return;
     if (e.touches.length > 0) aimAt(e.touches[0].clientX, e.touches[0].clientY);
   };
   const onTouchEnd = (e) => {
     const t = e.changedTouches[0];
     if (!t) return;
-    aimAt(t.clientX, t.clientY);
     const game = getGame();
+    if (isGameOver(game)) {
+      location.reload();
+      e.preventDefault();
+      return;
+    }
+    aimAt(t.clientX, t.clientY);
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
       requestRender();

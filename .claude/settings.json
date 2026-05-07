@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node --test tests/*.test.js)"
+      "Bash(node --test tests/*.test.js)",
+      "Read(//Users/paulgibeault/work/paulgibeault.github.io/**)",
+      "Bash(lsof -nP -iTCP:8765 -sTCP:LISTEN)",
+      "Bash(lsof -nP -iTCP:4791 -sTCP:LISTEN)",
+      "Bash(curl -s http://127.0.0.1:8765/)",
+      "Bash(curl -s http://127.0.0.1:4791/)",
+      "Bash(curl -s http://127.0.0.1:8765/arcade-sdk.js)",
+      "Bash(command -v sips magick convert pngquant cwebp)"
+    ],
+    "additionalDirectories": [
+      "/Users/paulgibeault/work/paulgibeault.github.io"
     ]
   }
 }

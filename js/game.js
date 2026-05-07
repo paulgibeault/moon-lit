@@ -1,6 +1,6 @@
-import { COLOR_KEYS, GRID, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED } from './constants.js';
+import { COLOR_KEYS, GRID, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED, DESCENT_SHOTS } from './constants.js';
 import { mulberry32, pick } from './prng.js';
-import { createBoard, fillRandomTop } from './board.js';
+import { createBoard, fillRandomTop, descend, isCleared } from './board.js';
 import { hexToPixel, pixelToHex, getNeighbors, inBounds } from './hex-math.js';
 import { popMatches, dropFloating, popScore, dropScore } from './match.js';
 
@@ -8,6 +8,8 @@ export const PHASE = Object.freeze({
   AIMING: 'aiming',
   FLYING: 'flying',
   SETTLING: 'settling',
+  WIN: 'win',
+  GAME_OVER: 'gameOver',
 });
 
 export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
@@ -26,6 +28,7 @@ export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
     shot: null,
     score: 0,
     lastResolution: null,
+    shotsUntilDescent: DESCENT_SHOTS,
   };
 }
 
@@ -61,6 +64,19 @@ export function step(game, dtSec, layout) {
     resolvePlacement(game, trace.snap);
     game.shot = null;
     advanceQueue(game);
+    if (isCleared(game.board)) {
+      game.phase = PHASE.WIN;
+      return true;
+    }
+    game.shotsUntilDescent--;
+    if (game.shotsUntilDescent <= 0) {
+      const ok = descend(game.board, game.rng);
+      if (!ok) {
+        game.phase = PHASE.GAME_OVER;
+        return true;
+      }
+      game.shotsUntilDescent = DESCENT_SHOTS;
+    }
     game.phase = PHASE.AIMING;
   } else {
     game.shot.x = trace.endX;
