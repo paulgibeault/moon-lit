@@ -6,77 +6,94 @@ import {
   popScore, dropScore, POP_POINTS,
 } from '../js/match.js';
 
-function paint(board, list, color) {
-  for (const [c, r] of list) board.cells[r][c] = { color };
+const SQRT3 = Math.sqrt(3);
+
+function fixtureLayout() {
+  return { size: 20, originX: 100, trellisY: 40, deadLineY: 600, cols: 8, maxRows: 13 };
 }
 
-test('findCluster returns just the seed when no same-color neighbours', () => {
+// Helper: place a lantern at (col, row) using close-packed positions
+// (mirrors what populateInitial would produce, without touching rng).
+function place(board, layout, col, row, color) {
+  const r = layout.size;
+  const odd = row & 1;
+  const x = layout.originX + (col * 2 + odd) * r;
+  const y = layout.trellisY + r + row * SQRT3 * r;
+  const lantern = { x, y, color };
+  board.lanterns.push(lantern);
+  return lantern;
+}
+
+test('findCluster returns just the seed when no same-color neighbours touch', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  b.cells[3][3] = { color: 'red' };
-  b.cells[3][4] = { color: 'jade' };
-  const cluster = findCluster(b, 3, 3);
+  const seed = place(b, layout, 3, 3, 'red');
+  place(b, layout, 4, 3, 'jade');
+  const cluster = findCluster(b, seed, layout);
   assert.equal(cluster.length, 1);
-  assert.deepEqual(cluster[0], { col: 3, row: 3 });
+  assert.equal(cluster[0], seed);
 });
 
-test('findCluster walks across same-color neighbours regardless of row parity', () => {
+test('findCluster walks across same-color touching lanterns', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  // Odd-r adjacency: (3,3) is on an odd row, so its neighbours include
-  // (3,2) and (4,2) on the row above and (3,4)/(4,4) below.
-  paint(b, [[3,3],[3,2],[4,2],[3,4]], 'red');
-  const cluster = findCluster(b, 3, 3);
+  // Pack 4 reds in close-pack positions at (3,3), (3,2), (4,2), (3,4).
+  const seed = place(b, layout, 3, 3, 'red');
+  place(b, layout, 3, 2, 'red');
+  place(b, layout, 4, 2, 'red');
+  place(b, layout, 3, 4, 'red');
+  const cluster = findCluster(b, seed, layout);
   assert.equal(cluster.length, 4);
 });
 
 test('popMatches clears clusters of 3+ and returns them', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  paint(b, [[2,0],[3,0],[4,0]], 'red');
-  const popped = popMatches(b, 3, 0);
+  const a = place(b, layout, 2, 0, 'red');
+  place(b, layout, 3, 0, 'red');
+  place(b, layout, 4, 0, 'red');
+  const popped = popMatches(b, a, layout);
   assert.equal(popped.length, 3);
-  assert.equal(b.cells[0][2], null);
-  assert.equal(b.cells[0][3], null);
-  assert.equal(b.cells[0][4], null);
+  assert.equal(b.lanterns.length, 0);
 });
 
 test('popMatches leaves the board untouched for clusters under 3', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  paint(b, [[2,0],[3,0]], 'red');
-  const popped = popMatches(b, 3, 0);
+  const a = place(b, layout, 2, 0, 'red');
+  place(b, layout, 3, 0, 'red');
+  const popped = popMatches(b, a, layout);
   assert.deepEqual(popped, []);
-  assert.ok(b.cells[0][2]);
-  assert.ok(b.cells[0][3]);
+  assert.equal(b.lanterns.length, 2);
 });
 
-test('dropFloating clears anything not connected to row 0', () => {
+test('dropFloating clears anything not connected to the trellis', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  // Anchored: (0,0). Floating cluster: (3,5)-(4,5).
-  b.cells[0][0] = { color: 'red' };
-  b.cells[5][3] = { color: 'jade' };
-  b.cells[5][4] = { color: 'jade' };
-  const dropped = dropFloating(b);
+  // Anchored: (0, 0) on the trellis. Floating cluster: two reds at row 5.
+  place(b, layout, 0, 0, 'red');
+  place(b, layout, 3, 5, 'jade');
+  place(b, layout, 4, 5, 'jade');
+  const dropped = dropFloating(b, layout);
   assert.equal(dropped.length, 2);
-  assert.ok(b.cells[0][0]);
-  assert.equal(b.cells[5][3], null);
-  assert.equal(b.cells[5][4], null);
+  assert.equal(b.lanterns.length, 1);
 });
 
-test('dropFloating keeps a chain that hangs from the ceiling', () => {
+test('dropFloating keeps a chain that hangs from the trellis', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  // Vertical-ish chain: (3,0)→(3,1)→(3,2). With odd-r, (3,1) on odd row
-  // has neighbours including (3,0) above and (3,2) below.
-  b.cells[0][3] = { color: 'red' };
-  b.cells[1][3] = { color: 'red' };
-  b.cells[2][3] = { color: 'red' };
-  const dropped = dropFloating(b);
+  place(b, layout, 3, 0, 'red');
+  place(b, layout, 3, 1, 'red');
+  place(b, layout, 3, 2, 'red');
+  const dropped = dropFloating(b, layout);
   assert.deepEqual(dropped, []);
-  assert.ok(b.cells[0][3]);
-  assert.ok(b.cells[1][3]);
-  assert.ok(b.cells[2][3]);
+  assert.equal(b.lanterns.length, 3);
 });
 
 test('dropFloating returns nothing on an empty board', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  assert.deepEqual(dropFloating(b), []);
+  assert.deepEqual(dropFloating(b, layout), []);
 });
 
 test('popScore is flat per popped lantern', () => {

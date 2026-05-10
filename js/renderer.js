@@ -1,24 +1,46 @@
 import {
   COLORS, PALETTE, GRID,
   BOARD_MARGIN_TOP, BOARD_MARGIN_BOTTOM, BOARD_MARGIN_SIDE,
-  TRELLIS_HEIGHT, DEAD_LINE_OFFSET,
+  TRELLIS_HEIGHT, DEAD_LINE_OFFSET, LANE_LANTERNS,
 } from './constants.js';
-import { hexToPixel, hexCorners, gridPixelSize } from './hex-math.js';
 import { launcherTip, traceAimLine, PHASE } from './game.js';
 
-export function computeLayout(viewW, viewH, cols = GRID.cols, rows = GRID.rows, parityFlip = 0) {
+const SQRT3 = Math.sqrt(3);
+
+// Build a viewport-derived layout. Lantern radius is sized to fit `cols`
+// lanterns plus LANE_LANTERNS bounce-lanes on each side, and to fit
+// `maxRows` close-packed rows between trellis and dead-line.
+export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.maxRows) {
   const availW = viewW - BOARD_MARGIN_SIDE * 2;
   const availH = viewH - BOARD_MARGIN_TOP - BOARD_MARGIN_BOTTOM;
-  const SQRT3 = Math.sqrt(3);
-  const sizeFromW = availW / (SQRT3 * (cols + 0.5));
-  const sizeFromH = availH / (1.5 * (rows - 1) + 2);
+  // Width budget: 2r per lantern in the widest (even) row + 2r*LANE_LANTERNS
+  // per side. Odd rows are narrower (cols-1 lanterns offset by r), so they
+  // sit fully within the even-row strip and contribute no extra width.
+  const sizeFromW = availW / (2 * (cols + 2 * LANE_LANTERNS));
+  // Height budget: 2r (top row) + (maxRows-1)*sqrt(3)*r + DEAD_LINE_OFFSET.
+  const sizeFromH = (availH - DEAD_LINE_OFFSET) / (2 + (maxRows - 1) * SQRT3);
   const size = Math.max(8, Math.floor(Math.min(sizeFromW, sizeFromH)));
+  const r = size;
 
-  const grid = gridPixelSize(cols, rows, size);
-  const originX = BOARD_MARGIN_SIDE + size * SQRT3 * 0.5 + (availW - grid.width) / 2;
-  const originY = BOARD_MARGIN_TOP + size;
+  const lanternStripW = 2 * r * cols;
+  const laneW = 2 * r * LANE_LANTERNS;
+  const totalPlayW = lanternStripW + 2 * laneW;
+  const playLeft = BOARD_MARGIN_SIDE + (availW - totalPlayW) / 2;
 
-  return { size, originX, originY, cols, rows, viewW, viewH, parityFlip };
+  const wallLeft  = playLeft;
+  const wallRight = playLeft + totalPlayW;
+  const originX   = playLeft + laneW + r;  // center of (col 0, even row 0)
+
+  const trellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
+  const lastRowCenterY = trellisY + r + (maxRows - 1) * SQRT3 * r;
+  const deadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+
+  return {
+    size: r, originX, trellisY, deadLineY,
+    cols, maxRows,
+    viewW, viewH,
+    wallLeft, wallRight,
+  };
 }
 
 export function render(ctx, layout, game, settings) {
@@ -120,14 +142,14 @@ function drawMoon(ctx, w, h, reducedMotion) {
 }
 
 function drawTrellis(ctx, layout) {
-  const { viewW, size, originY } = layout;
-  const top = originY - size - TRELLIS_HEIGHT;
+  const { viewW, size, trellisY } = layout;
+  const top = trellisY - TRELLIS_HEIGHT;
   ctx.fillStyle = PALETTE.trellis;
   ctx.fillRect(0, top, viewW, TRELLIS_HEIGHT);
 
   ctx.strokeStyle = PALETTE.trellisKnot;
   ctx.lineWidth = 1;
-  const knotSpacing = size * Math.sqrt(3);
+  const knotSpacing = size * 2;
   for (let x = knotSpacing * 0.5; x < viewW; x += knotSpacing) {
     ctx.beginPath();
     ctx.moveTo(x, top);
@@ -137,15 +159,13 @@ function drawTrellis(ctx, layout) {
 }
 
 function drawDeadLine(ctx, layout) {
-  const { viewW, size, originY, rows } = layout;
-  const lastRowY = originY + (rows - 1) * 1.5 * size;
-  const y = lastRowY + size + DEAD_LINE_OFFSET;
+  const { viewW, deadLineY } = layout;
   ctx.strokeStyle = PALETTE.deadLine;
   ctx.setLineDash([6, 8]);
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(0, y);
-  ctx.lineTo(viewW, y);
+  ctx.moveTo(0, deadLineY);
+  ctx.lineTo(viewW, deadLineY);
   ctx.stroke();
   ctx.setLineDash([]);
 }
@@ -153,33 +173,13 @@ function drawDeadLine(ctx, layout) {
 function drawBoard(ctx, layout, board) {
   const { size } = layout;
   const animY = board.descentAnimY || 0;
-  for (let row = 0; row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      const { x, y } = hexToPixel(col, row, layout);
-      const dy = y + animY;
-      const cell = board.cells[row][col];
-      if (cell) drawLantern(ctx, x, dy, size, cell.color);
-      else if (!animY) drawEmptyCell(ctx, x, dy, size);
-    }
+  for (const l of board.lanterns) {
+    drawLantern(ctx, l.x, l.y + animY, size, l.color);
   }
-}
-
-function drawEmptyCell(ctx, cx, cy, size) {
-  const corners = hexCorners(cx, cy, size * 0.92);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const c = corners[i];
-    if (i === 0) ctx.moveTo(c.x, c.y);
-    else ctx.lineTo(c.x, c.y);
-  }
-  ctx.closePath();
-  ctx.stroke();
 }
 
 function drawLantern(ctx, cx, cy, size, colorKey) {
-  const r = size * 0.78;
+  const r = size;
   const fill = COLORS[colorKey] || PALETTE.ember;
   const grad = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);
   grad.addColorStop(0, mixWithWhite(fill, 0.35));
@@ -196,11 +196,10 @@ function drawLantern(ctx, cx, cy, size, colorKey) {
 
 function drawLauncher(ctx, layout, game) {
   const tip = launcherTip(layout);
-  const r = layout.size * 1.0;
-  const barrelLength = layout.size * 1.4;
-  const barrelWidth  = layout.size * 0.55;
+  const baseR = layout.size * 1.2;
+  const barrelLength = layout.size * 1.7;
+  const barrelWidth  = layout.size * 0.7;
 
-  // Barrel rotates with aim. Pointing "up" (negative Y) at angle 0.
   ctx.save();
   ctx.translate(tip.x, tip.y);
   ctx.rotate(game.aimAngle);
@@ -209,28 +208,26 @@ function drawLauncher(ctx, layout, game) {
   ctx.strokeStyle = PALETTE.launcherRim;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(-barrelWidth / 2, -barrelLength, barrelWidth, barrelLength + r * 0.4, 6);
+  ctx.roundRect(-barrelWidth / 2, -barrelLength, barrelWidth, barrelLength + baseR * 0.4, 6);
   ctx.fill();
   ctx.stroke();
 
-  // Loaded lantern rides at the barrel mouth.
-  drawLantern(ctx, 0, -barrelLength + layout.size * 0.78, layout.size, game.queue.current);
+  drawLantern(ctx, 0, -barrelLength + layout.size, layout.size, game.queue.current);
   ctx.restore();
 
-  // Base disc.
   ctx.fillStyle = PALETTE.launcherRim;
   ctx.beginPath();
-  ctx.arc(tip.x, tip.y, r, 0, Math.PI * 2);
+  ctx.arc(tip.x, tip.y, baseR, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = PALETTE.launcher;
   ctx.beginPath();
-  ctx.arc(tip.x, tip.y, r * 0.78, 0, Math.PI * 2);
+  ctx.arc(tip.x, tip.y, baseR * 0.78, 0, Math.PI * 2);
   ctx.fill();
 }
 
 function drawShotQueue(ctx, layout, game) {
   const tip = launcherTip(layout);
-  const off = layout.size * 2.4;
+  const off = layout.size * 3.0;
   const nx = tip.x + off;
   const ny = tip.y;
   ctx.save();
@@ -263,12 +260,10 @@ function drawAimLine(ctx, layout, game) {
   ctx.setLineDash([]);
   ctx.restore();
 
-  // Faint ghost of where the projectile would land.
-  if (trace.snap) {
-    const p = hexToPixel(trace.snap.col, trace.snap.row, layout);
+  if (trace.settle) {
     ctx.save();
     ctx.globalAlpha = 0.25;
-    drawLantern(ctx, p.x, p.y, layout.size, game.queue.current);
+    drawLantern(ctx, trace.settle.x, trace.settle.y, layout.size, game.queue.current);
     ctx.restore();
   }
 }

@@ -1,7 +1,9 @@
-import { COLOR_KEYS, GRID, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED, DESCENT_SHOTS } from './constants.js';
+import {
+  COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
+  DESCENT_SHOTS, LAUNCHER_OFFSET_FROM_DEAD_LINE,
+} from './constants.js';
 import { mulberry32, pick } from './prng.js';
-import { createBoard, fillRandomTop, descend, isCleared } from './board.js';
-import { hexToPixel, pixelToHex, getNeighbors, inBounds } from './hex-math.js';
+import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
 import { popMatches, dropFloating, popScore, dropScore } from './match.js';
 
 export const PHASE = Object.freeze({
@@ -13,13 +15,12 @@ export const PHASE = Object.freeze({
   GAME_OVER: 'gameOver',
 });
 
-// Speed of the descent drift in pixels/sec.
-const DESCENT_DRIFT_SPEED = 120;
+const DESCENT_DRIFT_SPEED = 240;  // px/sec; sized to a packed-row height (sqrt(3)*r)
 
-export function createGame({ seed = M3_DEFAULT_SEED } = {}) {
+export function createGame({ seed = M3_DEFAULT_SEED, layout } = {}) {
   const rng = mulberry32(seed);
   const board = createBoard();
-  fillRandomTop(board, rng, 5);
+  if (layout) populateInitial(board, layout, rng);
   return {
     rng,
     board,
@@ -55,21 +56,14 @@ export function fire(game, layout) {
   game.phase = PHASE.FLYING;
 }
 
-// Step the in-flight projectile by dtSec. Returns true if a render-affecting
-// state change happened (movement, settle, descent animation).
 export function step(game, dtSec, layout) {
-  // Drive descent animation.
   if (game.phase === PHASE.DESCENDING) {
-    const rowH = layout.size * 1.5;
-    const step = DESCENT_DRIFT_SPEED * dtSec;
-    game.board.descentAnimY = Math.min(0, game.board.descentAnimY + step);
+    const stepPx = DESCENT_DRIFT_SPEED * dtSec;
+    game.board.descentAnimY = Math.min(0, game.board.descentAnimY + stepPx);
     if (game.board.descentAnimY >= 0) {
       game.board.descentAnimY = 0;
-      // After animation, drop any floating lanterns.
-      const postDrop = dropFloating(game.board);
-      if (postDrop.length) {
-        game.score += dropScore(postDrop);
-      }
+      const postDrop = dropFloating(game.board, layout);
+      if (postDrop.length) game.score += dropScore(postDrop);
       game.phase = PHASE.AIMING;
     }
     return true;
@@ -81,8 +75,9 @@ export function step(game, dtSec, layout) {
   const trace = traceFromShot(layout, game.board, game.shot, distance);
 
   if (trace.settled) {
-    placeLantern(game.board, trace.snap, game.shot.color);
-    resolvePlacement(game, trace.snap);
+    const placed = { x: trace.x, y: trace.y, color: game.shot.color };
+    addLantern(game.board, placed.x, placed.y, placed.color);
+    resolvePlacement(game, placed, layout);
     game.shot = null;
     advanceQueue(game);
     if (isCleared(game.board)) {
@@ -91,37 +86,31 @@ export function step(game, dtSec, layout) {
     }
     game.shotsUntilDescent--;
     if (game.shotsUntilDescent <= 0) {
-      const ok = descend(game.board, game.rng);
+      const ok = descend(game.board, layout, game.rng);
       if (!ok) {
         game.phase = PHASE.GAME_OVER;
         return true;
       }
-      // Start smooth descent animation. descentAnimY is negative (cells are
-      // visually one row above their logical position) and drifts toward 0.
-      game.board.descentAnimY = -(layout.size * 1.5);
+      const r = layout.size;
+      game.board.descentAnimY = -(Math.sqrt(3) * r);
       game.phase = PHASE.DESCENDING;
       game.shotsUntilDescent = DESCENT_SHOTS;
     } else {
       game.phase = PHASE.AIMING;
     }
   } else {
-    game.shot.x = trace.endX;
-    game.shot.y = trace.endY;
-    game.shot.vx = trace.endVx;
-    game.shot.vy = trace.endVy;
+    game.shot.x = trace.x;
+    game.shot.y = trace.y;
+    game.shot.vx = trace.vx;
+    game.shot.vy = trace.vy;
   }
   return true;
 }
 
-function resolvePlacement(game, snap) {
-  if (!snap) {
-    game.lastResolution = { popped: [], dropped: [], gained: 0 };
-    return;
-  }
-  const popped = popMatches(game.board, snap.col, snap.row);
-  // Always check for floating lanterns — not just after a match — so stray
-  // placements near the cluster edge never linger disconnected.
-  const dropped = dropFloating(game.board);
+function resolvePlacement(game, placed, layout) {
+  const lantern = game.board.lanterns[game.board.lanterns.length - 1];
+  const popped = popMatches(game.board, lantern, layout);
+  const dropped = dropFloating(game.board, layout);
   const gained = popScore(popped) + dropScore(dropped);
   game.score += gained;
   game.lastResolution = { popped, dropped, gained };
@@ -132,12 +121,6 @@ function advanceQueue(game) {
   game.queue.next    = pick(game.rng, COLOR_KEYS);
 }
 
-function placeLantern(board, hex, color) {
-  if (!hex) return;
-  if (!inBounds(hex.col, hex.row, board.cols, board.rows)) return;
-  board.cells[hex.row][hex.col] = { color };
-}
-
 function projectileSpeed() {
   return 720;
 }
@@ -145,13 +128,8 @@ function projectileSpeed() {
 // ─── Trajectory: continuous step until settle ────────────────────────────
 
 function traceFromShot(layout, board, shot, distance) {
-  const r = layout.size * 0.78;
+  const r = layout.size;
   const stepSize = Math.max(1, r * 0.25);
-  const SQRT3 = Math.sqrt(3);
-  const halfHexW = SQRT3 * layout.size * 0.5;
-  const boardLeft  = layout.originX - halfHexW;
-  const boardRight = layout.originX + (board.cols - 1) * SQRT3 * layout.size + halfHexW;
-  const trellisY   = layout.originY - layout.size;
 
   let x = shot.x, y = shot.y, vx = shot.vx, vy = shot.vy;
   let remaining = distance;
@@ -161,43 +139,117 @@ function traceFromShot(layout, board, shot, distance) {
     let nx = x + vx * s;
     let ny = y + vy * s;
 
-    if (nx - r < boardLeft) {
-      nx = boardLeft + r + ((boardLeft + r) - nx);
+    if (nx - r < layout.wallLeft) {
+      nx = layout.wallLeft + r + ((layout.wallLeft + r) - nx);
       vx = -vx;
-    } else if (nx + r > boardRight) {
-      nx = boardRight - r - (nx - (boardRight - r));
+    } else if (nx + r > layout.wallRight) {
+      nx = layout.wallRight - r - (nx - (layout.wallRight - r));
       vx = -vx;
     }
 
-    if (ny - r <= trellisY) {
-      const snap = snapNearestEmpty(layout, board, nx, Math.max(ny, trellisY + r));
-      return { settled: true, snap, endX: nx, endY: ny };
+    const hit = lanternCollision(board, nx, ny, r);
+    const trellisHit = ny - r <= layout.trellisY;
+    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
+      const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
+      const settled = settleIntoPocket(layout, board, hit, contact, vx, vy);
+      return { settled: true, x: settled.x, y: settled.y };
     }
-
-    const hit = lanternCollision(layout, board, nx, ny, r);
-    if (hit) {
-      const snap = snapNearestEmpty(layout, board, nx, ny);
-      return { settled: true, snap, endX: nx, endY: ny };
+    if (trellisHit) {
+      return { settled: true, x: nx, y: layout.trellisY + r };
     }
 
     x = nx; y = ny;
     remaining -= s;
   }
-  return { settled: false, endX: x, endY: y, endVx: vx, endVy: vy };
+  return { settled: false, x, y, vx, vy };
 }
 
-// ─── Aim-line preview: full trajectory for HUD ───────────────────────────
+// After first contact with `hit`, slide along its surface in the direction of
+// motion until we touch a second lantern or the trellis. Returns the final
+// resting position so the projectile snuggles into the natural pocket
+// instead of stopping at the outside edge of the cluster.
+function settleIntoPocket(layout, board, hit, contact, vx, vy) {
+  const r = layout.size;
+  const cx = hit.x, cy = hit.y;
+  const ringR = 2 * r;
+  const dx0 = contact.x - cx, dy0 = contact.y - cy;
+  const theta0 = Math.atan2(dy0, dx0);
+
+  // Tangent direction at contact, in motion direction. Pick CCW (+1) or CW (-1).
+  const tCCW = { x: -Math.sin(theta0), y: Math.cos(theta0) };
+  const direction = (tCCW.x * vx + tCCW.y * vy) >= 0 ? +1 : -1;
+
+  const stepRad = 0.04;
+  const maxSteps = Math.ceil(Math.PI / stepRad);
+  let last = { x: contact.x, y: contact.y };
+
+  for (let i = 1; i <= maxSteps; i++) {
+    const theta = theta0 + direction * i * stepRad;
+    const px = cx + ringR * Math.cos(theta);
+    const py = cy + ringR * Math.sin(theta);
+
+    if (py - r <= layout.trellisY) {
+      // Refine to the exact rest position touching both `hit` and the trellis,
+      // so we don't end up <2r from the blocker due to step discretization.
+      const dyT = (layout.trellisY + r) - cy;
+      if (Math.abs(dyT) <= ringR) {
+        const dxT = Math.sqrt(ringR * ringR - dyT * dyT);
+        const sideX = px >= cx ? cx + dxT : cx - dxT;
+        return { x: sideX, y: layout.trellisY + r };
+      }
+      return { x: px, y: layout.trellisY + r };
+    }
+    if (px - r < layout.wallLeft || px + r > layout.wallRight) {
+      return last;
+    }
+    const other = nearestOverlapping(board, px, py, r, hit);
+    if (other) {
+      return twoCircleContact(hit, other, r, last);
+    }
+    last = { x: px, y: py };
+  }
+  return last;
+}
+
+function nearestOverlapping(board, x, y, r, exclude) {
+  const sq = (2 * r) * (2 * r) - 1e-3;
+  const reachSq = (3 * r) * (3 * r);
+  let best = null, bestDistSq = Infinity;
+  for (const l of board.lanterns) {
+    if (l === exclude) continue;
+    const dx = l.x - x, dy = l.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > reachSq) continue;
+    if (d2 < sq && d2 < bestDistSq) { best = l; bestDistSq = d2; }
+  }
+  return best;
+}
+
+// Position a circle of radius r that touches both A and B (each at distance 2r).
+// Two solutions exist when |AB| < 4r — pick whichever is closer to `hint`.
+function twoCircleContact(A, B, r, hint) {
+  const dx = B.x - A.x, dy = B.y - A.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1e-6 || d > 4 * r) return { x: hint.x, y: hint.y };
+  const a = d / 2;
+  const h = Math.sqrt(Math.max(0, 4 * r * r - a * a));
+  const mx = A.x + dx * (a / d);
+  const my = A.y + dy * (a / d);
+  const px = -dy / d * h, py = dx / d * h;
+  const c1 = { x: mx + px, y: my + py };
+  const c2 = { x: mx - px, y: my - py };
+  const d1 = (c1.x - hint.x) ** 2 + (c1.y - hint.y) ** 2;
+  const d2 = (c2.x - hint.x) ** 2 + (c2.y - hint.y) ** 2;
+  return d1 <= d2 ? c1 : c2;
+}
+
+// ─── Aim-line preview ────────────────────────────────────────────────────
 
 export function traceAimLine(layout, board, angle, maxBounces = 1) {
   const origin = launcherTip(layout);
-  const r = layout.size * 0.78;
-  const SQRT3 = Math.sqrt(3);
-  const halfHexW = SQRT3 * layout.size * 0.5;
-  const boardLeft  = layout.originX - halfHexW;
-  const boardRight = layout.originX + (board.cols - 1) * SQRT3 * layout.size + halfHexW;
-  const trellisY   = layout.originY - layout.size;
-  const stepSize   = Math.max(1, r * 0.4);
-  const maxSteps   = 4000;
+  const r = layout.size;
+  const stepSize = Math.max(1, r * 0.4);
+  const maxSteps = 4000;
 
   const points = [{ x: origin.x, y: origin.y }];
   let x = origin.x, y = origin.y;
@@ -209,102 +261,94 @@ export function traceAimLine(layout, board, angle, maxBounces = 1) {
     let ny = y + vy * stepSize;
 
     let bounced = false;
-    if (nx - r < boardLeft) {
-      nx = boardLeft + r + ((boardLeft + r) - nx);
+    if (nx - r < layout.wallLeft) {
+      nx = layout.wallLeft + r + ((layout.wallLeft + r) - nx);
       vx = -vx; bounced = true;
-    } else if (nx + r > boardRight) {
-      nx = boardRight - r - (nx - (boardRight - r));
+    } else if (nx + r > layout.wallRight) {
+      nx = layout.wallRight - r - (nx - (layout.wallRight - r));
       vx = -vx; bounced = true;
     }
     if (bounced) {
       points.push({ x: nx, y: ny });
       bounces++;
       if (bounces > maxBounces) {
-        return { points, snap: null, bounced: true };
+        return { points, settle: null, bounced: true };
       }
     }
 
-    if (ny - r <= trellisY) {
-      const snap = snapNearestEmpty(layout, board, nx, Math.max(ny, trellisY + r));
-      points.push({ x: nx, y: ny });
-      return { points, snap };
+    const hit = lanternCollision(board, nx, ny, r);
+    const trellisHit = ny - r <= layout.trellisY;
+    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
+      const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
+      const settled = settleIntoPocket(layout, board, hit, contact, vx, vy);
+      points.push({ x: contact.x, y: contact.y });
+      return { points, settle: settled };
     }
-    const hit = lanternCollision(layout, board, nx, ny, r);
-    if (hit) {
-      const snap = snapNearestEmpty(layout, board, nx, ny);
+    if (trellisHit) {
       points.push({ x: nx, y: ny });
-      return { points, snap };
+      return { points, settle: { x: nx, y: layout.trellisY + r } };
     }
     x = nx; y = ny;
   }
   points.push({ x, y });
-  return { points, snap: null };
+  return { points, settle: null };
 }
 
 // ─── Geometry helpers ────────────────────────────────────────────────────
 
 export function launcherTip(layout) {
-  const lastRowY = layout.originY + (layout.rows - 1) * 1.5 * layout.size;
   return {
     x: layout.viewW / 2,
-    y: lastRowY + layout.size + 64,
+    y: layout.deadLineY + LAUNCHER_OFFSET_FROM_DEAD_LINE,
   };
 }
 
-function lanternCollision(layout, board, x, y, r) {
-  const lr = layout.size * 0.78;
-  const sq = (r + lr) * (r + lr);
-  const SQRT3 = Math.sqrt(3);
-  const reach = SQRT3 * layout.size * 1.5;
-  for (let row = 0; row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      const cell = board.cells[row][col];
-      if (!cell) continue;
-      const p = hexToPixel(col, row, layout);
-      const dx = p.x - x, dy = p.y - y;
-      if (Math.abs(dx) > reach || Math.abs(dy) > reach) continue;
-      if (dx * dx + dy * dy < sq) return { col, row };
+function lanternCollision(board, x, y, r) {
+  const sq = (2 * r) * (2 * r);
+  const reachSq = (3 * r) * (3 * r);
+  let best = null, bestDistSq = Infinity;
+  for (const l of board.lanterns) {
+    const dx = l.x - x, dy = l.y - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > reachSq) continue;
+    if (d2 < sq && d2 < bestDistSq) {
+      best = l;
+      bestDistSq = d2;
     }
   }
-  return null;
+  return best;
 }
 
-export function snapNearestEmpty(layout, board, x, y) {
-  const pf = board.parityFlip || 0;
-  const home = pixelToHex(x, y, layout);
-  // Gather candidates: home cell + neighbors of home + neighbors of neighbors,
-  // so we have a wide enough search area even when the collision fires early.
-  const seen = new Set();
-  const candidates = [];
-  const addCandidate = (col, row) => {
-    const k = row * 1000 + col;
-    if (seen.has(k)) return;
-    seen.add(k);
-    if (inBounds(col, row, board.cols, board.rows)) candidates.push({ col, row });
-  };
-  addCandidate(home.col, home.row);
-  for (const n of getNeighbors(home.col, home.row, pf)) addCandidate(n.col, n.row);
-  // Second ring for safety.
-  const firstRing = [...candidates];
-  for (const c of firstRing) {
-    for (const n of getNeighbors(c.col, c.row, pf)) addCandidate(n.col, n.row);
-  }
+// True iff the segment from (x0,y0) to (x1,y1) reaches the lantern's circle
+// before crossing the trellis line. Used to disambiguate when a step crosses
+// both: the projectile should resolve against whichever it touched first.
+function hitsBeforeTrellis(x0, y0, x1, y1, lantern, r, trellisY) {
+  const lanternT = segmentToCircleT(x0, y0, x1, y1, lantern.x, lantern.y, 2 * r);
+  if (lanternT == null) return false;
+  // Trellis hit at t where y0 + t*dy = trellisY + r
+  const dy = y1 - y0;
+  if (Math.abs(dy) < 1e-9) return true;
+  const trellisT = (trellisY + r - y0) / dy;
+  return lanternT <= trellisT;
+}
 
-  // Only accept cells that are anchored: row 0 (ceiling) or adjacent to an
-  // existing lantern. This prevents placing shots in disconnected positions.
-  let best = null, bestDist = Infinity;
-  for (const c of candidates) {
-    if (board.cells[c.row][c.col]) continue; // must be empty
-    const anchored = c.row === 0 ||
-      getNeighbors(c.col, c.row, pf).some(
-        n => inBounds(n.col, n.row, board.cols, board.rows) && board.cells[n.row][n.col]
-      );
-    if (!anchored) continue;
-    const p = hexToPixel(c.col, c.row, layout);
-    const d = (p.x - x) ** 2 + (p.y - y) ** 2;
-    if (d < bestDist) { bestDist = d; best = c; }
-  }
-  return best;
+function segmentToCircleT(x0, y0, x1, y1, cx, cy, radius) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const ex = x0 - cx, ey = y0 - cy;
+  const a = dx * dx + dy * dy;
+  if (a < 1e-12) return null;
+  const b = 2 * (ex * dx + ey * dy);
+  const c = ex * ex + ey * ey - radius * radius;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  return (-b - Math.sqrt(disc)) / (2 * a);
+}
+
+function backupSegmentToCircle(x0, y0, x1, y1, cx, cy, radius) {
+  const t = segmentToCircleT(x0, y0, x1, y1, cx, cy, radius);
+  if (t == null) return { x: x0, y: y0 };
+  const tc = Math.max(0, Math.min(1, t));
+  return { x: x0 + tc * (x1 - x0), y: y0 + tc * (y1 - y0) };
 }
 
 function clamp(v, lo, hi) {

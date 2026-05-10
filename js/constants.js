@@ -28,16 +28,28 @@ export const PALETTE = Object.freeze({
   aimLine:      '#F5E9C9',
 });
 
+// Lanterns are circles, not hexes. cols sets the number per top row;
+// odd rows are offset by one radius so circles snuggle (close-pack).
+// initialRows is how many full rows are populated when a fresh game starts.
+// maxRows sizes the canvas so this many rows fit between trellis and dead-line.
 export const GRID = Object.freeze({
   cols: 8,
-  rows: 13,
-  orientation: 'pointy-top',
-  offset: 'odd-r',
+  initialRows: 5,
+  maxRows: 13,
 });
 
 export const BOARD_MARGIN_TOP = 56;
 export const BOARD_MARGIN_BOTTOM = 96;
 export const BOARD_MARGIN_SIDE = 16;
+
+// Bounce-lane width on each side of the lantern columns, in lantern diameters.
+// Keeps the play area visibly wider than the lantern column extent so shots
+// can curve past the rightmost/leftmost stack instead of bouncing flush.
+export const LANE_LANTERNS = 1.0;
+
+// Two lanterns are treated as adjacent (for matching / anchoring) when their
+// centers are within (2 * radius * this factor). >1 forgives small float gaps.
+export const ADJACENCY_TOLERANCE = 1.08;
 
 export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;

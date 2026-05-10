@@ -1,81 +1,101 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBoard } from '../js/board.js';
-import { snapNearestEmpty, traceAimLine } from '../js/game.js';
-import { hexToPixel } from '../js/hex-math.js';
+import { traceAimLine } from '../js/game.js';
 
-const layout = { size: 20, originX: 100, originY: 60, cols: 8, rows: 13, viewW: 400, viewH: 720 };
+const SQRT3 = Math.sqrt(3);
 
-function emptyBoard() {
-  const b = createBoard();
-  for (let r = 0; r < b.rows; r++) for (let c = 0; c < b.cols; c++) b.cells[r][c] = null;
-  return b;
+function fixtureLayout() {
+  return {
+    size: 20,
+    originX: 100,
+    trellisY: 60,
+    deadLineY: 600,
+    cols: 8,
+    maxRows: 13,
+    viewW: 400,
+    viewH: 720,
+    wallLeft: 40,
+    wallRight: 360,
+  };
 }
 
-test('snapNearestEmpty picks the cell whose center is closest', () => {
-  const b = emptyBoard();
-  // Place a lantern adjacent so the target has an anchor.
-  b.cells[3][3] = { color: 'red' };
-  // Stand right on top of cell (3, 4) — empty and adjacent to (3, 3).
-  const target = hexToPixel(3, 4, layout);
-  const snap = snapNearestEmpty(layout, b, target.x, target.y);
-  assert.deepEqual(snap, { col: 3, row: 4 });
-});
-
-test('snapNearestEmpty skips populated cells and falls back to nearest empty neighbor', () => {
-  const b = emptyBoard();
-  b.cells[4][3] = { color: 'red' };
-  // Aim slightly towards (4, 4) but center is on (3, 4) — populated, so falls back.
-  const c = hexToPixel(3, 4, layout);
-  const nearby = hexToPixel(4, 4, layout);
-  const x = (c.x + nearby.x) / 2 - 2;  // slight bias towards (3,4)
-  const y = (c.y + nearby.y) / 2;
-  const snap = snapNearestEmpty(layout, b, x, y);
-  // Either (3, 4) if open, but it is populated → should land on a neighbor.
-  assert.notDeepEqual(snap, { col: 3, row: 4 });
-  // Snap target must be empty.
-  assert.equal(b.cells[snap.row][snap.col], null);
-});
-
-test('snapNearestEmpty returns null if all nearby cells are populated', () => {
-  const b = emptyBoard();
-  // Fill a dense block so no empty cell within 2 rings is available.
-  for (let r = 2; r <= 6; r++) {
-    for (let c = 1; c <= 5; c++) b.cells[r][c] = { color: 'red' };
-  }
-  const center = hexToPixel(3, 4, layout);
-  const snap = snapNearestEmpty(layout, b, center.x, center.y);
-  assert.equal(snap, null);
-});
-
-test('traceAimLine straight up lands at the trellis on an empty board', () => {
-  const b = emptyBoard();
+test('traceAimLine straight up lands against the trellis on an empty board', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
   const trace = traceAimLine(layout, b, 0, 1);
-  assert.ok(trace.snap, 'expected a snap target for straight-up shot');
-  assert.equal(trace.snap.row, 0);
+  assert.ok(trace.settle, 'expected a settle target for straight-up shot');
+  // Lantern should sit with its top edge on the trellis line.
+  assert.ok(Math.abs(trace.settle.y - (layout.trellisY + layout.size)) < 1,
+    `settle y=${trace.settle.y}, expected ~${layout.trellisY + layout.size}`);
 });
 
-test('traceAimLine bouncing off a side wall still lands on the board', () => {
-  const b = emptyBoard();
-  // Aim 30° right of vertical — needs exactly one wall bounce on this layout.
+test('traceAimLine bouncing off a side wall still settles', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  // Aim 30° right of vertical — needs at least one wall bounce on this layout.
   const trace = traceAimLine(layout, b, Math.PI / 6, 1);
-  assert.ok(trace.snap, 'expected a snap target for bouncing shot');
+  assert.ok(trace.settle, 'expected a settle target for bouncing shot');
   assert.ok(trace.points.length >= 3, 'expected at least one bounce point');
 });
 
-test('traceAimLine returns no snap when the shot needs more bounces than allowed', () => {
-  const b = emptyBoard();
-  // Steep angle on a narrow board — needs >1 bounce, so the 1-bounce preview gives up.
+test('traceAimLine returns no settle when more bounces than allowed are needed', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
   const trace = traceAimLine(layout, b, Math.PI / 3, 1);
-  assert.equal(trace.snap, null);
+  assert.equal(trace.settle, null);
   assert.equal(trace.bounced, true);
 });
 
-test('traceAimLine snaps near a populated cell when the path collides with one', () => {
-  const b = emptyBoard();
-  // Block the top center.
-  b.cells[0][4] = { color: 'red' };
+test('traceAimLine settles touching an existing lantern when the path collides', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  // Block the top center directly above the launcher.
+  const blockerX = layout.viewW / 2;
+  const blockerY = layout.trellisY + layout.size;
+  b.lanterns.push({ x: blockerX, y: blockerY, color: 'red' });
   const trace = traceAimLine(layout, b, 0, 1);
-  assert.ok(trace.snap, 'expected a snap target');
-  assert.notDeepEqual(trace.snap, { col: 4, row: 0 });
+  assert.ok(trace.settle, 'expected a settle target');
+  // Settled lantern should be touching the blocker (centers ~2r apart).
+  const dx = trace.settle.x - blockerX;
+  const dy = trace.settle.y - blockerY;
+  const dist = Math.hypot(dx, dy);
+  assert.ok(Math.abs(dist - 2 * layout.size) < 1,
+    `settle distance from blocker=${dist}, expected ~${2 * layout.size}`);
+});
+
+test('settled lanterns do not overlap the blocker', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  const blockerX = layout.viewW / 2;
+  const blockerY = layout.trellisY + layout.size;
+  b.lanterns.push({ x: blockerX, y: blockerY, color: 'red' });
+  const trace = traceAimLine(layout, b, 0, 1);
+  const dx = trace.settle.x - blockerX;
+  const dy = trace.settle.y - blockerY;
+  // Centers must be ≥ 2r (touching but not overlapping).
+  assert.ok(Math.hypot(dx, dy) >= 2 * layout.size - 1e-6);
+});
+
+test('shot fired into a same-color cluster pops the cluster (match-3)', async () => {
+  const { createBoard } = await import('../js/board.js');
+  const { popMatches } = await import('../js/match.js');
+  const layout = fixtureLayout();
+  const b = createBoard();
+  const r = layout.size;
+  // Place three reds touching in the top row, centered on viewW/2.
+  const cx = layout.viewW / 2;
+  const topY = layout.trellisY + r;
+  b.lanterns.push({ x: cx - 2 * r, y: topY, color: 'red' });
+  b.lanterns.push({ x: cx,         y: topY, color: 'red' });
+  b.lanterns.push({ x: cx + 2 * r, y: topY, color: 'red' });
+  // Fire a fourth red straight up from the center of the launcher.
+  const trace = traceAimLine(layout, b, 0, 1);
+  assert.ok(trace.settle, 'expected a settle target');
+  // Add the projectile and run the match check.
+  const placed = { x: trace.settle.x, y: trace.settle.y, color: 'red' };
+  b.lanterns.push(placed);
+  const popped = popMatches(b, placed, layout);
+  assert.ok(popped.length >= 3,
+    `expected match-3+, got cluster of ${popped.length}; settle=(${trace.settle.x.toFixed(2)}, ${trace.settle.y.toFixed(2)})`);
 });

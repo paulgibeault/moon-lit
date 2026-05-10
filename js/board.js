@@ -1,50 +1,69 @@
 import { GRID, COLOR_KEYS } from './constants.js';
 import { pick } from './prng.js';
 
-// Board cells: cells[row][col] = { color: string } | null.
-export function createBoard(cols = GRID.cols, rows = GRID.rows) {
-  const cells = Array.from({ length: rows }, () => Array(cols).fill(null));
-  return { cols, rows, cells, parityFlip: 0, descentAnimY: 0 };
+const SQRT3 = Math.sqrt(3);
+
+// Lanterns are stored as a flat list. Each entry is { x, y, color }.
+// There is no grid backing store — settled positions are wherever the
+// projectile collided with another lantern or the trellis.
+//
+// `descentCount` counts how many descents have occurred. Each descent shifts
+// existing lanterns down by sqrt(3)*r, which lands them on the opposite
+// hex-packing stagger from where they started. So the freshly-seeded top row
+// must alternate stagger every descent to interlock with the row beneath it.
+export function createBoard() {
+  return {
+    lanterns: [],
+    descentAnimY: 0,
+    descentCount: 0,
+  };
 }
 
-// Fill the top `fillRows` rows with rng-picked colors. Used for fresh games
-// until M6 introduces level loaders. Cells already populated are preserved.
-export function fillRandomTop(board, rng, fillRows = 5) {
-  for (let row = 0; row < fillRows && row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      if (board.cells[row][col]) continue;
-      board.cells[row][col] = { color: pick(rng, COLOR_KEYS) };
+// Place `rows` rows of lanterns close-packed against the trellis. Even rows
+// span `cols` lanterns, odd rows are offset by one radius (and one fewer
+// lantern, so the right edge stays aligned). Used for fresh-game seeding.
+export function populateInitial(board, layout, rng, rows = GRID.initialRows) {
+  const r = layout.size;
+  const rowH = SQRT3 * r;
+  for (let row = 0; row < rows; row++) {
+    const odd = row & 1;
+    const count = layout.cols - odd;
+    for (let i = 0; i < count; i++) {
+      const x = layout.originX + (i * 2 + odd) * r;
+      const y = layout.trellisY + r + row * rowH;
+      board.lanterns.push({ x, y, color: pick(rng, COLOR_KEYS) });
     }
   }
 }
 
-// Shift every row down by one and seed a fresh top row from rng.
-// Flips parityFlip so hex neighbor logic stays consistent.
-// Returns true if the descent succeeded; false if any populated cell in the
-// bottom row would have been pushed past the dead-line — caller treats that
-// as a loss and does not apply the shift.
-export function descend(board, rng) {
-  for (let col = 0; col < board.cols; col++) {
-    if (board.cells[board.rows - 1][col]) return false;
+// Shift every lantern down by one packed-row height and seed a fresh top row
+// touching the trellis. Returns false (treated as a loss by the caller) if
+// any lantern would be pushed past the dead line.
+export function descend(board, layout, rng) {
+  const r = layout.size;
+  const rowH = SQRT3 * r;
+  const limitY = layout.deadLineY - r;
+  for (const l of board.lanterns) {
+    if (l.y + rowH > limitY) return false;
   }
-  for (let row = board.rows - 1; row > 0; row--) {
-    for (let col = 0; col < board.cols; col++) {
-      board.cells[row][col] = board.cells[row - 1][col];
-    }
+  for (const l of board.lanterns) l.y += rowH;
+  // Stagger the new top row opposite to whichever row sits directly below it,
+  // so the two interlock at exactly 2r center-distance instead of overlapping.
+  const oddStagger = (board.descentCount & 1) === 0 ? 1 : 0;
+  const count = layout.cols - oddStagger;
+  for (let i = 0; i < count; i++) {
+    const x = layout.originX + (i * 2 + oddStagger) * r;
+    const y = layout.trellisY + r;
+    board.lanterns.push({ x, y, color: pick(rng, COLOR_KEYS) });
   }
-  for (let col = 0; col < board.cols; col++) {
-    board.cells[0][col] = { color: pick(rng, COLOR_KEYS) };
-  }
-  // Flip parity so neighbor/rendering offsets track the shifted rows.
-  board.parityFlip ^= 1;
+  board.descentCount++;
   return true;
 }
 
 export function isCleared(board) {
-  for (let row = 0; row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      if (board.cells[row][col]) return false;
-    }
-  }
-  return true;
+  return board.lanterns.length === 0;
+}
+
+export function addLantern(board, x, y, color) {
+  board.lanterns.push({ x, y, color });
 }

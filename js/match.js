@@ -1,80 +1,85 @@
-import { getNeighbors, inBounds } from './hex-math.js';
+import { ADJACENCY_TOLERANCE } from './constants.js';
 
 const MIN_MATCH = 3;
 
-// BFS from (col, row) over same-color contiguous neighbours. Returns the
-// list of {col, row} cells in the cluster (always includes the seed if it
-// is non-empty). Pure read — does not mutate the board.
-export function findCluster(board, col, row) {
-  if (!inBounds(col, row, board.cols, board.rows)) return [];
-  const seed = board.cells[row][col];
+// Two lanterns touch when their centers are within (2r * tolerance).
+function adjThresholdSq(layout) {
+  const d = layout.size * 2 * ADJACENCY_TOLERANCE;
+  return d * d;
+}
+
+function neighborsOf(board, lantern, layout) {
+  const sq = adjThresholdSq(layout);
+  const out = [];
+  for (const other of board.lanterns) {
+    if (other === lantern) continue;
+    const dx = other.x - lantern.x;
+    const dy = other.y - lantern.y;
+    if (dx * dx + dy * dy <= sq) out.push(other);
+  }
+  return out;
+}
+
+// BFS from `seed` over same-color touching lanterns. Returns the cluster
+// (always includes the seed). Pure read — does not mutate.
+export function findCluster(board, seed, layout) {
   if (!seed) return [];
   const color = seed.color;
-  const pf = board.parityFlip || 0;
-  const seen = new Set();
-  const out = [];
-  const queue = [{ col, row }];
-  seen.add(key(col, row));
+  const seen = new Set([seed]);
+  const out = [seed];
+  const queue = [seed];
   while (queue.length) {
-    const c = queue.shift();
-    out.push(c);
-    for (const n of getNeighbors(c.col, c.row, pf)) {
-      if (!inBounds(n.col, n.row, board.cols, board.rows)) continue;
-      const k = key(n.col, n.row);
-      if (seen.has(k)) continue;
-      const cell = board.cells[n.row][n.col];
-      if (!cell || cell.color !== color) continue;
-      seen.add(k);
+    const cur = queue.shift();
+    for (const n of neighborsOf(board, cur, layout)) {
+      if (seen.has(n)) continue;
+      if (n.color !== color) continue;
+      seen.add(n);
+      out.push(n);
       queue.push(n);
     }
   }
   return out;
 }
 
-// If the cluster anchored at (col, row) has at least MIN_MATCH cells, clear
-// them from the board and return the cleared list. Otherwise return [].
-export function popMatches(board, col, row) {
-  const cluster = findCluster(board, col, row);
+// If `seed`'s cluster is at least MIN_MATCH, remove the cluster from the
+// board and return the popped lanterns. Otherwise return [].
+export function popMatches(board, seed, layout) {
+  const cluster = findCluster(board, seed, layout);
   if (cluster.length < MIN_MATCH) return [];
-  for (const c of cluster) board.cells[c.row][c.col] = null;
+  const set = new Set(cluster);
+  board.lanterns = board.lanterns.filter(l => !set.has(l));
   return cluster;
 }
 
-// BFS from every populated cell in row 0 across all populated neighbours
-// (any color). Any populated cell not reached is "floating" and falls.
-// Mutates the board: cleared cells are returned as {col, row, color}.
-export function dropFloating(board) {
-  const pf = board.parityFlip || 0;
+// A lantern is "anchored" when its top edge is within tolerance of the
+// trellis line. Anything that can't reach an anchored lantern through a
+// chain of touches falls. Mutates the board; returns the dropped lanterns.
+export function dropFloating(board, layout) {
+  const r = layout.size;
+  const anchorBand = r * (ADJACENCY_TOLERANCE - 1) + r * 0.4;
   const seen = new Set();
   const queue = [];
-  for (let col = 0; col < board.cols; col++) {
-    if (board.cells[0][col]) {
-      const k = key(col, 0);
-      seen.add(k);
-      queue.push({ col, row: 0 });
+  for (const l of board.lanterns) {
+    if (l.y - r <= layout.trellisY + anchorBand) {
+      seen.add(l);
+      queue.push(l);
     }
   }
   while (queue.length) {
-    const c = queue.shift();
-    for (const n of getNeighbors(c.col, c.row, pf)) {
-      if (!inBounds(n.col, n.row, board.cols, board.rows)) continue;
-      const k = key(n.col, n.row);
-      if (seen.has(k)) continue;
-      if (!board.cells[n.row][n.col]) continue;
-      seen.add(k);
+    const cur = queue.shift();
+    for (const n of neighborsOf(board, cur, layout)) {
+      if (seen.has(n)) continue;
+      seen.add(n);
       queue.push(n);
     }
   }
   const dropped = [];
-  for (let row = 0; row < board.rows; row++) {
-    for (let col = 0; col < board.cols; col++) {
-      const cell = board.cells[row][col];
-      if (!cell) continue;
-      if (seen.has(key(col, row))) continue;
-      dropped.push({ col, row, color: cell.color });
-      board.cells[row][col] = null;
-    }
+  const kept = [];
+  for (const l of board.lanterns) {
+    if (seen.has(l)) kept.push(l);
+    else dropped.push(l);
   }
+  board.lanterns = kept;
   return dropped;
 }
 
@@ -87,8 +92,4 @@ export function popScore(popped) {
 export function dropScore(dropped) {
   const n = dropped.length;
   return 20 * n * n;
-}
-
-function key(col, row) {
-  return row * 1000 + col;
 }

@@ -1,67 +1,119 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBoard, descend, isCleared } from '../js/board.js';
+import { createBoard, populateInitial, descend, isCleared } from '../js/board.js';
 import { mulberry32 } from '../js/prng.js';
-import { getNeighbors } from '../js/hex-math.js';
 
-test('descend shifts every populated cell down by one row', () => {
+const SQRT3 = Math.sqrt(3);
+
+function fixtureLayout() {
+  // Fixed test layout: r=20, trellis at y=40, plenty of room above the dead line.
+  return {
+    size: 20,
+    originX: 100,
+    trellisY: 40,
+    deadLineY: 600,
+    cols: 8,
+    maxRows: 13,
+  };
+}
+
+test('descend translates every lantern down by one packed-row height', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  b.cells[0][2] = { color: 'red' };
-  b.cells[3][5] = { color: 'jade' };
-  const ok = descend(b, mulberry32(1));
+  b.lanterns.push({ x: 200, y: 100, color: 'red' });
+  b.lanterns.push({ x: 240, y: 200, color: 'jade' });
+  const ok = descend(b, layout, mulberry32(1));
   assert.equal(ok, true);
-  assert.equal(b.cells[1][2].color, 'red');
-  assert.equal(b.cells[4][5].color, 'jade');
+  const rowH = SQRT3 * layout.size;
+  const red  = b.lanterns.find(l => l.color === 'red');
+  const jade = b.lanterns.find(l => l.color === 'jade');
+  assert.ok(Math.abs(red.x - 200) < 1e-9);
+  assert.ok(Math.abs(red.y - (100 + rowH)) < 1e-9);
+  assert.ok(Math.abs(jade.x - 240) < 1e-9);
+  assert.ok(Math.abs(jade.y - (200 + rowH)) < 1e-9);
 });
 
-test('descend seeds a fresh top row from the rng', () => {
+test('descend seeds a fresh top row touching the trellis', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  descend(b, mulberry32(42));
-  for (let col = 0; col < b.cols; col++) {
-    assert.ok(b.cells[0][col], `row 0 col ${col} should be populated`);
+  descend(b, layout, mulberry32(42));
+  const topRow = b.lanterns.filter(l => Math.abs(l.y - (layout.trellisY + layout.size)) < 1e-6);
+  // The first descend seeds an odd-staggered row (so it would mesh with a
+  // descended even-staggered row below it). Odd rows hold cols-1 lanterns.
+  assert.equal(topRow.length, layout.cols - 1);
+  for (const l of topRow) {
+    assert.ok(typeof l.color === 'string' && l.color.length > 0);
   }
 });
 
-test('descend flips parityFlip each time', () => {
+test('descend preserves x-coordinates exactly (no horizontal drift)', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  assert.equal(b.parityFlip, 0);
-  descend(b, mulberry32(1));
-  assert.equal(b.parityFlip, 1);
-  descend(b, mulberry32(2));
-  assert.equal(b.parityFlip, 0);
+  populateInitial(b, layout, mulberry32(1), 3);
+  const before = b.lanterns.map(l => ({ x: l.x, y: l.y }));
+  descend(b, layout, mulberry32(2));
+  // The original lanterns are still the first N entries (descend pushes new
+  // ones at the end). Their x must be unchanged.
+  for (let i = 0; i < before.length; i++) {
+    assert.ok(Math.abs(b.lanterns[i].x - before[i].x) < 1e-9,
+      `lantern ${i} x drifted: ${before[i].x} → ${b.lanterns[i].x}`);
+  }
 });
 
-test('descend returns false when the bottom row already holds lanterns', () => {
+test('descend returns false when a lantern would cross the dead line', () => {
+  const layout = fixtureLayout();
   const b = createBoard();
-  b.cells[b.rows - 1][0] = { color: 'red' };
-  const ok = descend(b, mulberry32(1));
+  // Place a lantern that's exactly one row-height above the dead line.
+  const rowH = SQRT3 * layout.size;
+  b.lanterns.push({ x: 200, y: layout.deadLineY - layout.size, color: 'red' });
+  const ok = descend(b, layout, mulberry32(1));
   assert.equal(ok, false);
-  // Board should be untouched on failure.
-  assert.equal(b.cells[b.rows - 1][0].color, 'red');
-  assert.equal(b.cells[0][0], null);
-  assert.equal(b.parityFlip, 0);
+  // Board must be untouched on failure.
+  assert.equal(b.lanterns.length, 1);
+  assert.equal(b.lanterns[0].y, layout.deadLineY - layout.size);
 });
 
-test('neighbor symmetry is preserved after descent via parityFlip', () => {
-  const b = createBoard();
-  descend(b, mulberry32(1)); // parityFlip is now 1
-  // Verify neighbor relation is still symmetric with the flipped parity.
-  for (let row = 0; row < 6; row++) {
-    for (let col = 1; col < 6; col++) {
-      for (const n of getNeighbors(col, row, b.parityFlip)) {
-        const back = getNeighbors(n.col, n.row, b.parityFlip);
-        const found = back.some(bk => bk.col === col && bk.row === row);
-        assert.ok(found, `pf=${b.parityFlip}: (${col},${row})->(${n.col},${n.row}) not symmetric`);
-      }
-    }
-  }
-});
-
-test('isCleared is true only when no cells are populated', () => {
+test('isCleared reflects the lantern list emptiness', () => {
   const b = createBoard();
   assert.equal(isCleared(b), true);
-  b.cells[2][3] = { color: 'red' };
+  b.lanterns.push({ x: 0, y: 0, color: 'red' });
   assert.equal(isCleared(b), false);
-  b.cells[2][3] = null;
+  b.lanterns.length = 0;
   assert.equal(isCleared(b), true);
+});
+
+test('populateInitial close-packs N rows so each row touches the next', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  populateInitial(b, layout, mulberry32(7), 2);
+  const rowH = SQRT3 * layout.size;
+  const top  = b.lanterns.filter(l => Math.abs(l.y - (layout.trellisY + layout.size)) < 1e-6);
+  const next = b.lanterns.filter(l => Math.abs(l.y - (layout.trellisY + layout.size + rowH)) < 1e-6);
+  assert.equal(top.length, layout.cols);
+  assert.equal(next.length, layout.cols - 1); // odd row has one fewer
+});
+
+test('descend seeds new top row staggered to mesh with the row below it', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  populateInitial(b, layout, mulberry32(1), 1); // one even-staggered row
+  // After 1 descend, the descended row sits one packed-row down with
+  // even-stagger x; the new top row must be odd-staggered (offset by r)
+  // so each new lantern's distance to its descended neighbour is exactly 2r.
+  descend(b, layout, mulberry32(2));
+  const r = layout.size;
+  const newTop = b.lanterns.filter(l => Math.abs(l.y - (layout.trellisY + r)) < 1e-6);
+  assert.ok(newTop.length > 0, 'expected freshly seeded top row');
+  for (const top of newTop) {
+    let nearest = Infinity;
+    for (const l of b.lanterns) {
+      if (l === top) continue;
+      const dx = l.x - top.x, dy = l.y - top.y;
+      const d = Math.hypot(dx, dy);
+      if (d < nearest) nearest = d;
+    }
+    // Closest lantern should be ~2r away (touching, not overlapping).
+    assert.ok(nearest >= 2 * r - 1e-6,
+      `new top row lantern overlaps a neighbour: nearest=${nearest}, expected >= ${2 * r}`);
+  }
 });

@@ -7,9 +7,9 @@ await Arcade.ready;
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const game = createGame();
 
 let layout = null;
+let game = null;
 let suspended = false;
 let dirty = true;
 let lastTime = 0;
@@ -29,7 +29,9 @@ function resize() {
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  layout = computeLayout(w, h, undefined, undefined, game.board.parityFlip);
+  layout = computeLayout(w, h);
+  // Lazy-init: the game needs a layout to seed its initial lantern positions.
+  if (!game) game = createGame({ layout });
   dirty = true;
 }
 
@@ -39,9 +41,6 @@ function frame(now) {
     lastTime = now;
     if (game.phase === PHASE.FLYING || game.phase === PHASE.DESCENDING) {
       step(game, dt, layout);
-      // Sync parityFlip AFTER step so the render sees the value that
-      // matches the current cell positions (descent flips it mid-step).
-      layout.parityFlip = game.board.parityFlip;
       dirty = true;
     }
     if (dirty) {
