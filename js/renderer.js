@@ -194,35 +194,55 @@ function drawLantern(ctx, cx, cy, size, colorKey) {
   ctx.stroke();
 }
 
+// Bamboo cradle: a short post + curved "U" that holds the loaded lantern
+// above the tip, fully visible. Rotates with aim. The static base sits at the
+// tip and does not rotate, so the launcher feels anchored on the river.
 function drawLauncher(ctx, layout, game) {
   const tip = launcherTip(layout);
-  const baseR = layout.size * 1.2;
-  const barrelLength = layout.size * 1.7;
-  const barrelWidth  = layout.size * 0.7;
+  const r = layout.size;
+  const postLen   = r * 0.5;
+  const cradleW   = r * 1.4;
+  const cradleDip = r * 0.32;
+  const baseR     = r * 0.55;
+  const stroke    = Math.max(2, r * 0.2);
 
   ctx.save();
   ctx.translate(tip.x, tip.y);
   ctx.rotate(game.aimAngle);
 
-  ctx.fillStyle = PALETTE.launcher;
-  ctx.strokeStyle = PALETTE.launcherRim;
-  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = PALETTE.launcher;
+  ctx.lineWidth = stroke;
   ctx.beginPath();
-  ctx.roundRect(-barrelWidth / 2, -barrelLength, barrelWidth, barrelLength + baseR * 0.4, 6);
-  ctx.fill();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -postLen);
   ctx.stroke();
 
-  drawLantern(ctx, 0, -barrelLength + layout.size, layout.size, game.queue.current);
+  // Cradle: quadratic curve dipping down at the middle so the lantern rests in it.
+  const sideY   = -postLen;
+  const middleY = -postLen + cradleDip;
+  const ctrlY   = sideY + 2 * cradleDip;
+  ctx.strokeStyle = PALETTE.launcherRim;
+  ctx.lineWidth = Math.max(2, r * 0.18);
+  ctx.beginPath();
+  ctx.moveTo(-cradleW / 2, sideY);
+  ctx.quadraticCurveTo(0, ctrlY, cradleW / 2, sideY);
+  ctx.stroke();
+
+  // Lantern sits in the cradle: its bottom touches the dip.
+  const lanternY = middleY - r;
+  drawLantern(ctx, 0, lanternY, r, game.queue.current);
+
   ctx.restore();
 
-  ctx.fillStyle = PALETTE.launcherRim;
+  // Static base anchored at tip — does not rotate.
+  ctx.fillStyle = PALETTE.launcher;
+  ctx.strokeStyle = PALETTE.launcherRim;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.arc(tip.x, tip.y, baseR, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = PALETTE.launcher;
-  ctx.beginPath();
-  ctx.arc(tip.x, tip.y, baseR * 0.78, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.stroke();
 }
 
 function drawShotQueue(ctx, layout, game) {

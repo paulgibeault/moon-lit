@@ -1,6 +1,6 @@
 import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
-  DESCENT_SHOTS, LAUNCHER_OFFSET_FROM_DEAD_LINE,
+  DESCENT_SHOTS, LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
@@ -151,7 +151,7 @@ function traceFromShot(layout, board, shot, distance) {
     const trellisHit = ny - r <= layout.trellisY;
     if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
       const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
-      const settled = settleIntoPocket(layout, board, hit, contact, vx, vy);
+      const settled = nudgeIntoPocket(layout, board, hit, contact, vx, vy);
       return { settled: true, x: settled.x, y: settled.y };
     }
     if (trellisHit) {
@@ -164,24 +164,23 @@ function traceFromShot(layout, board, shot, distance) {
   return { settled: false, x, y, vx, vy };
 }
 
-// After first contact with `hit`, slide along its surface in the direction of
-// motion until we touch a second lantern or the trellis. Returns the final
-// resting position so the projectile snuggles into the natural pocket
-// instead of stopping at the outside edge of the cluster.
-function settleIntoPocket(layout, board, hit, contact, vx, vy) {
+// After first contact, slide along the hit lantern's surface for a short arc
+// (SETTLE_NUDGE_RAD) in the direction of motion. If we encounter the trellis
+// or a second lantern within that arc, settle there — closes small slivers
+// without erasing the player's choice of placement. If nothing is found
+// within the arc, return the original contact point unchanged.
+function nudgeIntoPocket(layout, board, hit, contact, vx, vy) {
   const r = layout.size;
   const cx = hit.x, cy = hit.y;
   const ringR = 2 * r;
   const dx0 = contact.x - cx, dy0 = contact.y - cy;
   const theta0 = Math.atan2(dy0, dx0);
 
-  // Tangent direction at contact, in motion direction. Pick CCW (+1) or CW (-1).
   const tCCW = { x: -Math.sin(theta0), y: Math.cos(theta0) };
   const direction = (tCCW.x * vx + tCCW.y * vy) >= 0 ? +1 : -1;
 
   const stepRad = 0.04;
-  const maxSteps = Math.ceil(Math.PI / stepRad);
-  let last = { x: contact.x, y: contact.y };
+  const maxSteps = Math.ceil(SETTLE_NUDGE_RAD / stepRad);
 
   for (let i = 1; i <= maxSteps; i++) {
     const theta = theta0 + direction * i * stepRad;
@@ -189,8 +188,6 @@ function settleIntoPocket(layout, board, hit, contact, vx, vy) {
     const py = cy + ringR * Math.sin(theta);
 
     if (py - r <= layout.trellisY) {
-      // Refine to the exact rest position touching both `hit` and the trellis,
-      // so we don't end up <2r from the blocker due to step discretization.
       const dyT = (layout.trellisY + r) - cy;
       if (Math.abs(dyT) <= ringR) {
         const dxT = Math.sqrt(ringR * ringR - dyT * dyT);
@@ -200,15 +197,14 @@ function settleIntoPocket(layout, board, hit, contact, vx, vy) {
       return { x: px, y: layout.trellisY + r };
     }
     if (px - r < layout.wallLeft || px + r > layout.wallRight) {
-      return last;
+      return contact;
     }
     const other = nearestOverlapping(board, px, py, r, hit);
     if (other) {
-      return twoCircleContact(hit, other, r, last);
+      return twoCircleContact(hit, other, r, { x: px, y: py });
     }
-    last = { x: px, y: py };
   }
-  return last;
+  return contact;
 }
 
 function nearestOverlapping(board, x, y, r, exclude) {
@@ -225,7 +221,7 @@ function nearestOverlapping(board, x, y, r, exclude) {
   return best;
 }
 
-// Position a circle of radius r that touches both A and B (each at distance 2r).
+// Position a circle of radius r touching both A and B (each at distance 2r).
 // Two solutions exist when |AB| < 4r — pick whichever is closer to `hint`.
 function twoCircleContact(A, B, r, hint) {
   const dx = B.x - A.x, dy = B.y - A.y;
@@ -280,7 +276,7 @@ export function traceAimLine(layout, board, angle, maxBounces = 1) {
     const trellisHit = ny - r <= layout.trellisY;
     if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
       const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
-      const settled = settleIntoPocket(layout, board, hit, contact, vx, vy);
+      const settled = nudgeIntoPocket(layout, board, hit, contact, vx, vy);
       points.push({ x: contact.x, y: contact.y });
       return { points, settle: settled };
     }

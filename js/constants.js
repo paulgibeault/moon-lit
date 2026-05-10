@@ -51,6 +51,12 @@ export const LANE_LANTERNS = 1.0;
 // centers are within (2 * radius * this factor). >1 forgives small float gaps.
 export const ADJACENCY_TOLERANCE = 1.08;
 
+// On contact, the projectile may slide along the hit lantern's surface up to
+// this angular distance to find a snug 3-way pocket. Larger = more snapping
+// to neighbors (less skill expression). Smaller = more free-placement gaps.
+// 0 = pure stop-at-contact.
+export const SETTLE_NUDGE_RAD = Math.PI / 6;
+
 export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;
 export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
