@@ -1,6 +1,8 @@
 import { setAim, fire, launcherTip, PHASE } from './game.js';
 
-export function attachInput(canvas, getGame, getLayout, requestRender) {
+export function attachInput(canvas, getGame, getLayout, requestRender, callbacks = {}) {
+  const { onWinClick, onLossClick } = callbacks;
+
   const aimAt = (clientX, clientY) => {
     const layout = getLayout();
     if (!layout) return;
@@ -15,6 +17,11 @@ export function attachInput(canvas, getGame, getLayout, requestRender) {
 
   const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
 
+  const handleEndClick = (game) => {
+    if (game.phase === PHASE.WIN) onWinClick?.();
+    else if (game.phase === PHASE.GAME_OVER) onLossClick?.();
+  };
+
   const onMove = (e) => {
     if (isGameOver(getGame())) return;
     aimAt(e.clientX, e.clientY);
@@ -22,7 +29,7 @@ export function attachInput(canvas, getGame, getLayout, requestRender) {
   const onDown = (e) => {
     const game = getGame();
     if (isGameOver(game)) {
-      location.reload();
+      handleEndClick(game);
       return;
     }
     aimAt(e.clientX, e.clientY);
@@ -40,7 +47,7 @@ export function attachInput(canvas, getGame, getLayout, requestRender) {
     if (!t) return;
     const game = getGame();
     if (isGameOver(game)) {
-      location.reload();
+      handleEndClick(game);
       e.preventDefault();
       return;
     }

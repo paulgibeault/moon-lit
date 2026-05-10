@@ -1,6 +1,6 @@
 import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
-  DESCENT_SHOTS, LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD,
+  LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, levelConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
@@ -17,23 +17,30 @@ export const PHASE = Object.freeze({
 
 const DESCENT_DRIFT_SPEED = 240;  // px/sec; sized to a packed-row height (sqrt(3)*r)
 
-export function createGame({ seed = M3_DEFAULT_SEED, layout } = {}) {
-  const rng = mulberry32(seed);
+export function createGame({ seed, layout, level = 1 } = {}) {
+  const config = levelConfig(level);
+  const colors = COLOR_KEYS.slice(0, config.colors);
+  // Each level gets a distinct deterministic seed unless one is passed in.
+  const effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
+  const rng = mulberry32(effectiveSeed);
   const board = createBoard();
-  if (layout) populateInitial(board, layout, rng);
+  if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
   return {
     rng,
     board,
     phase: PHASE.AIMING,
     aimAngle: 0,
     queue: {
-      current: pick(rng, COLOR_KEYS),
-      next:    pick(rng, COLOR_KEYS),
+      current: pick(rng, colors),
+      next:    pick(rng, colors),
     },
     shot: null,
     score: 0,
     lastResolution: null,
-    shotsUntilDescent: DESCENT_SHOTS,
+    shotsUntilDescent: config.descentShots,
+    level,
+    colors,
+    descentShots: config.descentShots,
   };
 }
 
@@ -86,7 +93,7 @@ export function step(game, dtSec, layout) {
     }
     game.shotsUntilDescent--;
     if (game.shotsUntilDescent <= 0) {
-      const ok = descend(game.board, layout, game.rng);
+      const ok = descend(game.board, layout, game.rng, game.colors);
       if (!ok) {
         game.phase = PHASE.GAME_OVER;
         return true;
@@ -94,7 +101,7 @@ export function step(game, dtSec, layout) {
       const r = layout.size;
       game.board.descentAnimY = -(Math.sqrt(3) * r);
       game.phase = PHASE.DESCENDING;
-      game.shotsUntilDescent = DESCENT_SHOTS;
+      game.shotsUntilDescent = game.descentShots;
     } else {
       game.phase = PHASE.AIMING;
     }
@@ -118,7 +125,7 @@ function resolvePlacement(game, placed, layout) {
 
 function advanceQueue(game) {
   game.queue.current = game.queue.next;
-  game.queue.next    = pick(game.rng, COLOR_KEYS);
+  game.queue.next    = pick(game.rng, game.colors);
 }
 
 function projectileSpeed() {

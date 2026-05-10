@@ -22,7 +22,7 @@ export function createBoard() {
 // Place `rows` rows of lanterns close-packed against the trellis. Even rows
 // span `cols` lanterns, odd rows are offset by one radius (and one fewer
 // lantern, so the right edge stays aligned). Used for fresh-game seeding.
-export function populateInitial(board, layout, rng, rows = GRID.initialRows) {
+export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   for (let row = 0; row < rows; row++) {
@@ -31,7 +31,7 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows) {
     for (let i = 0; i < count; i++) {
       const x = layout.originX + (i * 2 + odd) * r;
       const y = layout.trellisY + r + row * rowH;
-      board.lanterns.push({ x, y, color: pick(rng, COLOR_KEYS) });
+      board.lanterns.push({ x, y, color: pick(rng, colors) });
     }
   }
 }
@@ -39,7 +39,7 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows) {
 // Shift every lantern down by one packed-row height and seed a fresh top row
 // touching the trellis. Returns false (treated as a loss by the caller) if
 // any lantern would be pushed past the dead line.
-export function descend(board, layout, rng) {
+export function descend(board, layout, rng, colors = COLOR_KEYS) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   const limitY = layout.deadLineY - r;
@@ -54,7 +54,7 @@ export function descend(board, layout, rng) {
   for (let i = 0; i < count; i++) {
     const x = layout.originX + (i * 2 + oddStagger) * r;
     const y = layout.trellisY + r;
-    board.lanterns.push({ x, y, color: pick(rng, COLOR_KEYS) });
+    board.lanterns.push({ x, y, color: pick(rng, colors) });
   }
   board.descentCount++;
   return true;

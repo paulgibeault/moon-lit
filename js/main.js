@@ -31,7 +31,16 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   layout = computeLayout(w, h);
   // Lazy-init: the game needs a layout to seed its initial lantern positions.
-  if (!game) game = createGame({ layout });
+  if (!game) game = createGame({ layout, level: 1 });
+  dirty = true;
+}
+
+function nextLevel() {
+  game = createGame({ layout, level: game.level + 1 });
+  dirty = true;
+}
+function restartLevel() {
+  game = createGame({ layout, level: game.level });
   dirty = true;
 }
 
@@ -59,7 +68,10 @@ Arcade.onStateReplaced(() => location.reload());
 Arcade.onSettingsChange(() => { settings = readSettings(); dirty = true; });
 
 window.addEventListener('resize', resize);
-attachInput(canvas, () => game, () => layout, () => { dirty = true; });
+attachInput(canvas, () => game, () => layout, () => { dirty = true; }, {
+  onWinClick: nextLevel,
+  onLossClick: restartLevel,
+});
 resize();
 requestAnimationFrame(frame);
 

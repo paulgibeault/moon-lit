@@ -82,7 +82,7 @@ function drawEndOverlay(ctx, layout, game) {
   ctx.fillRect(0, 0, viewW, viewH);
 
   const won = game.phase === PHASE.WIN;
-  const title = won ? 'Trellis cleared' : 'Trellis collapsed';
+  const title = won ? `Stage ${game.level} cleared` : 'Trellis collapsed';
   const titleColor = won ? PALETTE.moon : PALETTE.deadLine;
   const titlePx = Math.max(28, Math.round(layout.size * 1.6));
   const subPx   = Math.max(14, Math.round(layout.size * 0.7));
@@ -97,18 +97,24 @@ function drawEndOverlay(ctx, layout, game) {
   ctx.font = `500 ${subPx}px "Segoe UI", system-ui, sans-serif`;
   ctx.fillText(`Score ${game.score | 0}`, viewW / 2, viewH / 2 + subPx * 0.4);
   ctx.fillStyle = 'rgba(245, 233, 201, 0.7)';
-  ctx.fillText('click to restart', viewW / 2, viewH / 2 + subPx * 2.2);
+  const cta = won ? `click for stage ${game.level + 1}` : 'click to retry';
+  ctx.fillText(cta, viewW / 2, viewH / 2 + subPx * 2.2);
   ctx.restore();
 }
 
 function drawScore(ctx, layout, game) {
   const fontPx = Math.max(14, Math.round(layout.size * 0.95));
+  const subPx  = Math.max(11, Math.round(layout.size * 0.55));
   ctx.save();
   ctx.fillStyle = PALETTE.moon;
   ctx.font = `600 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(String(game.score | 0), 12, 8);
+
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.55)';
+  ctx.font = `500 ${subPx}px "Segoe UI", system-ui, sans-serif`;
+  ctx.fillText(`stage ${game.level}`, 12, 8 + fontPx + 2);
   ctx.restore();
 }
 

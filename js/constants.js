@@ -68,3 +68,23 @@ export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 export const M3_DEFAULT_SEED = 0x4D6F6F6E;   // 'Moon' in ASCII; placeholder until M7
 
 export const DESCENT_SHOTS = 6;
+
+// Beginner-friendly opening curve. Stage 1 should be clearable on a
+// cold-start playthrough with no instructions; later stages ramp toward
+// the historical defaults (6 colors, 5 rows, descent every 6 shots).
+// Stages beyond the table clamp to the last entry.
+export const LEVELS = Object.freeze([
+  { colors: 3, initialRows: 3, descentShots: 12 },
+  { colors: 3, initialRows: 4, descentShots: 10 },
+  { colors: 4, initialRows: 4, descentShots: 9  },
+  { colors: 4, initialRows: 5, descentShots: 8  },
+  { colors: 5, initialRows: 5, descentShots: 7  },
+  { colors: 6, initialRows: 5, descentShots: 6  },
+  { colors: 6, initialRows: 6, descentShots: 6  },
+  { colors: 6, initialRows: 7, descentShots: 6  },
+]);
+
+export function levelConfig(level) {
+  const idx = Math.max(0, Math.min(LEVELS.length - 1, (level | 0) - 1));
+  return LEVELS[idx];
+}
