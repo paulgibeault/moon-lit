@@ -1,12 +1,48 @@
+<div align="center">
+
+<img src="img/logo.png" alt="Moon Glow" width="200" />
+
 # Moon Glow
 
-A lantern-festival bubble shooter for [Paul's Arcade](https://paulgibeault.github.io/).
-Match six colors of paper lanterns to drop chains from a bamboo trellis.
-Festival mode adds rotating gravity (the moon moves), lanterns that ripen
-into embers over time, color-shifting bamboo walls, and a Twin Lanterns
-power-up.
+**A lantern-festival bubble shooter for [Paul's Arcade](https://paulgibeault.github.io/).**
 
-Status: M1 skeleton. No gameplay yet.
+<a href="https://paulgibeault.github.io/">
+  <img src="https://img.shields.io/badge/▶%20PLAY%20NOW-Paul's%20Arcade-0E1538?style=for-the-badge&labelColor=F4A261&color=0E1538" alt="Play Now on Paul's Arcade" height="60" />
+</a>
+
+</div>
+
+---
+
+## About
+
+> *"Float a lantern. Steady the moon. Don't let the trellis touch the water."*
+
+Moon Glow is a bubble shooter dressed in the quiet of a midsummer night
+festival. A boatman launches paper lanterns up into a bamboo trellis;
+match three or more of the same color to set them adrift on the breeze
+before the trellis creeps down to the water.
+
+The tone is *Animal Crossing at midnight*, not *Candy Crush* — restrained
+animation, generous negative space, and tension that comes from the slow
+descent of the trellis rather than kinetic chaos.
+
+## Modes
+
+| Mode | What it is |
+| ---- | ---------- |
+| **Classic** | A faithful homage to the original *Bust-A-Move*. Six colors, hex grid, ceiling drop. |
+| **Festival** | Eight chapters, each introducing one signature twist — rotating gravity, ripening embers, color-shifting bamboo walls, and the Twin Lanterns power-up. |
+| **Endless** | Procedural board, infinite descent, one score chase. |
+| **Daily** | One seed per day. Same board for everyone, one attempt. |
+| **Master** | Replay any cleared Festival chapter with *all* twists active at once. |
+
+## Features
+
+- Hex grid with snap-to-place physics and one-bounce aim assist
+- Shot-queue swap — the iconic *Bust-A-Move* "fix a bad shot" tap
+- Deterministic seeds: same inputs always produce the same board
+- Daily leaderboard via the [Paul's Arcade SDK](https://paulgibeault.github.io/)
 
 ## Run locally
 
