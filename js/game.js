@@ -1,6 +1,7 @@
 import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
-  LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, levelConfig,
+  LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, PROJECTILE_SPEED,
+  levelConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
@@ -129,7 +130,7 @@ function advanceQueue(game) {
 }
 
 function projectileSpeed() {
-  return 720;
+  return PROJECTILE_SPEED;
 }
 
 // ─── Trajectory: continuous step until settle ────────────────────────────

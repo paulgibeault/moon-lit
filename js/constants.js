@@ -61,7 +61,7 @@ export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;
 export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
 
-export const PROJECTILE_SPEED = 720;        // px/sec
+export const PROJECTILE_SPEED = 1400;       // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 
