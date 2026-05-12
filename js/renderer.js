@@ -2,8 +2,10 @@ import {
   COLORS, PALETTE, GRID,
   BOARD_MARGIN_TOP, BOARD_MARGIN_BOTTOM, BOARD_MARGIN_SIDE,
   TRELLIS_HEIGHT, DEAD_LINE_OFFSET, LANE_LANTERNS,
+  BURST_SCALE,
 } from './constants.js';
 import { launcherTip, traceAimLine, PHASE } from './game.js';
+import { getLanternSprite, getBurstSheet } from './assets.js';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -56,6 +58,7 @@ export function render(ctx, layout, game, settings) {
   drawLauncher(ctx, layout, game);
   drawShotQueue(ctx, layout, game);
   if (game.shot) drawProjectile(ctx, game.shot, layout);
+  drawBursts(ctx, layout, game, settings);
   drawScore(ctx, layout, game);
   drawDescentMeter(ctx, layout, game);
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
@@ -176,15 +179,60 @@ function drawDeadLine(ctx, layout) {
   ctx.setLineDash([]);
 }
 
+// Match-pop bursts: a flipbook drawn additively so the sheet's black
+// background drops out against the night sky. Reduced-motion skips the
+// animation; the pop+drop still register through the board state change.
+function drawBursts(ctx, layout, game, settings) {
+  if (!game.effects || !game.effects.length) return;
+  if (settings && settings.reducedMotion) return;
+  const sheet = getBurstSheet();
+  if (!sheet) return;
+  const frameSize = sheet.frameSize;
+  const totalFrames = sheet.frames;
+  const dw = layout.size * 2 * BURST_SCALE;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const fx of game.effects) {
+    const tt = fx.t / fx.life;
+    if (tt < 0 || tt >= 1) continue;
+    const frame = Math.min(totalFrames - 1, Math.floor(tt * totalFrames));
+    ctx.drawImage(
+      sheet.image,
+      frame * frameSize, 0, frameSize, frameSize,
+      fx.x - dw / 2, fx.y - dw / 2, dw, dw,
+    );
+  }
+  ctx.restore();
+}
+
 function drawBoard(ctx, layout, board) {
   const { size } = layout;
   const animY = board.descentAnimY || 0;
   for (const l of board.lanterns) {
-    drawLantern(ctx, l.x, l.y + animY, size, l.color);
+    let dx = l.x, dy = l.y;
+    if (l.anim) {
+      const t = l.anim.t < 0 ? 0 : l.anim.t > 1 ? 1 : l.anim.t;
+      const e = 1 - (1 - t) ** 3;  // ease-out cubic
+      dx = l.anim.fromX + (l.x - l.anim.fromX) * e;
+      dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
+    }
+    drawLantern(ctx, dx, dy + animY, size, l.color);
   }
 }
 
 function drawLantern(ctx, cx, cy, size, colorKey) {
+  const sprite = getLanternSprite(colorKey);
+  if (sprite) {
+    // Fit the painted silhouette so its width fills 2*size (the cell width).
+    // Height is proportional to the lamp's aspect ratio, so taller-than-wide
+    // sprites overflow the cell vertically and look closer together.
+    const { image, sx, sy, sw, sh } = sprite;
+    const dw = 2 * size;
+    const dh = dw * (sh / sw);
+    ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+    return;
+  }
+  // Fallback: procedural circle if the sprite failed to load.
   const r = size;
   const fill = COLORS[colorKey] || PALETTE.ember;
   const grad = ctx.createRadialGradient(cx, cy - r * 0.3, r * 0.1, cx, cy, r);

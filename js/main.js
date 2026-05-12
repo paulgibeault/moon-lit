@@ -1,9 +1,15 @@
 import { GAME_ID } from './constants.js';
-import { createGame, step, PHASE } from './game.js';
+import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { computeLayout, render } from './renderer.js';
 import { attachInput } from './input.js';
+import { loadLanterns } from './assets.js';
 
 await Arcade.ready;
+try {
+  await loadLanterns();
+} catch (e) {
+  console.warn(`[${GAME_ID}] lantern sprites failed to load — falling back to procedural`, e);
+}
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -48,7 +54,11 @@ function frame(now) {
   if (!suspended && layout) {
     const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
-    if (game.phase === PHASE.FLYING || game.phase === PHASE.DESCENDING) {
+    const phaseAnimating =
+      game.phase === PHASE.FLYING ||
+      game.phase === PHASE.DESCENDING ||
+      game.phase === PHASE.SETTLING;
+    if (phaseAnimating || hasActiveEffects(game)) {
       step(game, dt, layout);
       dirty = true;
     }

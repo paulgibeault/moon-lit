@@ -4,7 +4,7 @@ export const COLORS = Object.freeze({
   red:    '#D9434A',
   orange: '#E89B4F',
   yellow: '#F2D26A',
-  jade:   '#7AB89C',
+  green:  '#7AB89C',
   indigo: '#5A7AC9',
   white:  '#F4ECDA',
 });
@@ -49,7 +49,19 @@ export const LANE_LANTERNS = 1.0;
 
 // Two lanterns are treated as adjacent (for matching / anchoring) when their
 // centers are within (2 * radius * this factor). >1 forgives small float gaps.
-export const ADJACENCY_TOLERANCE = 1.08;
+// Tight value (≈4% slack) means "physically touching" — settle drift past
+// this threshold breaks a chain on purpose.
+export const ADJACENCY_TOLERANCE = 1.04;
+
+// Local settle: when a new lantern lands, its 2-hop neighborhood is allowed
+// to slide to absorb the impact. Top-row lanterns are pinned (anchored to
+// the bamboo trellis). The solver is positional Jacobi relaxation.
+export const SETTLE_HOPS = 2;
+export const SETTLE_ITERATIONS = 12;
+export const SETTLE_MIN_PEN_PX = 0.5;
+// How long the visual slide takes (seconds). Resolution (pops/drops) runs
+// immediately against post-settle positions; this is purely cosmetic.
+export const SETTLE_ANIM_SEC = 0.12;
 
 // On contact, the projectile may slide along the hit lantern's surface up to
 // this angular distance to find a snug 3-way pocket. Larger = more snapping
@@ -64,6 +76,14 @@ export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
 export const PROJECTILE_SPEED = 1400;       // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
+
+// Match-pop burst: a flipbook played at each popped lantern using additive
+// blending. Kept short on purpose — the goal is a snappy hit, not a cutscene.
+export const BURST_FRAMES = 12;
+export const BURST_DURATION_SEC = 0.28;
+// Scale of the burst sprite relative to the lantern diameter. >1 lets the
+// flame overflow the cell so the hit reads bigger than the lantern itself.
+export const BURST_SCALE = 2.0;
 
 export const M3_DEFAULT_SEED = 0x4D6F6F6E;   // 'Moon' in ASCII; placeholder until M7
 

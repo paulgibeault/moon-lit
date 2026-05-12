@@ -1,11 +1,13 @@
 import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
   LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, PROJECTILE_SPEED,
+  SETTLE_ANIM_SEC, BURST_DURATION_SEC,
   levelConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
 import { popMatches, dropFloating, popScore, dropScore } from './match.js';
+import { settleAround, tickAnims } from './physics.js';
 
 export const PHASE = Object.freeze({
   AIMING: 'aiming',
@@ -37,8 +39,10 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     },
     shot: null,
     score: 0,
+    effects: [],
     lastResolution: null,
     shotsUntilDescent: config.descentShots,
+    pendingDescent: false,
     level,
     colors,
     descentShots: config.descentShots,
@@ -64,7 +68,22 @@ export function fire(game, layout) {
   game.phase = PHASE.FLYING;
 }
 
+export function hasActiveEffects(game) {
+  return game.effects && game.effects.length > 0;
+}
+
+function tickEffects(game, dtSec) {
+  if (!game.effects || !game.effects.length) return;
+  const kept = [];
+  for (const fx of game.effects) {
+    fx.t += dtSec;
+    if (fx.t < fx.life) kept.push(fx);
+  }
+  game.effects = kept;
+}
+
 export function step(game, dtSec, layout) {
+  tickEffects(game, dtSec);
   if (game.phase === PHASE.DESCENDING) {
     const stepPx = DESCENT_DRIFT_SPEED * dtSec;
     game.board.descentAnimY = Math.min(0, game.board.descentAnimY + stepPx);
@@ -77,6 +96,12 @@ export function step(game, dtSec, layout) {
     return true;
   }
 
+  if (game.phase === PHASE.SETTLING) {
+    const stillActive = tickAnims(game.board, dtSec, SETTLE_ANIM_SEC);
+    if (!stillActive) finishSettle(game, layout);
+    return true;
+  }
+
   if (game.phase !== PHASE.FLYING || !game.shot) return false;
   const speed = projectileSpeed();
   const distance = speed * dtSec;
@@ -85,6 +110,8 @@ export function step(game, dtSec, layout) {
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
     addLantern(game.board, placed.x, placed.y, placed.color);
+    const newLantern = game.board.lanterns[game.board.lanterns.length - 1];
+    settleAround(game.board, layout, newLantern);
     resolvePlacement(game, placed, layout);
     game.shot = null;
     advanceQueue(game);
@@ -93,18 +120,12 @@ export function step(game, dtSec, layout) {
       return true;
     }
     game.shotsUntilDescent--;
-    if (game.shotsUntilDescent <= 0) {
-      const ok = descend(game.board, layout, game.rng, game.colors);
-      if (!ok) {
-        game.phase = PHASE.GAME_OVER;
-        return true;
-      }
-      const r = layout.size;
-      game.board.descentAnimY = -(Math.sqrt(3) * r);
-      game.phase = PHASE.DESCENDING;
-      game.shotsUntilDescent = game.descentShots;
+    game.pendingDescent = game.shotsUntilDescent <= 0;
+    const anyAnim = game.board.lanterns.some(l => l.anim);
+    if (anyAnim) {
+      game.phase = PHASE.SETTLING;
     } else {
-      game.phase = PHASE.AIMING;
+      finishSettle(game, layout);
     }
   } else {
     game.shot.x = trace.x;
@@ -115,13 +136,36 @@ export function step(game, dtSec, layout) {
   return true;
 }
 
+function finishSettle(game, layout) {
+  if (game.pendingDescent) {
+    game.pendingDescent = false;
+    const ok = descend(game.board, layout, game.rng, game.colors);
+    if (!ok) {
+      game.phase = PHASE.GAME_OVER;
+      return;
+    }
+    const r = layout.size;
+    game.board.descentAnimY = -(Math.sqrt(3) * r);
+    game.phase = PHASE.DESCENDING;
+    game.shotsUntilDescent = game.descentShots;
+  } else {
+    game.phase = PHASE.AIMING;
+  }
+}
+
 function resolvePlacement(game, placed, layout) {
   const lantern = game.board.lanterns[game.board.lanterns.length - 1];
   const popped = popMatches(game.board, lantern, layout);
   const dropped = dropFloating(game.board, layout);
   const gained = popScore(popped) + dropScore(dropped);
   game.score += gained;
+  for (const l of popped) spawnBurst(game, l.x, l.y);
+  for (const l of dropped) spawnBurst(game, l.x, l.y);
   game.lastResolution = { popped, dropped, gained };
+}
+
+function spawnBurst(game, x, y) {
+  game.effects.push({ x, y, t: 0, life: BURST_DURATION_SEC });
 }
 
 function advanceQueue(game) {
