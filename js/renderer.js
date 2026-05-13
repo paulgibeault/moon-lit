@@ -459,14 +459,16 @@ function drawFrame(ctx, viewW, viewH) {
 
 function drawDeadLine(ctx, layout) {
   const { viewW, deadLineY } = layout;
-  ctx.strokeStyle = PALETTE.deadLine;
-  ctx.setLineDash([6, 8]);
-  ctx.lineWidth = 1.5;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(245, 233, 201, 0.12)';
+  ctx.setLineDash([2, 10]);
+  ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, deadLineY);
   ctx.lineTo(viewW, deadLineY);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.restore();
 }
 
 // Match-pop bursts: a flipbook drawn additively so the sheet's black

@@ -1,7 +1,16 @@
 import { setAim, fire, launcherTip, PHASE } from './game.js';
 
+// Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
+// sits in a ~40px strip above the iframe — taps that just barely miss those
+// buttons land at the very top of the canvas and used to fire a lantern.
+// Aiming via mousemove/touchmove is still allowed inside the zone so drag-up
+// gestures keep working; only the commit-tap is suppressed here.
+const UI_SAFE_TOP_PX = 56;
+
 export function attachInput(canvas, getGame, getLayout, requestRender, callbacks = {}) {
   const { onWinClick, onLossClick } = callbacks;
+
+  const canvasY = (clientY) => clientY - canvas.getBoundingClientRect().top;
 
   const aimAt = (clientX, clientY) => {
     const layout = getLayout();
@@ -16,6 +25,7 @@ export function attachInput(canvas, getGame, getLayout, requestRender, callbacks
   };
 
   const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
+  const inSafeZone = (clientY) => canvasY(clientY) < UI_SAFE_TOP_PX;
 
   const handleEndClick = (game) => {
     if (game.phase === PHASE.WIN) onWinClick?.();
@@ -32,6 +42,7 @@ export function attachInput(canvas, getGame, getLayout, requestRender, callbacks
       handleEndClick(game);
       return;
     }
+    if (inSafeZone(e.clientY)) return;
     aimAt(e.clientX, e.clientY);
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
@@ -51,6 +62,7 @@ export function attachInput(canvas, getGame, getLayout, requestRender, callbacks
       e.preventDefault();
       return;
     }
+    if (inSafeZone(t.clientY)) return;
     aimAt(t.clientX, t.clientY);
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
