@@ -2,6 +2,8 @@ import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
   LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, PROJECTILE_SPEED,
   SETTLE_ANIM_SEC, BURST_DURATION_SEC,
+  SHOT_SWAY_FREQ_MIN, SHOT_SWAY_FREQ_MAX,
+  SHOT_SWAY_AMP_MIN, SHOT_SWAY_AMP_MAX,
   levelConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
@@ -65,12 +67,20 @@ export function fire(game, layout) {
   if (game.phase !== PHASE.AIMING) return;
   const origin = launcherTip(layout);
   const angle = game.aimAngle;
+  const swayFreq = SHOT_SWAY_FREQ_MIN +
+    game.rng() * (SHOT_SWAY_FREQ_MAX - SHOT_SWAY_FREQ_MIN);
+  const swayAmp = SHOT_SWAY_AMP_MIN +
+    game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN);
   game.shot = {
     x: origin.x,
     y: origin.y,
     vx: Math.sin(angle),
     vy: -Math.cos(angle),
     color: game.queue.current,
+    flightT: 0,
+    swayPhase: game.rng() * Math.PI * 2,
+    swayFreq,
+    swayAmp,
   };
   game.phase = PHASE.FLYING;
 }
@@ -134,8 +144,7 @@ export function step(game, dtSec, layout) {
 
   if (game.phase !== PHASE.FLYING || !game.shot) return false;
   const speed = projectileSpeed();
-  const distance = speed * dtSec;
-  const trace = traceFromShot(layout, game.board, game.shot, distance);
+  const trace = traceFromShot(layout, game.board, game.shot, speed * dtSec, dtSec);
 
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
@@ -163,6 +172,7 @@ export function step(game, dtSec, layout) {
     game.shot.y = trace.y;
     game.shot.vx = trace.vx;
     game.shot.vy = trace.vy;
+    game.shot.flightT = trace.flightT;
   }
   return true;
 }
@@ -294,17 +304,29 @@ function projectileSpeed() {
 
 // ─── Trajectory: continuous step until settle ────────────────────────────
 
-function traceFromShot(layout, board, shot, distance) {
+function traceFromShot(layout, board, shot, distance, dtSec) {
   const r = layout.size;
   const stepSize = Math.max(1, r * 0.25);
 
   let x = shot.x, y = shot.y, vx = shot.vx, vy = shot.vy;
   let remaining = distance;
+  let flightT = shot.flightT || 0;
+  // Apportion elapsed wall-time across sub-steps so sway phase advances
+  // smoothly rather than jumping at the end of the frame.
+  const dtPerUnit = remaining > 0 && dtSec > 0 ? dtSec / remaining : 0;
 
   while (remaining > 0) {
     const s = Math.min(stepSize, remaining);
-    let nx = x + vx * s;
-    let ny = y + vy * s;
+    flightT += s * dtPerUnit;
+    // Perpendicular sway: sine wave normal to the base direction. Doesn't
+    // change the base direction itself, so wall bounces stay symmetric and
+    // the aim line remains an honest hint within a small drift envelope.
+    const swayMag = (shot.swayAmp || 0) *
+      Math.sin(2 * Math.PI * (shot.swayFreq || 0) * flightT + (shot.swayPhase || 0));
+    const dx = vx + (-vy) * swayMag;
+    const dy = vy + ( vx) * swayMag;
+    let nx = x + dx * s;
+    let ny = y + dy * s;
 
     if (nx - r < layout.wallLeft) {
       nx = layout.wallLeft + r + ((layout.wallLeft + r) - nx);
@@ -328,7 +350,7 @@ function traceFromShot(layout, board, shot, distance) {
     x = nx; y = ny;
     remaining -= s;
   }
-  return { settled: false, x, y, vx, vy };
+  return { settled: false, x, y, vx, vy, flightT };
 }
 
 // After first contact, slide along the hit lantern's surface for a short arc

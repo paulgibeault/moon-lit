@@ -573,9 +573,15 @@ function drawLauncher(ctx, layout, game) {
   ctx.quadraticCurveTo(0, ctrlY, cradleW / 2, sideY);
   ctx.stroke();
 
-  // Lantern sits in the cradle: its bottom touches the dip.
+  // Lantern sits in the cradle: its bottom touches the dip. Counter-rotate
+  // so the lantern stays visually upright while the cradle tilts with aim —
+  // a real paper lantern hangs/sits vertically regardless of the post angle.
   const lanternY = middleY - r;
-  drawLantern(ctx, 0, lanternY, r, game.queue.current);
+  ctx.save();
+  ctx.translate(0, lanternY);
+  ctx.rotate(-game.aimAngle);
+  drawLantern(ctx, 0, 0, r, game.queue.current);
+  ctx.restore();
 
   ctx.restore();
 

@@ -73,9 +73,19 @@ export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;
 export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
 
-export const PROJECTILE_SPEED = 1400;       // px/sec
+export const PROJECTILE_SPEED = 620;        // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
+
+// Per-shot lateral drift while a lantern rises. Sway is a sine wave applied
+// perpendicular to the base direction; each shot pulls a fresh phase, freq,
+// and amplitude from the seeded RNG so successive lanterns don't trace the
+// same path. Amplitude is a fraction of the base direction unit vector —
+// keep small so the aim line stays a reliable hint.
+export const SHOT_SWAY_FREQ_MIN = 0.7;       // Hz
+export const SHOT_SWAY_FREQ_MAX = 1.4;
+export const SHOT_SWAY_AMP_MIN = 0.06;
+export const SHOT_SWAY_AMP_MAX = 0.14;
 
 // Match-pop burst: a flipbook played at each popped lantern using additive
 // blending. Kept short on purpose — the goal is a snappy hit, not a cutscene.
