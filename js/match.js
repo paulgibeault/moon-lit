@@ -83,13 +83,3 @@ export function dropFloating(board, layout) {
   return dropped;
 }
 
-// Score: pops are flat per lantern; drops scale with cluster size to
-// reward setup play. drop = 20 * n total ⇒ per-lantern bonus rises with n.
-export const POP_POINTS = 10;
-export function popScore(popped) {
-  return popped.length * POP_POINTS;
-}
-export function dropScore(dropped) {
-  const n = dropped.length;
-  return 20 * n * n;
-}

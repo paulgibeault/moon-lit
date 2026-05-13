@@ -6,7 +6,8 @@ import {
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
-import { popMatches, dropFloating, popScore, dropScore } from './match.js';
+import { popMatches, dropFloating } from './match.js';
+import { resolveShot, clearBonus, crossedMilestone } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
 
 export const PHASE = Object.freeze({
@@ -40,7 +41,13 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     shot: null,
     score: 0,
     effects: [],
+    floats: [],
     lastResolution: null,
+    breakdown: { pop: 0, cluster: 0, drop: 0, chain: 0, combo: 0, clear: 0 },
+    counts: { popped: 0, dropped: 0 },
+    combo: 0,
+    bestCombo: 0,
+    moonPulse: { t: 0, life: 0 },
     shotsUntilDescent: config.descentShots,
     pendingDescent: false,
     level,
@@ -69,17 +76,32 @@ export function fire(game, layout) {
 }
 
 export function hasActiveEffects(game) {
-  return game.effects && game.effects.length > 0;
+  if (game.effects && game.effects.length > 0) return true;
+  if (game.floats && game.floats.length > 0) return true;
+  if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) return true;
+  return false;
 }
 
 function tickEffects(game, dtSec) {
-  if (!game.effects || !game.effects.length) return;
-  const kept = [];
-  for (const fx of game.effects) {
-    fx.t += dtSec;
-    if (fx.t < fx.life) kept.push(fx);
+  if (game.effects && game.effects.length) {
+    const kept = [];
+    for (const fx of game.effects) {
+      fx.t += dtSec;
+      if (fx.t < fx.life) kept.push(fx);
+    }
+    game.effects = kept;
   }
-  game.effects = kept;
+  if (game.floats && game.floats.length) {
+    const kept = [];
+    for (const f of game.floats) {
+      f.t += dtSec;
+      if (f.t < f.life) kept.push(f);
+    }
+    game.floats = kept;
+  }
+  if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) {
+    game.moonPulse.t += dtSec;
+  }
 }
 
 export function step(game, dtSec, layout) {
@@ -90,7 +112,15 @@ export function step(game, dtSec, layout) {
     if (game.board.descentAnimY >= 0) {
       game.board.descentAnimY = 0;
       const postDrop = dropFloating(game.board, layout);
-      if (postDrop.length) game.score += dropScore(postDrop);
+      if (postDrop.length) {
+        // A descent that knocks lanterns past the trellis edge is a quiet
+        // gift, not a player-driven combo: score it as a drop without
+        // touching the combo counter or chain multiplier.
+        const gain = postDrop.length * postDrop.length * 20;
+        game.score += gain;
+        game.breakdown.drop += gain;
+        for (const l of postDrop) spawnBurst(game, l.x, l.y);
+      }
       game.phase = PHASE.AIMING;
     }
     return true;
@@ -116,6 +146,9 @@ export function step(game, dtSec, layout) {
     game.shot = null;
     advanceQueue(game);
     if (isCleared(game.board)) {
+      const bonus = clearBonus(game.shotsUntilDescent);
+      game.score += bonus;
+      game.breakdown.clear += bonus;
       game.phase = PHASE.WIN;
       return true;
     }
@@ -157,15 +190,92 @@ function resolvePlacement(game, placed, layout) {
   const lantern = game.board.lanterns[game.board.lanterns.length - 1];
   const popped = popMatches(game.board, lantern, layout);
   const dropped = dropFloating(game.board, layout);
-  const gained = popScore(popped) + dropScore(dropped);
-  game.score += gained;
+  const breakdown = resolveShot(popped, dropped, game.combo);
+
+  const prevScore = game.score;
+  game.score += breakdown.total;
+  game.combo = breakdown.combo;
+  if (game.combo > game.bestCombo) game.bestCombo = game.combo;
+  game.breakdown.pop     += breakdown.pop;
+  game.breakdown.cluster += breakdown.cluster;
+  game.breakdown.drop    += breakdown.drop;
+  game.breakdown.chain   += breakdown.chainGain;
+  game.breakdown.combo   += breakdown.comboBonus;
+  game.counts.popped     += popped.length;
+  game.counts.dropped    += dropped.length;
+
   for (const l of popped) spawnBurst(game, l.x, l.y);
   for (const l of dropped) spawnBurst(game, l.x, l.y);
-  game.lastResolution = { popped, dropped, gained };
+
+  emitFloats(game, popped, dropped, breakdown, layout);
+
+  if (crossedMilestone(prevScore, game.score)) pulseMoon(game);
+
+  game.lastResolution = { popped, dropped, breakdown };
 }
 
 function spawnBurst(game, x, y) {
   game.effects.push({ x, y, t: 0, life: BURST_DURATION_SEC });
+}
+
+// Emit short-lived "spark" labels that drift up from the popped lanterns
+// (and a centroid label for drops + chain/combo callouts). The renderer
+// owns presentation; here we only stamp positions, kinds, and lifetimes.
+function emitFloats(game, popped, dropped, breakdown, layout) {
+  const r = layout.size;
+  if (popped.length > 0) {
+    const per = breakdown.pop / popped.length;
+    for (const l of popped) {
+      game.floats.push({
+        kind: 'pop', text: `+${per | 0}`,
+        x: l.x, y: l.y - r * 0.4,
+        t: 0, life: 1.1,
+      });
+    }
+    if (breakdown.cluster > 0) {
+      const centroid = centroidOf(popped);
+      game.floats.push({
+        kind: 'cluster', text: `cluster +${breakdown.cluster}`,
+        x: centroid.x, y: centroid.y - r * 1.2,
+        t: 0, life: 1.4,
+      });
+    }
+  }
+  if (dropped.length > 0) {
+    const centroid = centroidOf(dropped);
+    game.floats.push({
+      kind: 'drop', text: `drop +${breakdown.drop}`,
+      x: centroid.x, y: centroid.y - r * 0.6,
+      t: 0, life: 1.6,
+    });
+  }
+  if (breakdown.chainGain > 0) {
+    const centroid = centroidOf(popped.concat(dropped));
+    game.floats.push({
+      kind: 'chain', text: `chain ×${breakdown.chainMult}`,
+      x: centroid.x, y: centroid.y - r * 2.0,
+      t: 0, life: 1.7,
+    });
+  }
+  if (breakdown.combo >= 2 && breakdown.comboBonus > 0) {
+    const centroid = centroidOf(popped.length ? popped : dropped);
+    game.floats.push({
+      kind: 'combo', text: `combo ×${breakdown.combo}`,
+      x: centroid.x, y: centroid.y - r * 2.6,
+      t: 0, life: 1.8,
+    });
+  }
+}
+
+function centroidOf(items) {
+  if (!items.length) return { x: 0, y: 0 };
+  let sx = 0, sy = 0;
+  for (const it of items) { sx += it.x; sy += it.y; }
+  return { x: sx / items.length, y: sy / items.length };
+}
+
+function pulseMoon(game) {
+  game.moonPulse = { t: 0, life: 1.4 };
 }
 
 function advanceQueue(game) {

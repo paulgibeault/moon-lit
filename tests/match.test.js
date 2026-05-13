@@ -1,10 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBoard } from '../js/board.js';
-import {
-  findCluster, popMatches, dropFloating,
-  popScore, dropScore, POP_POINTS,
-} from '../js/match.js';
+import { findCluster, popMatches, dropFloating } from '../js/match.js';
+import { popScore, dropScore, POP_POINTS } from '../js/scoring.js';
 
 const SQRT3 = Math.sqrt(3);
 

@@ -7,6 +7,20 @@ import {
 import { launcherTip, traceAimLine, PHASE } from './game.js';
 import { getLanternSprite, getBurstSheet } from './assets.js';
 
+// View-only state that lives outside the game model: the HUD score counter
+// tweens from `displayScore` toward `game.score` so a big swing reads as a
+// satisfying climb instead of a jump. Reset when the launcher imports a save.
+const hudState = {
+  displayScore: 0,
+  bestFlash: 0,        // 0..1, fades after a new-best moment
+  prevBest: 0,
+};
+export function resetHudState(score = 0, best = 0) {
+  hudState.displayScore = score;
+  hudState.bestFlash = 0;
+  hudState.prevBest = best;
+}
+
 const SQRT3 = Math.sqrt(3);
 
 // Build a viewport-derived layout. Lantern radius is sized to fit `cols`
@@ -46,9 +60,11 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
 }
 
 export function render(ctx, layout, game, settings) {
+  tweenHud(game, settings);
+
   const { viewW, viewH } = layout;
   drawBackground(ctx, viewW, viewH);
-  drawMoon(ctx, viewW, viewH, settings.reducedMotion);
+  drawMoon(ctx, viewW, viewH, game, settings);
   drawTrellis(ctx, layout);
   drawBoard(ctx, layout, game.board);
   drawDeadLine(ctx, layout);
@@ -59,65 +75,303 @@ export function render(ctx, layout, game, settings) {
   drawShotQueue(ctx, layout, game);
   if (game.shot) drawProjectile(ctx, game.shot, layout);
   drawBursts(ctx, layout, game, settings);
-  drawScore(ctx, layout, game);
-  drawDescentMeter(ctx, layout, game);
+  drawFloats(ctx, layout, game, settings);
+  drawScoreHud(ctx, layout, game, settings);
+  drawDescentMeter(ctx, layout, game, settings);
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
-    drawEndOverlay(ctx, layout, game);
+    drawEndOverlay(ctx, layout, game, settings);
   }
 }
 
-function drawDescentMeter(ctx, layout, game) {
+// Cubic ease-out — every animation in this file uses it for consistency
+// with the game's "no bounce, no overshoot" feel.
+function easeOut(t) { return 1 - (1 - t) ** 3; }
+
+// Closes ~12% of the gap each frame at 60fps; instant under reducedMotion.
+// Good enough for a counter — no need for a real spring.
+function tweenHud(game, settings) {
+  if (settings.reducedMotion) {
+    hudState.displayScore = game.score;
+  } else if (hudState.displayScore !== game.score) {
+    const diff = game.score - hudState.displayScore;
+    const stepRaw = diff * 0.12;
+    const step = stepRaw === 0 ? 0
+      : (Math.abs(stepRaw) < 1 ? Math.sign(diff) : stepRaw);
+    hudState.displayScore += step;
+    if ((diff > 0 && hudState.displayScore > game.score) ||
+        (diff < 0 && hudState.displayScore < game.score)) {
+      hudState.displayScore = game.score;
+    }
+  }
+  if (settings.bestScore != null && settings.bestScore > hudState.prevBest) {
+    hudState.bestFlash = 1;
+    hudState.prevBest = settings.bestScore;
+  }
+  if (hudState.bestFlash > 0) {
+    hudState.bestFlash = settings.reducedMotion ? 0 : Math.max(0, hudState.bestFlash - 0.012);
+  }
+}
+
+function drawDescentMeter(ctx, layout, game, settings) {
   if (game.shotsUntilDescent == null) return;
-  const fontPx = Math.max(11, Math.round(layout.size * 0.55));
+  const fontPx = hudPx(layout, 0.55, 11, settings);
+  // Lives opposite the score panel: score on the dominant side, descent
+  // meter on the other corner.
+  const handed = settings.handedness === 'left';
+  const x = handed ? 12 : layout.viewW - 12;
   ctx.save();
   ctx.fillStyle = 'rgba(245, 233, 201, 0.55)';
   ctx.font = `500 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = 'right';
+  ctx.textAlign = handed ? 'left' : 'right';
   ctx.textBaseline = 'top';
-  ctx.fillText(`descent in ${game.shotsUntilDescent}`, layout.viewW - 12, 10);
+  ctx.fillText(`descent in ${game.shotsUntilDescent}`, x, 10);
   ctx.restore();
 }
 
-function drawEndOverlay(ctx, layout, game) {
+// Stage-clear / game-over panel. Shows a tween-counted score, the per-component
+// breakdown, the player name, and a "new best" ribbon if the score is fresh.
+function drawEndOverlay(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
+  const won = game.phase === PHASE.WIN;
+  const fs = Math.max(0.5, settings.fontScale || 1);
+
   ctx.save();
-  ctx.fillStyle = 'rgba(10, 15, 34, 0.78)';
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.82)';
   ctx.fillRect(0, 0, viewW, viewH);
 
-  const won = game.phase === PHASE.WIN;
-  const title = won ? `Stage ${game.level} cleared` : 'Trellis collapsed';
-  const titleColor = won ? PALETTE.moon : PALETTE.deadLine;
-  const titlePx = Math.max(28, Math.round(layout.size * 1.6));
-  const subPx   = Math.max(14, Math.round(layout.size * 0.7));
+  const titlePx = Math.max(26, Math.round(layout.size * 1.45 * fs));
+  const scorePx = Math.max(36, Math.round(layout.size * 2.2  * fs));
+  const linePx  = Math.max(12, Math.round(layout.size * 0.55 * fs));
+  const ctaPx   = Math.max(12, Math.round(layout.size * 0.6  * fs));
+
+  const cx = viewW / 2;
+  let y = viewH * 0.30;
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = titleColor;
-  ctx.font = `700 ${titlePx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(title, viewW / 2, viewH / 2 - titlePx * 0.6);
+  ctx.fillStyle = won ? PALETTE.moon : PALETTE.deadLine;
+  ctx.font = `600 ${titlePx}px "Georgia", "Times New Roman", serif`;
+  ctx.fillText(won ? `Stage ${game.level} cleared` : 'The trellis touched the water', cx, y);
+  y += titlePx * 1.2;
 
+  if (settings.playerName) {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.6)';
+    ctx.font = `italic 400 ${linePx * 1.2}px "Georgia", serif`;
+    ctx.fillText(settings.playerName, cx, y);
+    y += linePx * 1.6;
+  } else {
+    y += linePx * 0.4;
+  }
+
+  // The headline number — counts up via the tween in tweenHud().
   ctx.fillStyle = PALETTE.moon;
-  ctx.font = `500 ${subPx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(`Score ${game.score | 0}`, viewW / 2, viewH / 2 + subPx * 0.4);
-  ctx.fillStyle = 'rgba(245, 233, 201, 0.7)';
-  const cta = won ? `click for stage ${game.level + 1}` : 'click to retry';
-  ctx.fillText(cta, viewW / 2, viewH / 2 + subPx * 2.2);
+  ctx.font = `300 ${scorePx}px "Georgia", serif`;
+  ctx.fillText(String(hudState.displayScore | 0), cx, y);
+  y += scorePx * 0.85;
+
+  // Breakdown line: only shows non-zero components, joined by interpunct.
+  const parts = [];
+  const b = game.breakdown || {};
+  if (b.pop)     parts.push(`pops ${b.pop}`);
+  if (b.cluster) parts.push(`clusters ${b.cluster}`);
+  if (b.drop)    parts.push(`drops ${b.drop}`);
+  if (b.chain)   parts.push(`chains ${b.chain}`);
+  if (b.combo)   parts.push(`combos ${b.combo}`);
+  if (b.clear)   parts.push(`clear ${b.clear}`);
+  if (parts.length) {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.65)';
+    ctx.font = `400 ${linePx}px "Georgia", serif`;
+    ctx.fillText(parts.join(' · '), cx, y);
+    y += linePx * 1.6;
+  }
+
+  // Best line. If we just set a new best, the ribbon glows in moonHalo orange.
+  const isNewBest = settings.bestScore != null && game.score >= settings.bestScore && game.score > 0;
+  ctx.font = `italic 400 ${linePx * 1.05}px "Georgia", serif`;
+  if (isNewBest) {
+    ctx.fillStyle = PALETTE.moonHalo;
+    ctx.fillText(`✦ new personal best ✦`, cx, y);
+  } else if (settings.bestScore) {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.55)';
+    ctx.fillText(`best ${settings.bestScore}`, cx, y);
+  }
+  y += linePx * 2.2;
+
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.65)';
+  ctx.font = `400 ${ctaPx}px "Georgia", serif`;
+  const cta = won ? `tap for stage ${game.level + 1}` : 'tap to try again';
+  ctx.fillText(cta, cx, y);
   ctx.restore();
 }
 
-function drawScore(ctx, layout, game) {
-  const fontPx = Math.max(14, Math.round(layout.size * 0.95));
-  const subPx  = Math.max(11, Math.round(layout.size * 0.55));
-  ctx.save();
-  ctx.fillStyle = PALETTE.moon;
-  ctx.font = `600 ${fontPx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(String(game.score | 0), 12, 8);
+// Score panel anchored to the left (or right under handedness=left). Shows:
+//   ☾ <score>          — moon glyph + tween-counted total
+//     stage N · best M  — small subtext
+//     ●●○○○            — combo dots, fill from cream to ember as combo grows
+function drawScoreHud(ctx, layout, game, settings) {
+  const handed = settings.handedness === 'left';
+  const fontPx = hudPx(layout, 0.95, 14, settings);
+  const subPx  = hudPx(layout, 0.55, 11, settings);
+  const x      = handed ? layout.viewW - 12 : 12;
+  const align  = handed ? 'right' : 'left';
+  const glyphPad = subPx * 0.7;
 
+  ctx.save();
+  ctx.textAlign = align;
+  ctx.textBaseline = 'top';
+
+  // Subtle moon glyph next to the score; on the left side under default
+  // handedness, on the right side under handedness=left.
+  const moonR = fontPx * 0.32;
+  const moonY = 8 + fontPx * 0.5;
+  const moonX = handed
+    ? layout.viewW - 12 - measureScoreWidth(ctx, fontPx) - glyphPad - moonR
+    : 12 + moonR;
+  ctx.fillStyle = PALETTE.moon;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = PALETTE.moon;
+  ctx.font = `600 ${fontPx}px "Georgia", "Segoe UI", serif`;
+  const scoreTextX = handed ? layout.viewW - 12 : 12 + moonR * 2 + glyphPad;
+  ctx.fillText(formatScore(hudState.displayScore | 0), scoreTextX, 8);
+
+  // Subtext: "stage N · best M"
+  let sub = `stage ${game.level}`;
+  if (settings.bestScore) sub += ` · best ${formatScore(settings.bestScore)}`;
   ctx.fillStyle = 'rgba(245, 233, 201, 0.55)';
-  ctx.font = `500 ${subPx}px "Segoe UI", system-ui, sans-serif`;
-  ctx.fillText(`stage ${game.level}`, 12, 8 + fontPx + 2);
+  ctx.font = `400 ${subPx}px "Georgia", "Segoe UI", serif`;
+  const subX = handed ? layout.viewW - 12 : 12;
+  ctx.fillText(sub, subX, 8 + fontPx + 2);
+
+  // Combo dots — five slots that fill cream → ember as the combo grows. At
+  // combo ≥ 6 each filled dot becomes a four-point sparkle.
+  drawComboDots(ctx, layout, game, settings, subX, 8 + fontPx + subPx + 6, align);
+
+  // Best-flash glow: a soft moonHalo ring under the score for ~1.5s after a
+  // new best lands. Honors reduced motion via tweenHud's instant-clear.
+  if (hudState.bestFlash > 0) {
+    const a = hudState.bestFlash;
+    ctx.save();
+    ctx.shadowColor = PALETTE.moonHalo;
+    ctx.shadowBlur = 20 * a;
+    ctx.fillStyle = `rgba(232, 183, 112, ${0.35 * a})`;
+    ctx.font = `600 ${fontPx}px "Georgia", serif`;
+    ctx.fillText(formatScore(hudState.displayScore | 0), scoreTextX, 8);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// Approximates score width without an extra measureText() call — keeps the
+// HUD layout stable as the counter ticks up.
+function measureScoreWidth(ctx, fontPx) {
+  // Mid-width digit ~0.55em in Georgia; 5 digits is a fine default.
+  return fontPx * 0.55 * 5;
+}
+
+function drawComboDots(ctx, layout, game, settings, x, y, align) {
+  const combo = game.combo | 0;
+  const slots = 5;
+  const dotR = hudPx(layout, 0.18, 3, settings);
+  const gap  = dotR * 2.4;
+  ctx.save();
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < slots; i++) {
+    const dx = align === 'right'
+      ? x - i * gap - dotR
+      : x + i * gap + dotR;
+    const filled = i < combo;
+    const sparkle = combo >= 6 && filled;
+    if (sparkle) {
+      drawSparkle(ctx, dx, y + dotR, dotR * 1.6, PALETTE.moonHalo);
+    } else if (filled) {
+      ctx.fillStyle = combo >= 3 ? PALETTE.moonHalo : PALETTE.moon;
+      ctx.beginPath();
+      ctx.arc(dx, y + dotR, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = 'rgba(245, 233, 201, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(dx, y + dotR, dotR * 0.95, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Four-point sparkle ✦ — drawn rather than text-rendered so it scales cleanly
+// with hudPx and reads as ornament rather than UI copy.
+function drawSparkle(ctx, cx, cy, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.quadraticCurveTo(cx + r * 0.18, cy - r * 0.18, cx + r, cy);
+  ctx.quadraticCurveTo(cx + r * 0.18, cy + r * 0.18, cx, cy + r);
+  ctx.quadraticCurveTo(cx - r * 0.18, cy + r * 0.18, cx - r, cy);
+  ctx.quadraticCurveTo(cx - r * 0.18, cy - r * 0.18, cx, cy - r);
+  ctx.fill();
+}
+
+function formatScore(n) {
+  return n.toLocaleString('en-US');
+}
+
+// Common HUD text sizing: layout-relative with a floor, multiplied by the
+// SDK's font-scale setting so the launcher's accessibility slider works.
+function hudPx(layout, factor, floor, settings) {
+  const fs = Math.max(0.5, settings && settings.fontScale ? settings.fontScale : 1);
+  return Math.max(floor, Math.round(layout.size * factor * fs));
+}
+
+// Floating spark labels rising from popped lanterns and centroids. Pop labels
+// drift up like embers; cluster/drop/chain/combo labels rise farther and live
+// longer so the player can read the bonus reason. Reduced motion: stationary
+// fade in place.
+function drawFloats(ctx, layout, game, settings) {
+  if (!game.floats || !game.floats.length) return;
+  const fs = Math.max(0.5, settings.fontScale || 1);
+  const reducedMotion = settings.reducedMotion;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const f of game.floats) {
+    const tt = f.t / f.life;
+    if (tt < 0 || tt >= 1) continue;
+    const e = easeOut(tt);
+    const dy = reducedMotion ? 0 : -layout.size * (f.kind === 'pop' ? 1.4 : 2.2) * e;
+    const fadeIn  = Math.min(1, tt / 0.1);
+    const fadeOut = Math.min(1, (1 - tt) / 0.4);
+    const alpha = Math.min(fadeIn, fadeOut);
+
+    let color, weight, sizeFactor;
+    if (f.kind === 'pop') {
+      color = `rgba(245, 233, 201, ${0.95 * alpha})`;
+      weight = 600; sizeFactor = 0.65;
+    } else if (f.kind === 'cluster') {
+      color = `rgba(232, 183, 112, ${0.95 * alpha})`;
+      weight = 500; sizeFactor = 0.78;
+    } else if (f.kind === 'drop') {
+      color = `rgba(232, 183, 112, ${0.95 * alpha})`;
+      weight = 600; sizeFactor = 0.95;
+    } else if (f.kind === 'chain') {
+      color = `rgba(245, 233, 201, ${0.95 * alpha})`;
+      weight = 600; sizeFactor = 0.85;
+    } else { // combo
+      color = `rgba(232, 183, 112, ${0.95 * alpha})`;
+      weight = 700; sizeFactor = 0.95;
+    }
+    const fontPx = Math.max(11, Math.round(layout.size * sizeFactor * fs));
+    ctx.fillStyle = color;
+    const italic = f.kind === 'pop' ? 'italic ' : '';
+    ctx.font = `${italic}${weight} ${fontPx}px "Georgia", serif`;
+    ctx.fillText(f.text, f.x, f.y + dy);
+  }
   ctx.restore();
 }
 
@@ -129,19 +383,46 @@ function drawBackground(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function drawMoon(ctx, w, h, reducedMotion) {
-  const cx = w * 0.78;
+// The moon is the game's quiet celebration meter: its halo grows with the
+// current combo, and a one-shot pulse expands when the player crosses a
+// score milestone. Reduced motion skips the halo entirely.
+function drawMoon(ctx, w, h, game, settings) {
+  const reducedMotion = settings.reducedMotion;
+  const handed = settings.handedness === 'left';
+  const cx = handed ? w * 0.22 : w * 0.78;
   const cy = h * 0.14;
   const r = Math.min(w, h) * 0.07;
+  const combo = game.combo | 0;
 
   if (!reducedMotion) {
-    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.4);
-    halo.addColorStop(0, PALETTE.moonHalo + '33');
+    // Combo lifts the halo from 1.0x at combo 0 to ~1.55x at combo 6+.
+    const comboLift = Math.min(1, combo / 6) * 0.55;
+    const haloR = r * (2.4 + comboLift);
+    const haloAlpha = 0x33 + Math.round(0x40 * Math.min(1, combo / 6));
+    const haloHex = ('00' + haloAlpha.toString(16)).slice(-2);
+    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, haloR);
+    halo.addColorStop(0, PALETTE.moonHalo + haloHex);
     halo.addColorStop(1, PALETTE.moonHalo + '00');
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 2.4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
     ctx.fill();
+
+    // Milestone pulse: a second halo expands and fades over its lifetime.
+    const pulse = game.moonPulse;
+    if (pulse && pulse.life > 0 && pulse.t < pulse.life) {
+      const tt = pulse.t / pulse.life;
+      const pulseR = r * (2.4 + 1.6 * easeOut(tt));
+      const pulseAlpha = Math.round(0x55 * (1 - tt));
+      const pulseHex = ('00' + pulseAlpha.toString(16)).slice(-2);
+      const pHalo = ctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, pulseR);
+      pHalo.addColorStop(0, PALETTE.moon + pulseHex);
+      pHalo.addColorStop(1, PALETTE.moon + '00');
+      ctx.fillStyle = pHalo;
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulseR, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.fillStyle = PALETTE.moon;
