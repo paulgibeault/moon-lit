@@ -2,7 +2,7 @@ import { GAME_ID } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { computeLayout, render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
-import { loadLanterns } from './assets.js';
+import { loadLanterns, loadBackgrounds } from './assets.js';
 
 await Arcade.ready;
 
@@ -12,9 +12,9 @@ await Arcade.ready;
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
 try {
-  await loadLanterns();
+  await Promise.all([loadLanterns(), loadBackgrounds()]);
 } catch (e) {
-  console.warn(`[${GAME_ID}] lantern sprites failed to load — falling back to procedural`, e);
+  console.warn(`[${GAME_ID}] sprite/background load failed — falling back`, e);
 }
 
 const canvas = document.getElementById('game');

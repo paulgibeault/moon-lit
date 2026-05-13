@@ -140,8 +140,6 @@ export function step(game, dtSec, layout) {
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
     addLantern(game.board, placed.x, placed.y, placed.color);
-    const newLantern = game.board.lanterns[game.board.lanterns.length - 1];
-    settleAround(game.board, layout, newLantern);
     resolvePlacement(game, placed, layout);
     game.shot = null;
     advanceQueue(game);
@@ -188,7 +186,14 @@ function finishSettle(game, layout) {
 
 function resolvePlacement(game, placed, layout) {
   const lantern = game.board.lanterns[game.board.lanterns.length - 1];
+  // Match against the placement position. Running settleAround first can
+  // drift the new lantern off its same-color anchors past the tight 1.04
+  // adjacency tolerance, silently failing visually-valid matches. Settle
+  // is only meaningful when the new lantern stays on the board.
   const popped = popMatches(game.board, lantern, layout);
+  if (popped.length === 0) {
+    settleAround(game.board, layout, lantern);
+  }
   const dropped = dropFloating(game.board, layout);
   const breakdown = resolveShot(popped, dropped, game.combo);
 

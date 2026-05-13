@@ -5,7 +5,7 @@ import {
   BURST_SCALE,
 } from './constants.js';
 import { launcherTip, traceAimLine, PHASE } from './game.js';
-import { getLanternSprite, getBurstSheet } from './assets.js';
+import { getLanternSprite, getBurstSheet, getBackgroundFrame } from './assets.js';
 
 // View-only state that lives outside the game model: the HUD score counter
 // tweens from `displayScore` toward `game.score` so a big swing reads as a
@@ -65,7 +65,7 @@ export function render(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
   drawBackground(ctx, viewW, viewH);
   drawMoon(ctx, viewW, viewH, game, settings);
-  drawTrellis(ctx, layout);
+  drawFrame(ctx, viewW, viewH);
   drawBoard(ctx, layout, game.board);
   drawDeadLine(ctx, layout);
   if (game.phase === PHASE.AIMING) {
@@ -431,21 +431,30 @@ function drawMoon(ctx, w, h, game, settings) {
   ctx.fill();
 }
 
-function drawTrellis(ctx, layout) {
-  const { viewW, size, trellisY } = layout;
-  const top = trellisY - TRELLIS_HEIGHT;
-  ctx.fillStyle = PALETTE.trellis;
-  ctx.fillRect(0, top, viewW, TRELLIS_HEIGHT);
-
-  ctx.strokeStyle = PALETTE.trellisKnot;
-  ctx.lineWidth = 1;
-  const knotSpacing = size * 2;
-  for (let x = knotSpacing * 0.5; x < viewW; x += knotSpacing) {
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x, top + TRELLIS_HEIGHT);
-    ctx.stroke();
+// Bamboo frame overlay. Sits on top of the gradient sky and moon so the moon
+// reads as glowing behind the bamboo. Cover-fits the viewport: any aspect
+// gap is absorbed by cropping rather than letterboxing. Lanterns and HUD
+// draw on top, so lamps may overlap bamboo as they rise.
+function drawFrame(ctx, viewW, viewH) {
+  const img = getBackgroundFrame(viewW, viewH);
+  if (!img) return;
+  const iw = img.width;
+  const ih = img.height;
+  const imgAr = iw / ih;
+  const targetAr = viewW / viewH;
+  let dw, dh, dx, dy;
+  if (imgAr > targetAr) {
+    dh = viewH;
+    dw = viewH * imgAr;
+    dx = (viewW - dw) / 2;
+    dy = 0;
+  } else {
+    dw = viewW;
+    dh = viewW / imgAr;
+    dx = 0;
+    dy = (viewH - dh) / 2;
   }
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
 function drawDeadLine(ctx, layout) {

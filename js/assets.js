@@ -18,6 +18,16 @@ const SOURCES = {
 const BURST_SRC = 'img/lantern-burst.png';
 let burstSheet = null;
 
+// Bamboo framing — square for portrait-ish viewports, wide for landscape.
+// Pre-processed at load so the white sky inside the arch becomes transparent
+// and the gradient + moon show through behind the bamboo.
+const BACKGROUND_SOURCES = {
+  square: 'img/background.png',
+  wide:   'img/background-wide.png',
+};
+const BACKGROUND_WIDE_AR_THRESHOLD = 1.3;
+let backgrounds = { square: null, wide: null };
+
 // Tinted variants: { base: <source colorKey>, tint: <hex> }
 const TINTS = {
   indigo: { base: 'green',  tint: '#5A7AC9' },
@@ -125,4 +135,60 @@ export function getLanternSprite(colorKey) {
 
 export function getBurstSheet() {
   return burstSheet;
+}
+
+// Maps the source PNG's white sky to transparent and keeps bamboo opaque so
+// the rendered frame composites over the gradient + moon. Anti-aliased edges
+// between bamboo and sky get a soft alpha ramp in the 200..245 brightness
+// band so leaves don't develop a hard halo.
+function makeBambooFrame(img) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0);
+  let imgData;
+  try {
+    imgData = cx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return c;
+  }
+  const d = imgData.data;
+  const TRANSPARENT_AT = 245;
+  const OPAQUE_BELOW = 200;
+  const RAMP = TRANSPARENT_AT - OPAQUE_BELOW;
+  for (let i = 0; i < d.length; i += 4) {
+    const brightness = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    if (brightness >= TRANSPARENT_AT) {
+      d[i + 3] = 0;
+    } else if (brightness > OPAQUE_BELOW) {
+      const t = (TRANSPARENT_AT - brightness) / RAMP;
+      d[i + 3] = Math.round(d[i + 3] * t);
+    }
+  }
+  cx.putImageData(imgData, 0, 0);
+  return c;
+}
+
+export async function loadBackgrounds() {
+  const entries = await Promise.all(
+    Object.entries(BACKGROUND_SOURCES).map(async ([key, src]) => {
+      try {
+        const img = await loadImage(src);
+        return [key, makeBambooFrame(img)];
+      } catch (_) {
+        return [key, null];
+      }
+    })
+  );
+  for (const [key, canvas] of entries) backgrounds[key] = canvas;
+}
+
+export function getBackgroundFrame(viewW, viewH) {
+  if (!viewW || !viewH) return backgrounds.square || backgrounds.wide || null;
+  const wide = viewW / viewH >= BACKGROUND_WIDE_AR_THRESHOLD;
+  return (wide ? backgrounds.wide : backgrounds.square)
+      || backgrounds.square || backgrounds.wide || null;
 }
