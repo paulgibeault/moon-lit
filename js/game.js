@@ -310,23 +310,11 @@ function traceFromShot(layout, board, shot, distance, dtSec) {
 
   let x = shot.x, y = shot.y, vx = shot.vx, vy = shot.vy;
   let remaining = distance;
-  let flightT = shot.flightT || 0;
-  // Apportion elapsed wall-time across sub-steps so sway phase advances
-  // smoothly rather than jumping at the end of the frame.
-  const dtPerUnit = remaining > 0 && dtSec > 0 ? dtSec / remaining : 0;
 
   while (remaining > 0) {
     const s = Math.min(stepSize, remaining);
-    flightT += s * dtPerUnit;
-    // Perpendicular sway: sine wave normal to the base direction. Doesn't
-    // change the base direction itself, so wall bounces stay symmetric and
-    // the aim line remains an honest hint within a small drift envelope.
-    const swayMag = (shot.swayAmp || 0) *
-      Math.sin(2 * Math.PI * (shot.swayFreq || 0) * flightT + (shot.swayPhase || 0));
-    const dx = vx + (-vy) * swayMag;
-    const dy = vy + ( vx) * swayMag;
-    let nx = x + dx * s;
-    let ny = y + dy * s;
+    let nx = x + vx * s;
+    let ny = y + vy * s;
 
     if (nx - r < layout.wallLeft) {
       nx = layout.wallLeft + r + ((layout.wallLeft + r) - nx);
@@ -350,7 +338,7 @@ function traceFromShot(layout, board, shot, distance, dtSec) {
     x = nx; y = ny;
     remaining -= s;
   }
-  return { settled: false, x, y, vx, vy, flightT };
+  return { settled: false, x, y, vx, vy, flightT: (shot.flightT || 0) + dtSec };
 }
 
 // After first contact, slide along the hit lantern's surface for a short arc

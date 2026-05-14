@@ -48,10 +48,10 @@ export const BOARD_MARGIN_SIDE = 16;
 export const LANE_LANTERNS = 1.0;
 
 // Two lanterns are treated as adjacent (for matching / anchoring) when their
-// centers are within (2 * radius * this factor). >1 forgives small float gaps.
-// Tight value (≈4% slack) means "physically touching" — settle drift past
-// this threshold breaks a chain on purpose.
-export const ADJACENCY_TOLERANCE = 1.04;
+// centers are within (2 * radius * this factor). >1 forgives small float gaps
+// and the fact that lamp sprites are drawn taller than 2*radius, so visually
+// overlapping lamps can sit slightly past pure circle-contact.
+export const ADJACENCY_TOLERANCE = 1.15;
 
 // Local settle: when a new lantern lands, its 2-hop neighborhood is allowed
 // to slide to absorb the impact. Top-row lanterns are pinned (anchored to
@@ -77,15 +77,15 @@ export const PROJECTILE_SPEED = 620;        // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 
-// Per-shot lateral drift while a lantern rises. Sway is a sine wave applied
-// perpendicular to the base direction; each shot pulls a fresh phase, freq,
-// and amplitude from the seeded RNG so successive lanterns don't trace the
-// same path. Amplitude is a fraction of the base direction unit vector —
-// keep small so the aim line stays a reliable hint.
+// Per-shot visual wobble while a lantern rises. Purely cosmetic — the lamp's
+// actual trajectory follows the aim indicator exactly, so the indicator is a
+// reliable predictor of where the lamp lands. Each shot pulls a fresh phase,
+// freq, and amplitude from the seeded RNG so successive lanterns don't trace
+// the same wobble. Amplitude is in pixels of perpendicular offset.
 export const SHOT_SWAY_FREQ_MIN = 0.7;       // Hz
 export const SHOT_SWAY_FREQ_MAX = 1.4;
-export const SHOT_SWAY_AMP_MIN = 0.06;
-export const SHOT_SWAY_AMP_MAX = 0.14;
+export const SHOT_SWAY_AMP_MIN = 3;          // px
+export const SHOT_SWAY_AMP_MAX = 6;
 
 // Match-pop burst: a flipbook played at each popped lantern using additive
 // blending. Kept short on purpose — the goal is a snappy hit, not a cutscene.

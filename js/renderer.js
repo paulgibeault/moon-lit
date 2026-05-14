@@ -641,7 +641,16 @@ function drawAimLine(ctx, layout, game) {
 }
 
 function drawProjectile(ctx, shot, layout) {
-  drawLantern(ctx, shot.x, shot.y, layout.size, shot.color);
+  // Wobble is a render-only perpendicular offset, anchored to 0 at launch so
+  // the lamp leaves the launcher cleanly. Physics follows the aim indicator.
+  const t = shot.flightT || 0;
+  const amp = shot.swayAmp || 0;
+  const freq = shot.swayFreq || 0;
+  const phase = shot.swayPhase || 0;
+  const wobble = amp * (Math.sin(2 * Math.PI * freq * t + phase) - Math.sin(phase));
+  const drawX = shot.x + (-shot.vy) * wobble;
+  const drawY = shot.y + ( shot.vx) * wobble;
+  drawLantern(ctx, drawX, drawY, layout.size, shot.color);
 }
 
 function mixWithWhite(hex, t) { return mixHex(hex, '#FFFFFF', t); }
