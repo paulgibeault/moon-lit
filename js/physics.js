@@ -1,6 +1,7 @@
 import {
   SETTLE_HOPS, SETTLE_ITERATIONS, SETTLE_MIN_PEN_PX,
 } from './constants.js';
+import { normalizePos } from './board.js';
 
 // Local positional-relaxation settle. When a lantern lands, we let the
 // nearby cluster slide a bit so the board "absorbs" the new arrival.
@@ -84,13 +85,23 @@ export function settleAround(board, layout, newLantern, opts = {}) {
 
   // Tag moved lanterns with a per-particle anim handle the renderer can
   // interpolate. Skip the new lantern itself — it animates as the projectile
-  // landing, not a settle response.
+  // landing, not a settle response. We also normalize anim.from and the
+  // mutated position so they survive a resize through syncLanternPixels.
   for (const [l, o] of origin) {
-    if (l === newLantern) continue;
+    if (l === newLantern) {
+      normalizePos(l, layout);
+      continue;
+    }
     const dx = l.x - o.x, dy = l.y - o.y;
     if (dx * dx + dy * dy > 0.25) {
-      l.anim = { fromX: o.x, fromY: o.y, t: 0 };
+      l.anim = {
+        fromX: o.x, fromY: o.y,
+        fromNx: (o.x - layout.originX) / layout.size,
+        fromNy: (o.y - layout.trellisY - layout.size) / layout.size,
+        t: 0,
+      };
     }
+    normalizePos(l, layout);
   }
 }
 

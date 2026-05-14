@@ -3,6 +3,7 @@ import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { computeLayout, render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBackgrounds } from './assets.js';
+import { syncLanternPixels } from './board.js';
 
 await Arcade.ready;
 
@@ -79,6 +80,7 @@ function readSettings() {
 }
 let settings = readSettings();
 
+let reloadTimer = 0;
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
@@ -87,11 +89,20 @@ function resize() {
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   layout = computeLayout(w, h);
+  console.info(`[resize] ${w}x${h}  game=${game ? 'yes' : 'no'}`);
   if (!game) {
     const progress = loadProgress();
     game = createGame({ layout, level: progress.level || 1 });
     resetHudState(game.score, bestScore);
+    return;
   }
+  syncLanternPixels(game.board, layout);
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    console.info('[resize] firing window.location.reload()');
+    window.location.reload();
+  }, 200);
+  console.info('[resize] reload scheduled in 200ms');
 }
 
 // On stage transition we save the new resume point — eviction or a refresh

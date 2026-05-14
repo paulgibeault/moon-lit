@@ -148,7 +148,7 @@ export function step(game, dtSec, layout) {
 
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
-    addLantern(game.board, placed.x, placed.y, placed.color);
+    addLantern(game.board, placed.x, placed.y, placed.color, layout);
     resolvePlacement(game, placed, layout);
     game.shot = null;
     advanceQueue(game);
