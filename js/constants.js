@@ -5,8 +5,8 @@ export const COLORS = Object.freeze({
   orange: '#E89B4F',
   yellow: '#F2D26A',
   green:  '#7AB89C',
-  indigo: '#5A7AC9',
-  white:  '#F4ECDA',
+  blue:   '#25A3E2',
+  white:  '#F9F9F9',
 });
 
 export const COLOR_KEYS = Object.freeze(Object.keys(COLORS));

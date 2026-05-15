@@ -1,16 +1,14 @@
-// Loads sky-lantern PNGs and synthesizes tinted variants for the two colors
-// (indigo, white) we don't have hand-painted art for. Tinting recolors the
-// flame too — accepted trade-off documented in the plan.
-//
-// At load time we also measure each sprite's painted bounding box (alpha > 0)
-// so the renderer can crop away transparent margin and draw the lamp at a
-// size driven by the silhouette, not the PNG canvas.
+// Loads sky-lantern PNGs. At load time we measure each sprite's painted
+// bounding box (alpha > 0) so the renderer can crop away transparent margin
+// and draw the lamp at a size driven by the silhouette, not the PNG canvas.
 
 const SOURCES = {
   red:    'img/sky-lantern-red.png',
   orange: 'img/sky-lantern-orange.png',
   yellow: 'img/sky-lantern-yellow.png',
   green:  'img/sky-lantern-green.png',
+  blue:   'img/sky-lantern-blue.png',
+  white:  'img/sky-lantern-white.png',
 };
 
 // Horizontal flipbook for the match-pop burst. The sheet is BURST_FRAMES wide
@@ -28,12 +26,6 @@ const BACKGROUND_SOURCES = {
 const BACKGROUND_WIDE_AR_THRESHOLD = 1.3;
 let backgrounds = { square: null, wide: null };
 
-// Tinted variants: { base: <source colorKey>, tint: <hex> }
-const TINTS = {
-  indigo: { base: 'green',  tint: '#5A7AC9' },
-  white:  { base: 'yellow', tint: '#F4ECDA' },
-};
-
 // Pixel below this alpha is treated as transparent margin when measuring bbox.
 const ALPHA_THRESHOLD = 8;
 
@@ -46,27 +38,6 @@ function loadImage(src) {
     img.onerror = () => reject(new Error(`failed to load ${src}`));
     img.src = src;
   });
-}
-
-function makeTinted(baseImg, tintHex) {
-  const c = document.createElement('canvas');
-  c.width = baseImg.naturalWidth || baseImg.width;
-  c.height = baseImg.naturalHeight || baseImg.height;
-  const cx = c.getContext('2d');
-
-  cx.drawImage(baseImg, 0, 0);
-  cx.globalCompositeOperation = 'source-in';
-  cx.fillStyle = tintHex;
-  cx.fillRect(0, 0, c.width, c.height);
-
-  cx.globalCompositeOperation = 'multiply';
-  cx.drawImage(baseImg, 0, 0);
-
-  cx.globalCompositeOperation = 'destination-in';
-  cx.drawImage(baseImg, 0, 0);
-
-  cx.globalCompositeOperation = 'source-over';
-  return c;
 }
 
 // Returns { sx, sy, sw, sh } of the smallest rect covering all pixels with
@@ -112,12 +83,6 @@ export async function loadLanterns() {
   );
   for (const [key, img] of entries) {
     record(key, img, measureBbox(img));
-  }
-  for (const [key, { base, tint }] of Object.entries(TINTS)) {
-    const tinted = makeTinted(sprites[base].image, tint);
-    // Tinted variants share the base silhouette, so they share its bbox.
-    const { sx, sy, sw, sh } = sprites[base];
-    record(key, tinted, { sx, sy, sw, sh });
   }
   try {
     const img = await loadImage(BURST_SRC);

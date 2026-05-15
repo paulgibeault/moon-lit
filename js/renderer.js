@@ -521,6 +521,7 @@ function drawLantern(ctx, cx, cy, size, colorKey) {
     const { image, sx, sy, sw, sh } = sprite;
     const dw = 2 * size;
     const dh = dw * (sh / sw);
+    drawWarmGlow(ctx, cx, cy + dh * 0.32, size);
     ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
     return;
   }
@@ -651,6 +652,25 @@ function drawProjectile(ctx, shot, layout) {
   const drawX = shot.x + (-shot.vy) * wobble;
   const drawY = shot.y + ( shot.vx) * wobble;
   drawLantern(ctx, drawX, drawY, layout.size, shot.color);
+}
+
+// Soft warm radial gradient painted under the lantern body so every lamp,
+// regardless of its painted hue, reads as if lit by a warm flame inside.
+// Uses 'lighter' compositing so the glow brightens the scene (and any
+// neighboring lanterns) rather than overpainting them.
+function drawWarmGlow(ctx, gx, gy, size) {
+  const r = size * 1.7;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const grad = ctx.createRadialGradient(gx, gy, size * 0.1, gx, gy, r);
+  grad.addColorStop(0,    'rgba(255, 220, 150, 0.45)');
+  grad.addColorStop(0.45, 'rgba(255, 170, 90, 0.18)');
+  grad.addColorStop(1,    'rgba(255, 140, 50, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(gx, gy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function mixWithWhite(hex, t) { return mixHex(hex, '#FFFFFF', t); }
