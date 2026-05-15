@@ -61,8 +61,9 @@ export function createGame({ seed, layout, level = 1 } = {}) {
 // Snapshot the game to a plain JSON-safe object. Captures everything needed
 // to resume between shots: board, queue, score, level, phase, RNG state.
 // In-flight projectiles and per-frame anim/effect lifetimes are intentionally
-// omitted — callers should only snapshot when phase is stable (AIMING / WIN /
-// GAME_OVER), and restoration starts a clean frame with no live effects.
+// omitted. Callers may snapshot in any phase except FLYING — SETTLING and
+// DESCENDING phases have a resolved board underneath their visual anims, so
+// restoring skips straight to the post-anim state cleanly.
 export const SAVE_VERSION = 1;
 export function serializeGame(g) {
   return {

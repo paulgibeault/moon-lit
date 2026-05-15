@@ -85,17 +85,22 @@ let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
 let lastPhase = null;
 
-function isStablePhase(p) {
-  return p === PHASE.AIMING || p === PHASE.WIN || p === PHASE.GAME_OVER;
+// Any phase except FLYING carries a fully resolved game state we can resume
+// from. FLYING is the only transient one (live projectile trajectory isn't
+// serialized); SETTLING/DESCENDING run only visual anims on top of an
+// already-updated board, so saving there means a mid-anim refresh still
+// keeps the just-landed shot.
+function isResumablePhase(p) {
+  return p !== PHASE.FLYING;
 }
 
-// After every step, snapshot the game whenever the phase first re-enters a
-// stable state (between shots, on win, on loss). This is the only place that
-// writes the full game state — keeps writes to one per shot.
+// Snapshot the game whenever the phase first re-enters a resumable state.
+// Triggered after the shot lands (FLYING → SETTLING) and again at each
+// subsequent transition, so a refresh during animations keeps progress.
 function maybePersistOnPhaseChange() {
   if (!game) return;
   if (game.phase !== lastPhase) {
-    if (isStablePhase(game.phase)) saveGameState(game);
+    if (isResumablePhase(game.phase)) saveGameState(game);
     lastPhase = game.phase;
   }
 }
@@ -232,23 +237,32 @@ function frame(now) {
   rafId = requestAnimationFrame(frame);
 }
 
+// Last-chance flush before the page goes away. onSuspend only fires from a
+// launcher-driven suspend; a plain browser refresh / tab-close needs the DOM
+// lifecycle hooks. pagehide is the reliable cross-browser trigger; we mirror
+// it on visibilitychange so mobile backgrounding also flushes.
+function flushPersist() {
+  if (!game) return;
+  saveProgress(game);
+  if (isResumablePhase(game.phase)) saveGameState(game);
+}
+
 // Lifecycle: cancel the rAF entirely while hidden so we hold no slot in the
 // browser's animation budget. Flush progress to localStorage at the same
 // moment so an LRU eviction can't lose state set in the last few frames.
 Arcade.onSuspend(() => {
   suspended = true;
   if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-  if (game) {
-    saveProgress(game);
-    // Only overwrite the snapshot when we're in a clean phase. Otherwise leave
-    // the last stable snapshot in place so reload resumes between shots.
-    if (isStablePhase(game.phase)) saveGameState(game);
-  }
+  flushPersist();
 });
 Arcade.onResume(() => {
   suspended = false;
   lastTime = 0;
   if (!rafId) rafId = requestAnimationFrame(frame);
+});
+window.addEventListener('pagehide', flushPersist);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushPersist();
 });
 
 // When the launcher imports a save, re-hydrate in place: prefer the full
