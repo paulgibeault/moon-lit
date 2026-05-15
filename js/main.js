@@ -1,5 +1,5 @@
 import { GAME_ID } from './constants.js';
-import { createGame, step, PHASE, hasActiveEffects } from './game.js';
+import { createGame, step, PHASE, hasActiveEffects, serializeGame, restoreGame } from './game.js';
 import { computeLayout, render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBackgrounds } from './assets.js';
@@ -25,6 +25,7 @@ const ctx = canvas.getContext('2d');
 // stage to start on; `bestScore` is the all-time best across launches.
 const PROGRESS_KEY = 'progress';
 const BEST_KEY = 'bestScore';
+const GAME_STATE_KEY = 'gameState';
 const STATS_KEY = 'campaign';
 const SCORES_CATEGORY = 'campaign';
 const STATS_DEFAULTS = {
@@ -47,6 +48,20 @@ function saveProgress(game) {
 function loadBest() {
   return Arcade.state.get(BEST_KEY) | 0;
 }
+function loadGameState() {
+  return Arcade.state.get(GAME_STATE_KEY);
+}
+function saveGameState(g) {
+  if (!g) return;
+  try {
+    Arcade.state.set(GAME_STATE_KEY, serializeGame(g));
+  } catch (e) {
+    console.warn(`[${GAME_ID}] failed to persist game state`, e);
+  }
+}
+function clearGameState() {
+  Arcade.state.remove(GAME_STATE_KEY);
+}
 function commitBestIfHigher(score) {
   const prev = loadBest();
   if (score > prev) {
@@ -68,6 +83,30 @@ let lastTime = 0;
 let rafId = 0;
 let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
+let lastPhase = null;
+
+function isStablePhase(p) {
+  return p === PHASE.AIMING || p === PHASE.WIN || p === PHASE.GAME_OVER;
+}
+
+// After every step, snapshot the game whenever the phase first re-enters a
+// stable state (between shots, on win, on loss). This is the only place that
+// writes the full game state — keeps writes to one per shot.
+function maybePersistOnPhaseChange() {
+  if (!game) return;
+  if (game.phase !== lastPhase) {
+    if (isStablePhase(game.phase)) saveGameState(game);
+    lastPhase = game.phase;
+  }
+}
+
+function startGame(g) {
+  game = g;
+  lastPhase = null;
+  if (game.board && layout) syncLanternPixels(game.board, layout);
+  saveGameState(game);
+  lastPhase = game.phase;
+}
 
 function readSettings() {
   return {
@@ -80,7 +119,17 @@ function readSettings() {
 }
 let settings = readSettings();
 
-let reloadTimer = 0;
+// Remap an in-flight shot from one layout's pixel basis to another, using the
+// same normalized origin (layout.originX, trellisY + size) and unit (size) as
+// lanterns. Direction (vx, vy) is a unit vector and stays put.
+function remapShotToLayout(shot, prev, next) {
+  if (!shot || !prev || !next) return;
+  const nx = (shot.x - prev.originX) / prev.size;
+  const ny = (shot.y - prev.trellisY - prev.size) / prev.size;
+  shot.x = next.originX + nx * next.size;
+  shot.y = next.trellisY + next.size + ny * next.size;
+}
+
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
@@ -88,34 +137,43 @@ function resize() {
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const prevLayout = layout;
   layout = computeLayout(w, h);
-  console.info(`[resize] ${w}x${h}  game=${game ? 'yes' : 'no'}`);
   if (!game) {
-    const progress = loadProgress();
-    game = createGame({ layout, level: progress.level || 1 });
+    const saved = loadGameState();
+    let restored = null;
+    try { restored = saved ? restoreGame(saved) : null; }
+    catch (e) {
+      console.warn(`[${GAME_ID}] saved game state was corrupt, starting fresh`, e);
+      clearGameState();
+    }
+    if (restored) {
+      startGame(restored);
+    } else {
+      const progress = loadProgress();
+      startGame(createGame({ layout, level: progress.level || 1 }));
+    }
     resetHudState(game.score, bestScore);
     return;
   }
+  // Live game: re-derive pixel positions under the new layout. Lanterns own
+  // their normalized (nx, ny); the in-flight shot uses prev→next remapping
+  // since it's transient and isn't normalized.
   syncLanternPixels(game.board, layout);
-  clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => {
-    console.info('[resize] firing window.location.reload()');
-    window.location.reload();
-  }, 200);
-  console.info('[resize] reload scheduled in 200ms');
+  remapShotToLayout(game.shot, prevLayout, layout);
 }
 
 // On stage transition we save the new resume point — eviction or a refresh
 // after this point will restore the player to the new stage.
 function nextLevel() {
   recordOutcome(game, /*won=*/true);
-  game = createGame({ layout, level: game.level + 1 });
+  startGame(createGame({ layout, level: game.level + 1 }));
   saveProgress(game);
   resetHudState(0, bestScore);
 }
 function restartLevel() {
   recordOutcome(game, /*won=*/false);
-  game = createGame({ layout, level: game.level });
+  startGame(createGame({ layout, level: game.level }));
   saveProgress(game);
   resetHudState(0, bestScore);
 }
@@ -165,6 +223,7 @@ function frame(now) {
     if (phaseAnimating || hasActiveEffects(game)) {
       step(game, dt, layout);
     }
+    maybePersistOnPhaseChange();
     // Always render: the HUD counter tween, combo dots, and moon halo respond
     // to view-only state that lives outside hasActiveEffects(). At this canvas
     // size a 60fps redraw is cheap; the rAF is fully cancelled while suspended.
@@ -179,7 +238,12 @@ function frame(now) {
 Arcade.onSuspend(() => {
   suspended = true;
   if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
-  if (game) saveProgress(game);
+  if (game) {
+    saveProgress(game);
+    // Only overwrite the snapshot when we're in a clean phase. Otherwise leave
+    // the last stable snapshot in place so reload resumes between shots.
+    if (isStablePhase(game.phase)) saveGameState(game);
+  }
 });
 Arcade.onResume(() => {
   suspended = false;
@@ -187,16 +251,23 @@ Arcade.onResume(() => {
   if (!rafId) rafId = requestAnimationFrame(frame);
 });
 
-// When the launcher imports a save, re-hydrate in place: rebuild the game
-// from the new persisted level, refresh best score, and reset HUD tween
-// state so the new score doesn't appear to "count down" from the old one.
+// When the launcher imports a save, re-hydrate in place: prefer the full
+// game-state snapshot if present, otherwise fall back to the legacy
+// "start of saved level" path. Reset HUD tween state so the new score
+// doesn't appear to "count down" from the old one.
 Arcade.onStateReplaced(() => {
   bestScore = loadBest();
   playerName = Arcade.player.name() || '';
-  const progress = loadProgress();
-  game = createGame({ layout, level: progress.level || 1 });
+  let restored = null;
+  try { restored = restoreGame(loadGameState()); } catch (_) { restored = null; }
+  if (restored) {
+    startGame(restored);
+  } else {
+    const progress = loadProgress();
+    startGame(createGame({ layout, level: progress.level || 1 }));
+  }
   settings = readSettings();
-  resetHudState(0, bestScore);
+  resetHudState(game.score, bestScore);
   Arcade.ui.toast('save loaded', { kind: 'info' });
 });
 

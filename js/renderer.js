@@ -550,7 +550,6 @@ function drawLauncher(ctx, layout, game) {
   const postLen   = r * 0.5;
   const cradleW   = r * 1.4;
   const cradleDip = r * 0.32;
-  const baseR     = r * 0.55;
   const stroke    = Math.max(2, r * 0.2);
 
   ctx.save();
@@ -576,26 +575,19 @@ function drawLauncher(ctx, layout, game) {
   ctx.quadraticCurveTo(0, ctrlY, cradleW / 2, sideY);
   ctx.stroke();
 
-  // Lantern sits in the cradle: its bottom touches the dip. Counter-rotate
-  // so the lantern stays visually upright while the cradle tilts with aim —
-  // a real paper lantern hangs/sits vertically regardless of the post angle.
-  const lanternY = middleY - r;
-  ctx.save();
-  ctx.translate(0, lanternY);
-  ctx.rotate(-game.aimAngle);
-  drawLantern(ctx, 0, 0, r, game.queue.current);
-  ctx.restore();
+  // Lantern sits in the cradle while aiming. Once released, the staging area
+  // is empty until the next lantern is queued up. Counter-rotate so it stays
+  // visually upright while the cradle tilts with aim.
+  if (game.phase === PHASE.AIMING) {
+    const lanternY = middleY - r;
+    ctx.save();
+    ctx.translate(0, lanternY);
+    ctx.rotate(-game.aimAngle);
+    drawLantern(ctx, 0, 0, r, game.queue.current);
+    ctx.restore();
+  }
 
   ctx.restore();
-
-  // Static base anchored at tip — does not rotate.
-  ctx.fillStyle = PALETTE.launcher;
-  ctx.strokeStyle = PALETTE.launcherRim;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(tip.x, tip.y, baseR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
 }
 
 function drawShotQueue(ctx, layout, game) {
