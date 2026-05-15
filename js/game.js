@@ -1,6 +1,6 @@
 import {
   COLOR_KEYS, AIM_MIN_ANGLE, AIM_MAX_ANGLE, M3_DEFAULT_SEED,
-  LAUNCHER_OFFSET_FROM_DEAD_LINE, SETTLE_NUDGE_RAD, PROJECTILE_SPEED,
+  SETTLE_NUDGE_RAD, PROJECTILE_SPEED,
   SETTLE_ANIM_SEC, BURST_DURATION_SEC,
   SHOT_SWAY_FREQ_MIN, SHOT_SWAY_FREQ_MAX,
   SHOT_SWAY_AMP_MIN, SHOT_SWAY_AMP_MAX,
@@ -472,7 +472,7 @@ export function traceAimLine(layout, board, angle, maxBounces = 1) {
 export function launcherTip(layout) {
   return {
     x: layout.viewW / 2,
-    y: layout.deadLineY + LAUNCHER_OFFSET_FROM_DEAD_LINE,
+    y: layout.tipY,
   };
 }
 

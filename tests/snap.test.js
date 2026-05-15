@@ -11,6 +11,7 @@ function fixtureLayout() {
     originX: 100,
     trellisY: 60,
     deadLineY: 600,
+    tipY: 684,
     cols: 8,
     maxRows: 13,
     viewW: 400,

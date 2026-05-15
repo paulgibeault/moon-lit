@@ -2,6 +2,7 @@ import {
   COLORS, PALETTE, GRID,
   BOARD_MARGIN_TOP, BOARD_MARGIN_BOTTOM, BOARD_MARGIN_SIDE,
   TRELLIS_HEIGHT, DEAD_LINE_OFFSET, LANE_LANTERNS,
+  LAUNCHER_BOTTOM_MARGIN, MIN_LANTERN_RADIUS,
   BURST_SCALE,
 } from './constants.js';
 import { launcherTip, traceAimLine, PHASE } from './game.js';
@@ -35,7 +36,7 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
   const sizeFromW = availW / (2 * (cols + 2 * LANE_LANTERNS));
   // Height budget: 2r (top row) + (maxRows-1)*sqrt(3)*r + DEAD_LINE_OFFSET.
   const sizeFromH = (availH - DEAD_LINE_OFFSET) / (2 + (maxRows - 1) * SQRT3);
-  const size = Math.max(8, Math.floor(Math.min(sizeFromW, sizeFromH)));
+  const size = Math.max(MIN_LANTERN_RADIUS, Math.floor(Math.min(sizeFromW, sizeFromH)));
   const r = size;
 
   const lanternStripW = 2 * r * cols;
@@ -50,9 +51,10 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
   const trellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
   const lastRowCenterY = trellisY + r + (maxRows - 1) * SQRT3 * r;
   const deadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+  const tipY = viewH - LAUNCHER_BOTTOM_MARGIN;
 
   return {
-    size: r, originX, trellisY, deadLineY,
+    size: r, originX, trellisY, deadLineY, tipY,
     cols, maxRows,
     viewW, viewH,
     wallLeft, wallRight,
@@ -432,15 +434,13 @@ function drawMoon(ctx, w, h, game, settings) {
 }
 
 // Bamboo frame overlay. Sits on top of the gradient sky and moon so the moon
-// reads as glowing behind the bamboo. Cover-fits the viewport: any aspect
-// gap is absorbed by cropping rather than letterboxing. Lanterns and HUD
-// draw on top, so lamps may overlap bamboo as they rise.
+// reads as glowing behind the bamboo. Cover-fits the viewport so the bamboo
+// always fills the frame — sides crop in portrait viewports, which is
+// preferable to letterboxing the sky.
 function drawFrame(ctx, viewW, viewH) {
   const img = getBackgroundFrame(viewW, viewH);
   if (!img) return;
-  const iw = img.width;
-  const ih = img.height;
-  const imgAr = iw / ih;
+  const imgAr = img.width / img.height;
   const targetAr = viewW / viewH;
   let dw, dh, dx, dy;
   if (imgAr > targetAr) {

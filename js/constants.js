@@ -71,7 +71,16 @@ export const SETTLE_NUDGE_RAD = Math.PI / 6;
 
 export const TRELLIS_HEIGHT = 18;
 export const DEAD_LINE_OFFSET = 36;
-export const LAUNCHER_OFFSET_FROM_DEAD_LINE = 64;
+// Launcher tip is anchored at a fixed distance from the bottom of the viewport
+// so the staged lantern stays grounded even when the play area shrinks (e.g.
+// narrow phone viewports where the lantern radius — and thus dead-line — pull
+// upward).
+export const LAUNCHER_BOTTOM_MARGIN = 36;
+
+// Lower bound on the lantern radius. Floored at a small value so phone-sized
+// viewports can shrink lanterns enough to fit the full cols/rows grid rather
+// than overflow horizontally.
+export const MIN_LANTERN_RADIUS = 4;
 
 export const PROJECTILE_SPEED = 620;        // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
