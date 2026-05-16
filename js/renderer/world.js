@@ -167,17 +167,92 @@ export function drawFrame(ctx, viewW, viewH) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-export function drawDeadLine(ctx, layout) {
+// The dead-line IS the water surface. Drawn as a single subtle moonlit hairline
+// rather than a dashed warning band — the reflections below sell the "below
+// here is water" cue more clearly than a dashed line ever did.
+export function drawWaterline(ctx, layout) {
   const { viewW, deadLineY } = layout;
   ctx.save();
-  ctx.strokeStyle = `rgba(245, 233, 201, ${HUD_OPACITY.hairline})`;
-  ctx.setLineDash([2, 10]);
+  ctx.strokeStyle = 'rgba(210, 225, 240, 0.22)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, deadLineY);
   ctx.lineTo(viewW, deadLineY);
   ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// Mirror each in-air lantern across the waterline as a faded, vertically
+// flipped copy. The reflection's height-below-waterline equals the lantern's
+// height-above, so a lamp drifting down toward the dead-line visibly closes
+// the gap with its own reflection — a strong "how close to water" cue.
+//
+// Lit reflections (rather than dark silhouettes) keep the flame's warm glow
+// shimmering on the surface; reduced intensity + low global alpha keeps the
+// effect subordinate to the real lanterns above.
+export function drawReflections(ctx, layout, game, settings) {
+  const { viewW, viewH, deadLineY } = layout;
+  if (deadLineY >= viewH) return;
+  const board = game.board;
+  const animY = board.descentAnimY || 0;
+  const reducedMotion = !!(settings && settings.reducedMotion);
+  const fadeDepth = viewH * 0.5;
+
+  ctx.save();
+  // Clip so the reflection's halo can't bleed back above the waterline.
+  ctx.beginPath();
+  ctx.rect(0, deadLineY, viewW, viewH - deadLineY);
+  ctx.clip();
+
+  for (const l of board.lanterns) {
+    let dx = l.x, dy = l.y;
+    if (l.anim) {
+      const e = easeOut(l.anim.t);
+      dx = l.anim.fromX + (l.x - l.anim.fromX) * e;
+      dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
+    }
+    const sourceY = dy + animY;
+    const height = deadLineY - sourceY;
+    if (height <= 0) continue;
+    const fade = Math.max(0, 1 - height / fadeDepth);
+    if (fade <= 0.05) continue;
+    const reflectY = deadLineY + height;
+    const boost = reducedMotion ? 0 : rippleBoost(game, l.nx, l.ny);
+    ctx.save();
+    ctx.globalAlpha = 0.32 * fade;
+    ctx.translate(dx, reflectY);
+    ctx.scale(1, -1);
+    drawLantern(ctx, 0, 0, layout.size, l.color,
+      { lit: true, intensity: 0.55, phase: phaseOf(l), boost });
+    ctx.restore();
+  }
+
+  // Reflect the in-flight shot too, with the same ignite ramp as the real one.
+  const shot = game.shot;
+  if (shot) {
+    const t = shot.flightT || 0;
+    const amp = shot.swayAmp || 0;
+    const freq = shot.swayFreq || 0;
+    const phase = shot.swayPhase || 0;
+    const wobble = amp * (Math.sin(2 * Math.PI * freq * t + phase) - Math.sin(phase));
+    const drawX = shot.x + (-shot.vy) * wobble;
+    const drawY = shot.y + ( shot.vx) * wobble;
+    const height = deadLineY - drawY;
+    if (height > 0) {
+      const fade = Math.max(0, 1 - height / fadeDepth);
+      if (fade > 0.05) {
+        const ignite = Math.min(1, t / IGNITE_SEC);
+        ctx.save();
+        ctx.globalAlpha = 0.32 * fade;
+        ctx.translate(drawX, deadLineY + height);
+        ctx.scale(1, -1);
+        drawLantern(ctx, 0, 0, layout.size, shot.color,
+          { lit: true, intensity: ignite * 0.55, phase });
+        ctx.restore();
+      }
+    }
+  }
+
   ctx.restore();
 }
 
