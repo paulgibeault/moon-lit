@@ -209,7 +209,12 @@ function resolvePlacement(game, layout) {
 
 function advanceQueue(game) {
   game.queue.current = game.queue.next;
-  game.queue.next    = pick(game.rng, game.colors);
+  // The newly-staged lantern (the future on-deck) should never reintroduce a
+  // color the board no longer contains. Already-visible lanterns (current and
+  // the existing next) keep whatever color they were drawn with.
+  const live = new Set(game.board.lanterns.map(l => l.color));
+  const palette = game.colors.filter(c => live.has(c));
+  game.queue.next = pick(game.rng, palette.length ? palette : game.colors);
 }
 
 // Re-exports so existing callers (renderer.js, tests) don't need to track
