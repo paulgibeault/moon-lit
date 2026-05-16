@@ -1,5 +1,6 @@
 import { COLORS, PALETTE } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
+import { rippleBoost } from '../effects.js';
 import { getLanternSprite, getBackgroundFrame } from '../assets.js';
 import {
   SERIF, SANS, HUD_OPACITY,
@@ -104,9 +105,11 @@ export function drawDeadLine(ctx, layout) {
 
 // ─── Board + lanterns ──────────────────────────────────────────────────────
 
-export function drawBoard(ctx, layout, board) {
+export function drawBoard(ctx, layout, game, settings) {
+  const board = game.board;
   const { size } = layout;
   const animY = board.descentAnimY || 0;
+  const reducedMotion = settings && settings.reducedMotion;
   for (const l of board.lanterns) {
     let dx = l.x, dy = l.y;
     if (l.anim) {
@@ -114,7 +117,9 @@ export function drawBoard(ctx, layout, board) {
       dx = l.anim.fromX + (l.x - l.anim.fromX) * e;
       dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
     }
-    drawLantern(ctx, dx, dy + animY, size, l.color, { lit: true, phase: phaseOf(l) });
+    const boost = reducedMotion ? 0 : rippleBoost(game, l.nx, l.ny);
+    drawLantern(ctx, dx, dy + animY, size, l.color,
+      { lit: true, phase: phaseOf(l), boost });
   }
 }
 
@@ -128,21 +133,30 @@ function phaseOf(l) {
   return (v - Math.floor(v)) * Math.PI * 2;
 }
 
-// Combined slow + fast pulse, clamped so the lamp never goes fully dark.
-// `intensity` (0..1) scales the whole ember — used by the ignite ramp on the
+// Combined slow + fast pulse plus a sparse per-lantern flare, clamped so the
+// lamp never goes fully dark. The flare term (sin raised to a high power) sits
+// near zero most of the time and briefly peaks on its own cycle per lamp, so
+// the field reads as twinkling rather than uniformly flickering.
+// `intensity` (0..1) scales the natural ember — used by the ignite ramp on the
 // in-flight shot so it brightens up after launch.
-function emberLevel(phase, intensity) {
+// `boost` is an additive flare-up from external events (ripples) and is
+// applied after intensity so it stays visible even on a half-lit shot.
+function emberLevel(phase, intensity, boost) {
   const t = performance.now() / 1000;
   const slow = 0.10 * Math.sin(t * 1.8 + phase);
   const fast = 0.05 * Math.sin(t * 5.3 + phase * 1.7);
-  return Math.max(0, Math.min(1.2, (0.88 + slow + fast) * intensity));
+  const flareSin = Math.sin(t * 0.7 + phase * 3.7 + 1.3);
+  const flare = 0.18 * Math.pow(Math.max(0, flareSin), 6);
+  const base = (0.88 + slow + fast + flare) * intensity;
+  return Math.max(0, Math.min(1.6, base + (boost || 0)));
 }
 
 export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const lit = opts ? !!opts.lit : false;
   const intensity = opts && opts.intensity != null ? opts.intensity : 1;
   const phase = opts && opts.phase != null ? opts.phase : 0;
-  const level = lit ? emberLevel(phase, intensity) : 0;
+  const boost = opts && opts.boost != null ? opts.boost : 0;
+  const level = lit ? emberLevel(phase, intensity, boost) : 0;
 
   const sprite = getLanternSprite(colorKey);
   if (sprite) {

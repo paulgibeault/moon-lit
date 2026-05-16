@@ -55,6 +55,7 @@ export function restoreGame(saved) {
     score: saved.score | 0,
     effects: [],
     floats: [],
+    ripples: [],
     lastResolution: null,
     breakdown: { ...saved.breakdown },
     counts: { ...saved.counts },

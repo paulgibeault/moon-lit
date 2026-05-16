@@ -14,7 +14,7 @@ import { settleAround, tickAnims } from './physics.js';
 import { clamp, SQRT3 } from './geometry.js';
 import { traceFromShot, launcherTip } from './projectile.js';
 import {
-  emitFloats, hasActiveEffects, pulseMoon, spawnBurst, tickEffects,
+  emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, tickEffects,
 } from './effects.js';
 
 export const PHASE = Object.freeze({
@@ -47,6 +47,7 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     score: 0,
     effects: [],
     floats: [],
+    ripples: [],
     lastResolution: null,
     breakdown: { pop: 0, cluster: 0, drop: 0, chain: 0, combo: 0, clear: 0 },
     counts: { popped: 0, dropped: 0 },
@@ -105,6 +106,10 @@ export function step(game, dtSec, layout) {
         game.score += gain;
         game.breakdown.drop += gain;
         for (const l of postDrop) spawnBurst(game, l.x, l.y);
+        // Treat the gift drop as a "big" event for the ripple — the player
+        // didn't earn it with a placement, but seeing the field shimmer in
+        // response sells the cascade.
+        emitRipple(game, [], postDrop, { combo: 0 }, layout);
       }
       game.phase = PHASE.AIMING;
     }
@@ -201,6 +206,7 @@ function resolvePlacement(game, layout) {
   for (const l of dropped) spawnBurst(game, l.x, l.y);
 
   emitFloats(game, popped, dropped, breakdown, layout);
+  emitRipple(game, popped, dropped, breakdown, layout);
 
   if (crossedMilestone(prevScore, game.score)) pulseMoon(game);
 

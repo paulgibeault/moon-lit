@@ -23,7 +23,7 @@ export function render(ctx, layout, game, settings) {
   drawBackground(ctx, viewW, viewH);
   drawMoon(ctx, viewW, viewH, game, settings);
   drawFrame(ctx, viewW, viewH);
-  drawBoard(ctx, layout, game.board);
+  drawBoard(ctx, layout, game, settings);
   drawDeadLine(ctx, layout);
   if (game.phase === PHASE.AIMING) {
     drawAimLine(ctx, layout, game);
