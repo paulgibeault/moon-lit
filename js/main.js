@@ -1,6 +1,8 @@
 import { GAME_ID } from './constants.js';
-import { createGame, step, PHASE, hasActiveEffects, serializeGame, restoreGame } from './game.js';
-import { computeLayout, render, resetHudState } from './renderer.js';
+import { createGame, step, PHASE, hasActiveEffects } from './game.js';
+import { serializeGame, restoreGame } from './serialization.js';
+import { computeLayout } from './layout.js';
+import { render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBackgrounds } from './assets.js';
 import { syncLanternPixels } from './board.js';
@@ -21,8 +23,11 @@ try {
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
-// Persisted progress shape — keep this small and additive. `level` is the
-// stage to start on; `bestScore` is the all-time best across launches.
+// Persisted state keys. `gameState` is the full snapshot used to resume
+// between sessions; `bestScore` is the all-time best across launches.
+// `progress` was the original "next level to start on" — now derived from
+// the snapshot, but the key is preserved so a roaming save knows where to
+// resume even if the snapshot is dropped by eviction.
 const PROGRESS_KEY = 'progress';
 const BEST_KEY = 'bestScore';
 const GAME_STATE_KEY = 'gameState';
@@ -39,8 +44,9 @@ const STATS_DEFAULTS = {
   totalPlayMs: 0,
 };
 
-function loadProgress() {
-  return Arcade.state.getOrInit(PROGRESS_KEY, { level: 1 });
+function loadProgressLevel() {
+  const p = Arcade.state.getOrInit(PROGRESS_KEY, { level: 1 });
+  return (p && p.level) | 0 || 1;
 }
 function saveProgress(game) {
   Arcade.state.set(PROGRESS_KEY, { level: game.level });
@@ -135,6 +141,27 @@ function remapShotToLayout(shot, prev, next) {
   shot.y = next.trellisY + next.size + ny * next.size;
 }
 
+// First-time game bootstrap: restore the full snapshot if there is one,
+// otherwise create a fresh game at the saved progress level. Pulled out of
+// resize() so the viewport path stays single-purpose.
+function bootstrapGame() {
+  const saved = loadGameState();
+  let restored = null;
+  if (saved) {
+    try { restored = restoreGame(saved); }
+    catch (e) {
+      console.warn(`[${GAME_ID}] saved game state was corrupt, starting fresh`, e);
+      clearGameState();
+    }
+  }
+  if (restored) {
+    startGame(restored);
+  } else {
+    startGame(createGame({ layout, level: loadProgressLevel() }));
+  }
+  resetHudState(game.score, bestScore);
+}
+
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.clientWidth;
@@ -145,20 +172,7 @@ function resize() {
   const prevLayout = layout;
   layout = computeLayout(w, h);
   if (!game) {
-    const saved = loadGameState();
-    let restored = null;
-    try { restored = saved ? restoreGame(saved) : null; }
-    catch (e) {
-      console.warn(`[${GAME_ID}] saved game state was corrupt, starting fresh`, e);
-      clearGameState();
-    }
-    if (restored) {
-      startGame(restored);
-    } else {
-      const progress = loadProgress();
-      startGame(createGame({ layout, level: progress.level || 1 }));
-    }
-    resetHudState(game.score, bestScore);
+    bootstrapGame();
     return;
   }
   // Live game: re-derive pixel positions under the new layout. Lanterns own
@@ -265,31 +279,21 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') flushPersist();
 });
 
-// When the launcher imports a save, re-hydrate in place: prefer the full
-// game-state snapshot if present, otherwise fall back to the legacy
-// "start of saved level" path. Reset HUD tween state so the new score
-// doesn't appear to "count down" from the old one.
+// When the launcher imports a save, re-hydrate in place. Reset HUD tween
+// state so the new score doesn't appear to "count down" from the old one.
 Arcade.onStateReplaced(() => {
   bestScore = loadBest();
   playerName = Arcade.player.name() || '';
-  let restored = null;
-  try { restored = restoreGame(loadGameState()); } catch (_) { restored = null; }
-  if (restored) {
-    startGame(restored);
-  } else {
-    const progress = loadProgress();
-    startGame(createGame({ layout, level: progress.level || 1 }));
-  }
+  bootstrapGame();
   settings = readSettings();
   resetHudState(game.score, bestScore);
   Arcade.ui.toast('save loaded', { kind: 'info' });
 });
 
-Arcade.onSettingsChange(() => { settings = readSettings(); dirty = true; });
+Arcade.onSettingsChange(() => { settings = readSettings(); });
 
 window.addEventListener('resize', resize);
-// requestRender is a no-op now that the frame loop redraws unconditionally.
-attachInput(canvas, () => game, () => layout, () => {}, {
+attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
   onLossClick: restartLevel,
 });

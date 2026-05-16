@@ -109,7 +109,7 @@ export function isCleared(board) {
 
 export function addLantern(board, x, y, color, layout) {
   const l = { x, y, color };
-  if (layout) normalizePos(l, layout);
+  normalizePos(l, layout);
   board.lanterns.push(l);
   return l;
 }

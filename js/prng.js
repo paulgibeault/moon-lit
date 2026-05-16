@@ -15,6 +15,12 @@ export function mulberry32(seed) {
   return next;
 }
 
+// Resume a stream from a previously captured state (see rng.getState()).
+// Used by the save/restore path so the exact same lantern colors keep coming.
+export function mulberry32FromState(state) {
+  return mulberry32(state);
+}
+
 export function pickIndex(rng, n) {
   return Math.floor(rng() * n);
 }

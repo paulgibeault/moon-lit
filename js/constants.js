@@ -83,6 +83,9 @@ export const LAUNCHER_BOTTOM_MARGIN = 36;
 export const MIN_LANTERN_RADIUS = 4;
 
 export const PROJECTILE_SPEED = 620;        // px/sec
+// Visual slide speed of the descent animation. Sized to one packed-row
+// height (sqrt(3)*r) so the move reads as "shift down by one row".
+export const DESCENT_DRIFT_SPEED = 240;     // px/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 

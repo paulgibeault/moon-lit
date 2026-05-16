@@ -2,14 +2,15 @@ import {
   SETTLE_HOPS, SETTLE_ITERATIONS, SETTLE_MIN_PEN_PX,
 } from './constants.js';
 import { normalizePos } from './board.js';
+import { anchorBandPx, forEachLanternWithinSq } from './geometry.js';
 
 // Local positional-relaxation settle. When a lantern lands, we let the
 // nearby cluster slide a bit so the board "absorbs" the new arrival.
 //
 // Scope: 2-hop BFS neighborhood of the newly placed lantern. Lanterns outside
 // the movable set still act as collision walls but won't displace.
-// Anchoring: lanterns whose top edge sits near the trellis are pinned —
-// they're tied to the bamboo and don't move.
+// Anchoring: lanterns whose top edge sits within the trellis anchor band are
+// pinned — they're tied to the bamboo and don't move.
 // Mass: the new lantern is treated as heavier so its neighbors yield to it
 // (75/25 split). This keeps player aim mostly intact while still letting
 // existing lanterns make room.
@@ -27,23 +28,20 @@ export function settleAround(board, layout, newLantern, opts = {}) {
   for (let h = 0; h < hops; h++) {
     const next = [];
     for (const a of frontier) {
-      for (const b of board.lanterns) {
-        if (movable.has(b)) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        if (dx * dx + dy * dy <= reachSq) {
-          movable.add(b);
-          next.push(b);
-        }
-      }
+      forEachLanternWithinSq(board, a.x, a.y, reachSq, (b) => {
+        if (movable.has(b)) return;
+        movable.add(b);
+        next.push(b);
+      });
     }
     frontier = next;
     if (!frontier.length) break;
   }
 
-  const pinBand = r * 0.6;
+  const anchorY = layout.trellisY + anchorBandPx(layout);
   const pinned = new Set();
   for (const l of movable) {
-    if (l.y - r <= layout.trellisY + pinBand) pinned.add(l);
+    if (l.y - r <= anchorY) pinned.add(l);
   }
 
   const origin = new Map();

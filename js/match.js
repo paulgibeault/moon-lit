@@ -1,4 +1,5 @@
 import { ADJACENCY_TOLERANCE } from './constants.js';
+import { anchorBandPx, forEachLanternWithinSq } from './geometry.js';
 
 const MIN_MATCH = 3;
 
@@ -9,14 +10,9 @@ function adjThresholdSq(layout) {
 }
 
 function neighborsOf(board, lantern, layout) {
-  const sq = adjThresholdSq(layout);
   const out = [];
-  for (const other of board.lanterns) {
-    if (other === lantern) continue;
-    const dx = other.x - lantern.x;
-    const dy = other.y - lantern.y;
-    if (dx * dx + dy * dy <= sq) out.push(other);
-  }
+  forEachLanternWithinSq(board, lantern.x, lantern.y, adjThresholdSq(layout),
+    (other) => out.push(other), lantern);
   return out;
 }
 
@@ -51,16 +47,16 @@ export function popMatches(board, seed, layout) {
   return cluster;
 }
 
-// A lantern is "anchored" when its top edge is within tolerance of the
-// trellis line. Anything that can't reach an anchored lantern through a
-// chain of touches falls. Mutates the board; returns the dropped lanterns.
+// A lantern is "anchored" when its top edge is within the trellis anchor
+// band. Anything that can't reach an anchored lantern through a chain of
+// touches falls. Mutates the board; returns the dropped lanterns.
 export function dropFloating(board, layout) {
   const r = layout.size;
-  const anchorBand = r * (ADJACENCY_TOLERANCE - 1) + r * 0.4;
+  const anchorY = layout.trellisY + anchorBandPx(layout);
   const seen = new Set();
   const queue = [];
   for (const l of board.lanterns) {
-    if (l.y - r <= layout.trellisY + anchorBand) {
+    if (l.y - r <= anchorY) {
       seen.add(l);
       queue.push(l);
     }
@@ -82,4 +78,3 @@ export function dropFloating(board, layout) {
   board.lanterns = kept;
   return dropped;
 }
-

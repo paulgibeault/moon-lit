@@ -133,8 +133,7 @@ test('match still triggers when settle would absorb a tight pocket', () => {
 
   // Player fires a red into the row-1 pocket: at the close-pack apex it
   // sits tangent to both row-0 reds.
-  addLantern(b, 160, topY + rowH, 'red');
-  const newLantern = b.lanterns[b.lanterns.length - 1];
+  const newLantern = addLantern(b, 160, topY + rowH, 'red', layout);
 
   // Mirror the placement pipeline: pop first, settle only on a miss.
   const popped = popMatches(b, newLantern, layout);
