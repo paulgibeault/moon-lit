@@ -9,7 +9,12 @@ import { COLOR_KEYS, levelConfig } from './constants.js';
 import { mulberry32FromState } from './prng.js';
 import { createBoard } from './board.js';
 
-export const SAVE_VERSION = 1;
+// Bumped each time the lantern color-key set changes — old saves reference
+// keys that may no longer exist, so restoreGame rejects them and the player
+// starts fresh. v1: original (red, orange, yellow, green, blue, white).
+// v2: muted palette with plum. v3: traditional festival palette with pink.
+// v4: pink replaced by paper (natural undyed tissue paper).
+export const SAVE_VERSION = 4;
 
 export function serializeGame(g) {
   return {

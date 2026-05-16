@@ -1,12 +1,16 @@
 export const GAME_ID = 'moon-glow';
 
+// Paper-lantern palette tuned to traditional festival colors (Yi Peng, Loy
+// Krathong, Mid-Autumn) — clear, distinct hues, not muddy. Slightly pulled
+// off pure primaries so they read at night, but each color stays unmistakably
+// itself. No pure white (too stark against the moon).
 export const COLORS = Object.freeze({
-  red:    '#D9434A',
-  orange: '#E89B4F',
-  yellow: '#F2D26A',
-  green:  '#7AB89C',
-  blue:   '#25A3E2',
-  white:  '#F9F9F9',
+  red:    '#D63D3D',  // festival red
+  orange: '#E8843E',  // tangerine persimmon
+  yellow: '#E8C055',  // auspicious gold
+  green:  '#5FA47C',  // jade
+  blue:   '#4D81B8',  // celestial blue
+  paper:  '#DBC49A',  // natural unbleached tissue/rice paper, undyed
 });
 
 export const COLOR_KEYS = Object.freeze(Object.keys(COLORS));

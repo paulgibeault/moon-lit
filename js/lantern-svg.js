@@ -9,31 +9,37 @@ const RIBS = '<path d="M35 25 C 20 30 25 65 30 112" /><path d="M65 25 C 80 30 75
 
 const TEXTURE = '<path d="M30 40 Q 50 38 70 40" /><path d="M20 70 Q 50 68 80 70" /><path d="M32 98 Q 50 100 68 98" />';
 
-// Three-stop radial gradient for the paper face (highlight → midtone → shadow).
+// Three-stop radial gradient for the paper face: highlight (lit side of the
+// paper) → midtone (the lantern's base shade, kept in sync with COLORS) →
+// shadow (darker edge). Highlights stay inside each lantern's own hue family
+// rather than tilting toward cream — that way a red lantern still reads red
+// when lit, not peachy-tan.
 const PAPER_STOPS = {
-  red:    ['#ff5252', '#d32f2f', '#8e0000'],
-  orange: ['#ffb74d', '#f57c00', '#bf360c'],
-  yellow: ['#fff59d', '#fdd835', '#fbc02d'],
-  green:  ['#81c784', '#388e3c', '#1b5e20'],
-  blue:   ['#4fc3f7', '#0288d1', '#01579b'],
-  white:  ['#ffffff', '#f5f5f5', '#e0e0e0'],
+  red:    ['#F26E6E', '#D63D3D', '#8A1F1F'],
+  orange: ['#F2A871', '#E8843E', '#8C4818'],
+  yellow: ['#F2DA8A', '#E8C055', '#8C6F25'],
+  green:  ['#97C9AA', '#5FA47C', '#2F5E45'],
+  blue:   ['#87ADD2', '#4D81B8', '#254868'],
+  paper:  ['#EDDDBA', '#DBC49A', '#8C7850'],
 };
 
-// Two-stop gradient for the internal reflection visible through the mouth.
+// Two-stop gradient for the interior glow seen through the lantern's mouth.
+// Darker versions of the paper shadow — the inside of the lantern catches
+// less direct flame light than the paper does.
 const REFLECT_STOPS = {
-  red:    ['#8e0000', '#5a0000'],
-  orange: ['#f57c00', '#bf360c'],
-  yellow: ['#fdd835', '#fbc02d'],
-  green:  ['#388e3c', '#1b5e20'],
-  blue:   ['#0288d1', '#01579b'],
-  white:  ['#eeeeee', '#bdbdbd'],
+  red:    ['#8A1F1F', '#4A0F0F'],
+  orange: ['#8C4818', '#4A2510'],
+  yellow: ['#8C6F25', '#4D3B18'],
+  green:  ['#2F5E45', '#163024'],
+  blue:   ['#254868', '#122436'],
+  paper:  ['#8C7850', '#4A3E26'],
 };
 
 export const LANTERN_SVG_VIEWBOX = { w: 100, h: 125 };
 
 export function buildLanternSvg(color) {
-  const g = PAPER_STOPS[color] || PAPER_STOPS.white;
-  const r = REFLECT_STOPS[color] || REFLECT_STOPS.white;
+  const g = PAPER_STOPS[color] || PAPER_STOPS.paper;
+  const r = REFLECT_STOPS[color] || REFLECT_STOPS.paper;
   const uid = `mg-${color}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 125">`
     + `<defs>`

@@ -2,6 +2,7 @@ import { COLORS, PALETTE } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
 import { rippleBoost } from '../effects.js';
 import { getLanternSprite, getBackgroundFrame } from '../assets.js';
+import { mulberry32 } from '../prng.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack,
@@ -9,12 +10,91 @@ import {
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
-export function drawBackground(ctx, w, h) {
+// Moon anchor: same math used by drawMoon, exposed here so the warm sky band
+// can sit centered under the moon — including when handedness flips it to
+// the opposite corner.
+function moonAnchor(w, h, handed) {
+  return {
+    cx: handed ? w * 0.22 : w * 0.78,
+    cy: h * 0.14,
+    r: Math.min(w, h) * 0.07,
+  };
+}
+
+// Stable starfield, cached per viewport so resizing recomputes but per-frame
+// draws don't. The seed is fixed (not derived from the game's RNG) so this
+// is THE sky — the same constellation every reload, regardless of seed/level.
+const STAR_SEED = 0xC0FFEE;
+const STAR_COUNT = 110;
+let starsCache = { w: 0, h: 0, stars: null };
+
+function getStars(w, h) {
+  if (starsCache.w === w && starsCache.h === h && starsCache.stars) {
+    return starsCache.stars;
+  }
+  const rng = mulberry32(STAR_SEED);
+  // Confine stars to the upper ~70% — the lake/dead-line region below sits
+  // closer to camera and shouldn't read as starry water.
+  const skyH = h * 0.70;
+  const stars = new Array(STAR_COUNT);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const big = rng() < 0.22;
+    stars[i] = {
+      x: rng() * w,
+      y: rng() * skyH,
+      r: big ? 1.2 : 0.7,
+      alpha: big ? 0.85 : 0.45,
+      twinkle: rng() < 0.06,         // ~7 stars twinkle
+      phase: rng() * Math.PI * 2,
+      freq: 0.25 + rng() * 0.35,     // 0.25..0.6 Hz — slow, not blinky
+    };
+  }
+  starsCache = { w, h, stars };
+  return stars;
+}
+
+export function drawBackground(ctx, w, h, settings) {
+  // Base indigo gradient — unchanged.
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, PALETTE.bgTop);
   grad.addColorStop(1, PALETTE.bgBottom);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
+
+  // Warm amber wash radiating from the moon's position. Low alpha so it
+  // never reads as a discrete object — it just makes the sky around the
+  // moon feel "lit." Sits under the moon and its halo so the moon's own
+  // gradient stops paint cleanly over the band's center.
+  const handed = !!(settings && settings.handedness === 'left');
+  const m = moonAnchor(w, h, handed);
+  const bandR = Math.max(w, h) * 0.55;
+  const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
+  band.addColorStop(0,   'rgba(232, 183, 112, 0.18)');
+  band.addColorStop(0.5, 'rgba(232, 183, 112, 0.06)');
+  band.addColorStop(1,   'rgba(232, 183, 112, 0)');
+  ctx.fillStyle = band;
+  ctx.fillRect(0, 0, w, h);
+
+  // Starfield. ~110 cached dots, two size/alpha tiers, with ~7 slow twinklers.
+  // Drawn behind the moon (moon draws after this), so the moon overpaints any
+  // stars that happen to fall on its disc.
+  const reducedMotion = !!(settings && settings.reducedMotion);
+  const t = reducedMotion ? 0 : performance.now() / 1000;
+  const stars = getStars(w, h);
+  ctx.fillStyle = PALETTE.moon;
+  for (let i = 0; i < stars.length; i++) {
+    const s = stars[i];
+    let a = s.alpha;
+    if (s.twinkle && !reducedMotion) {
+      // Modulate 60..100% of baseline so twinklers never blink fully out.
+      a *= 0.6 + 0.4 * Math.sin(2 * Math.PI * s.freq * t + s.phase);
+    }
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 // The moon is the game's quiet celebration meter: its halo grows with the
@@ -23,9 +103,7 @@ export function drawBackground(ctx, w, h) {
 export function drawMoon(ctx, w, h, game, settings) {
   const reducedMotion = settings.reducedMotion;
   const handed = settings.handedness === 'left';
-  const cx = handed ? w * 0.22 : w * 0.78;
-  const cy = h * 0.14;
-  const r = Math.min(w, h) * 0.07;
+  const { cx, cy, r } = moonAnchor(w, h, handed);
   const combo = game.combo | 0;
 
   if (!reducedMotion) {
@@ -137,18 +215,22 @@ function phaseOf(l) {
 // lamp never goes fully dark. The flare term (sin raised to a high power) sits
 // near zero most of the time and briefly peaks on its own cycle per lamp, so
 // the field reads as twinkling rather than uniformly flickering.
+// Baseline is intentionally low (0.55) so the lantern's paper color reads as
+// itself, not as cream-wash from flame light; the slow/fast modulations are
+// wide (±0.32 combined) so the flame visibly breathes between dim and bright
+// — the dynamic range, not the peak brightness, is where life lives.
 // `intensity` (0..1) scales the natural ember — used by the ignite ramp on the
 // in-flight shot so it brightens up after launch.
 // `boost` is an additive flare-up from external events (ripples) and is
 // applied after intensity so it stays visible even on a half-lit shot.
 function emberLevel(phase, intensity, boost) {
   const t = performance.now() / 1000;
-  const slow = 0.10 * Math.sin(t * 1.8 + phase);
-  const fast = 0.05 * Math.sin(t * 5.3 + phase * 1.7);
-  const flareSin = Math.sin(t * 0.7 + phase * 3.7 + 1.3);
-  const flare = 0.18 * Math.pow(Math.max(0, flareSin), 6);
-  const base = (0.88 + slow + fast + flare) * intensity;
-  return Math.max(0, Math.min(1.6, base + (boost || 0)));
+  const slow = 0.20 * Math.sin(t * 1.5 + phase);
+  const fast = 0.12 * Math.sin(t * 4.7 + phase * 1.7);
+  const flareSin = Math.sin(t * 0.55 + phase * 3.7 + 1.3);
+  const flare = 0.30 * Math.pow(Math.max(0, flareSin), 5);
+  const base = (0.55 + slow + fast + flare) * intensity;
+  return Math.max(0.05, Math.min(1.3, base + (boost || 0)));
 }
 
 export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
@@ -214,8 +296,8 @@ function drawEmberHalo(ctx, gx, gy, size, level) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const grad = ctx.createRadialGradient(gx, gy, size * 0.1, gx, gy, r);
-  grad.addColorStop(0,    `rgba(255, 220, 150, ${0.50 * level})`);
-  grad.addColorStop(0.40, `rgba(255, 175, 95,  ${0.20 * level})`);
+  grad.addColorStop(0,    `rgba(255, 220, 150, ${0.32 * level})`);
+  grad.addColorStop(0.40, `rgba(255, 175, 95,  ${0.13 * level})`);
   grad.addColorStop(1,    'rgba(255, 140, 50, 0)');
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -232,8 +314,8 @@ function drawEmberCore(ctx, gx, gy, size, level) {
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
-  grad.addColorStop(0,   `rgba(255, 245, 200, ${0.6 * level})`);
-  grad.addColorStop(0.5, `rgba(255, 180, 90,  ${0.3 * level})`);
+  grad.addColorStop(0,   `rgba(255, 245, 200, ${0.38 * level})`);
+  grad.addColorStop(0.5, `rgba(255, 180, 90,  ${0.18 * level})`);
   grad.addColorStop(1,   'rgba(255, 140, 50, 0)');
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -297,10 +379,12 @@ function drawFuelCore(ctx, gx, gy, size) {
 }
 
 // Vertical two-layer flame rising from the top of the fuel puck. The outer
-// body fades through yellow → orange; the inner core stays hot white at the
-// base. Both layers use 'lighter' compositing so the flame brightens both
-// the lantern paper above (its upper body sits behind the paper) and the
-// dark mouth interior between the puck and the rim's back edge.
+// body fades through amber → orange; the inner core peaks at warm cream
+// (intentionally not pure white — a candle flame reads as cream/honey, and
+// a white peak would clash with the moon and make the lamps feel stark).
+// Both layers use 'lighter' compositing so the flame brightens both the
+// lantern paper above (its upper body sits behind the paper) and the dark
+// mouth interior between the puck and the rim's back edge.
 function drawFlame(ctx, gx, gy, size, level) {
   const outerW = size * (0.13 + 0.025 * level);
   const outerLen = size * (0.65 + 0.20 * level);
@@ -312,21 +396,23 @@ function drawFlame(ctx, gx, gy, size, level) {
 
   // Outer body
   const outer = ctx.createLinearGradient(gx, gy, gx, gy - outerLen);
-  outer.addColorStop(0,    `rgba(255, 220, 140, ${0.65 * level})`);
-  outer.addColorStop(0.35, `rgba(255, 185, 90,  ${0.50 * level})`);
-  outer.addColorStop(0.75, `rgba(255, 135, 55,  ${0.22 * level})`);
+  outer.addColorStop(0,    `rgba(255, 220, 140, ${0.45 * level})`);
+  outer.addColorStop(0.35, `rgba(255, 185, 90,  ${0.32 * level})`);
+  outer.addColorStop(0.75, `rgba(255, 135, 55,  ${0.14 * level})`);
   outer.addColorStop(1,    'rgba(255, 100, 30, 0)');
   ctx.fillStyle = outer;
   ctx.beginPath();
   ctx.ellipse(gx, gy - outerLen / 2, outerW, outerLen / 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Inner hot core
+  // Inner hot core — warm cream, not white. The peak sits around 255,235,190
+  // (a candle's hottest yellow-cream) so the flame harmonizes with the moon
+  // (#F5E9C9) and reads as lit-by-fuel rather than lit-by-LED.
   const inner = ctx.createLinearGradient(gx, gy, gx, gy - innerLen);
-  inner.addColorStop(0,    `rgba(255, 255, 240, ${0.95 * level})`);
-  inner.addColorStop(0.40, `rgba(255, 240, 180, ${0.70 * level})`);
-  inner.addColorStop(0.80, `rgba(255, 200, 110, ${0.30 * level})`);
-  inner.addColorStop(1,    'rgba(255, 180, 80, 0)');
+  inner.addColorStop(0,    `rgba(255, 235, 190, ${0.55 * level})`);
+  inner.addColorStop(0.40, `rgba(255, 215, 150, ${0.40 * level})`);
+  inner.addColorStop(0.80, `rgba(255, 185, 100, ${0.18 * level})`);
+  inner.addColorStop(1,    'rgba(255, 165, 75, 0)');
   ctx.fillStyle = inner;
   ctx.beginPath();
   ctx.ellipse(gx, gy - innerLen / 2, innerW, innerLen / 2, 0, 0, Math.PI * 2);

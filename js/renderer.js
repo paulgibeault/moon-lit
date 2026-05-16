@@ -20,7 +20,7 @@ export function render(ctx, layout, game, settings) {
   tweenHud(game, settings);
 
   const { viewW, viewH } = layout;
-  drawBackground(ctx, viewW, viewH);
+  drawBackground(ctx, viewW, viewH, settings);
   drawMoon(ctx, viewW, viewH, game, settings);
   drawFrame(ctx, viewW, viewH);
   drawBoard(ctx, layout, game, settings);
