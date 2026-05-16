@@ -33,6 +33,10 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     else if (game.phase === PHASE.GAME_OVER) onLossClick?.();
   };
 
+  // Track the pointer that started an aim gesture, so a stray pointerup from
+  // an end-screen dismiss can't accidentally fire in the new game.
+  let aimingPointerId = null;
+
   const onPointerMove = (e) => {
     if (isGameOver(getGame())) return;
     aimAt(e.clientX, e.clientY);
@@ -46,6 +50,17 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       return;
     }
     if (inSafeZone(e.clientY)) return;
+    aimingPointerId = e.pointerId;
+    canvas.setPointerCapture?.(e.pointerId);
+    aimAt(e.clientX, e.clientY);
+    e.preventDefault();
+  };
+
+  const onPointerUp = (e) => {
+    if (aimingPointerId !== e.pointerId) return;
+    aimingPointerId = null;
+    const game = getGame();
+    if (isGameOver(game)) return;
     aimAt(e.clientX, e.clientY);
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
@@ -53,8 +68,14 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     e.preventDefault();
   };
 
+  const onPointerCancel = (e) => {
+    if (aimingPointerId === e.pointerId) aimingPointerId = null;
+  };
+
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
   window.addEventListener('resize', refreshRect);
   window.addEventListener('scroll', refreshRect, { passive: true });
 }
