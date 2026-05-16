@@ -1,15 +1,15 @@
-// Loads sky-lantern PNGs. At load time we measure each sprite's painted
-// bounding box (alpha > 0) so the renderer can crop away transparent margin
-// and draw the lamp at a size driven by the silhouette, not the PNG canvas.
+// Rasterizes the SVG lantern markup from lantern-svg.js to offscreen canvases
+// at startup so per-frame drawing is a plain drawImage. Each canvas is then
+// alpha-bbox measured so the renderer can crop transparent margin and draw the
+// lamp at a size driven by its painted silhouette, not the rasterizer canvas.
 
-const SOURCES = {
-  red:    'img/sky-lantern-red.png',
-  orange: 'img/sky-lantern-orange.png',
-  yellow: 'img/sky-lantern-yellow.png',
-  green:  'img/sky-lantern-green.png',
-  blue:   'img/sky-lantern-blue.png',
-  white:  'img/sky-lantern-white.png',
-};
+import { COLOR_KEYS } from './constants.js';
+import { buildLanternSvg, LANTERN_SVG_VIEWBOX } from './lantern-svg.js';
+
+// Raster resolution. 2x oversample of the SVG viewBox so the lamp stays crisp
+// when scaled to most viewport sizes (lantern radius typically peaks around
+// ~64px = 128px diameter; rasterizing at 200px width gives headroom).
+const RASTER_SCALE = 2;
 
 // Horizontal flipbook for the match-pop burst. The sheet is BURST_FRAMES wide
 // and one frame tall; each frame is a square of size `sheet.height`.
@@ -77,12 +77,34 @@ function record(key, image, bbox) {
   sprites[key] = { image, ...bbox };
 }
 
+async function rasterizeSvg(svg, width, height) {
+  const blob = new Blob([svg], { type: 'image/svg+xml' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('svg rasterize failed'));
+      i.src = url;
+    });
+    const c = document.createElement('canvas');
+    c.width = width;
+    c.height = height;
+    c.getContext('2d').drawImage(img, 0, 0, width, height);
+    return c;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export async function loadLanterns() {
+  const w = LANTERN_SVG_VIEWBOX.w * RASTER_SCALE;
+  const h = LANTERN_SVG_VIEWBOX.h * RASTER_SCALE;
   const entries = await Promise.all(
-    Object.entries(SOURCES).map(async ([key, src]) => [key, await loadImage(src)])
+    COLOR_KEYS.map(async (key) => [key, await rasterizeSvg(buildLanternSvg(key), w, h)])
   );
-  for (const [key, img] of entries) {
-    record(key, img, measureBbox(img));
+  for (const [key, canvas] of entries) {
+    record(key, canvas, measureBbox(canvas));
   }
   try {
     const img = await loadImage(BURST_SRC);

@@ -1,0 +1,156 @@
+<!-- Cold Ember (Black & Small) -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(20, 20)">
+    <!-- Smaller, solid ashen black core for a completely extinguished flame -->
+    <circle r="2.5" fill="#1a1a1a" />
+    <!-- Subtle ashen texture flecks -->
+    <circle cx="-0.8" cy="-0.8" r="0.4" fill="#000" opacity="0.6" />
+    <circle cx="1" cy="0.5" r="0.3" fill="#000" opacity="0.4" />
+  </g>
+</svg>
+
+<!-- Dying Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowDying" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffcc80" stop-opacity="0.6" />
+      <stop offset="60%" stop-color="#ef6c00" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#ef6c00" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <g transform="translate(20, 20)">
+    <!-- Very slow, shallow pulse for a fading flame -->
+    <circle r="8" fill="url(#emberGlowDying)">
+      <animate attributeName="r" values="7;9;7" dur="6s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.2;0.5;0.2" dur="6s" repeatCount="indefinite" />
+    </circle>
+    <!-- Small, rounded, barely-there core -->
+    <path d="M-2 1 Q 0 -2 2 1 Q 0 3 -2 1" fill="#fff9c4" opacity="0.4">
+      <animate attributeName="opacity" values="0.1;0.4;0.1" dur="6s" repeatCount="indefinite" />
+    </path>
+  </g>
+</svg>
+
+<!-- Refined Soft Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowSoft" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff9c4" />
+      <stop offset="50%" stop-color="#ffcc80" />
+      <stop offset="100%" stop-color="#ffcc80" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <g transform="translate(20, 22)">
+    <!-- Gentle, warm glow -->
+    <circle r="10" fill="url(#emberGlowSoft)">
+      <animate attributeName="r" values="9;11;9" dur="4s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.4;0.8;0.4" dur="4s" repeatCount="indefinite" />
+    </circle>
+    <!-- Small, rounded core -->
+    <path d="M-3 0 Q 0 -5 3 0 Q 0 2 -3 0" fill="#ffffff" opacity="0.9">
+      <animate attributeName="opacity" values="0.6;0.9;0.6" dur="3s" repeatCount="indefinite" />
+      <animate attributeName="d" values="M-3 0 Q 0 -5 3 0 Q 0 2 -3 0; M-3.5 0.5 Q 0 -6 3.5 0.5 Q 0 2.5 -3.5 0.5; M-3 0 Q 0 -5 3 0 Q 0 2 -3 0" dur="3s" repeatCount="indefinite" />
+    </path>
+  </g>
+</svg>
+
+<!-- Standalone Burning Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowStandalone" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="30%" stop-color="#fff176" />
+      <stop offset="70%" stop-color="#fb8c00" />
+      <stop offset="100%" stop-color="#fb8c00" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Standalone Animated Ember -->
+  <g transform="translate(20, 20)">
+    <circle r="12" fill="url(#emberGlowStandalone)">
+      <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+    </circle>
+    <path d="M-4 2 Q 0 -6 4 2 Q 0 5 -4 2" fill="#fff9c4">
+      <animate attributeName="d" values="M-4 2 Q 0 -6 4 2 Q 0 5 -4 2; M-5 3 Q 0 -8 5 3 Q 0 6 -5 3; M-4 2 Q 0 -6 4 2 Q 0 5 -4 2" dur="1.5s" repeatCount="indefinite" />
+    </path>
+  </g>
+</svg>
+
+<!-- Intense Flickering Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowIntense" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="20%" stop-color="#fff59d" />
+      <stop offset="60%" stop-color="#ffb300" />
+      <stop offset="100%" stop-color="#e65100" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <g transform="translate(20, 20)">
+    <!-- Rapid, sharp pulse for intensity -->
+    <circle r="14" fill="url(#emberGlowIntense)">
+      <animate attributeName="r" values="12;16;12;15;12" dur="0.8s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.8;1;0.7;1;0.8" dur="0.8s" repeatCount="indefinite" />
+    </circle>
+    <path d="M-5 2 Q 0 -10 5 2 Q 0 7 -5 2" fill="#fff9c4">
+      <animate attributeName="d" values="M-5 2 Q 0 -10 5 2 Q 0 7 -5 2; M-6 3 Q 0 -14 6 3 Q 0 9 -6 3; M-5 2 Q 0 -10 5 2 Q 0 7 -5 2" dur="0.6s" repeatCount="indefinite" />
+    </path>
+  </g>
+</svg>
+
+<!-- Refined Roaring Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowRoaring" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="10%" stop-color="#fff9c4" />
+      <stop offset="40%" stop-color="#ffb300" />
+      <stop offset="80%" stop-color="#e65100" />
+      <stop offset="100%" stop-color="#e65100" stop-opacity="0" />
+    </radialGradient>
+    <filter id="flameBlur">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.5" />
+    </filter>
+  </defs>
+  <g transform="translate(20, 22)">
+    <!-- Expansive, violent outer glow -->
+    <circle r="16" fill="url(#emberGlowRoaring)">
+      <animate attributeName="r" values="14;18;13;17;15;18;14" dur="0.3s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.7;1;0.6;1;0.8;1;0.7" dur="0.3s" repeatCount="indefinite" />
+    </circle>
+    <!-- Organic, flickering flame core -->
+    <g filter="url(#flameBlur)">
+      <path d="M-6 0 Q -2 -16 0 -18 Q 2 -16 6 0 Q 0 4 -6 0" fill="#ffffff">
+        <animate attributeName="d" values="M-6 0 Q -2 -16 0 -18 Q 2 -16 6 0 Q 0 4 -6 0; M-7 1 Q 0 -22 0 -24 Q 0 -22 7 1 Q 0 5 -7 1; M-6 0 Q 2 -16 0 -18 Q -2 -16 6 0 Q 0 4 -6 0" dur="0.2s" repeatCount="indefinite" />
+      </path>
+      <path d="M-4 0 Q 0 -10 4 0 Q 0 2 -4 0" fill="#fff59d" opacity="0.8">
+        <animate attributeName="d" values="M-4 0 Q 0 -10 4 0 Q 0 2 -4 0; M-5 1 Q 0 -14 5 1 Q 0 3 -5 1; M-4 0 Q 0 -10 4 0 Q 0 2 -4 0" dur="0.25s" repeatCount="indefinite" />
+      </path>
+    </g>
+  </g>
+</svg>
+
+<!-- Roaring Intensity Ember -->
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="emberGlowRoaring" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="15%" stop-color="#fff59d" />
+      <stop offset="40%" stop-color="#ffb300" />
+      <stop offset="80%" stop-color="#e65100" />
+      <stop offset="100%" stop-color="#e65100" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <g transform="translate(20, 20)">
+    <!-- Violent, large pulse for high intensity -->
+    <circle r="16" fill="url(#emberGlowRoaring)">
+      <animate attributeName="r" values="14;18;13;17;15;18;14" dur="0.4s" repeatCount="indefinite" />
+      <animate attributeName="opacity" values="0.8;1;0.7;1;0.9;1;0.8" dur="0.4s" repeatCount="indefinite" />
+    </circle>
+    <!-- Sharper, taller flame core -->
+    <path d="M-6 2 Q 0 -14 6 2 Q 0 10 -6 2" fill="#fffde7">
+      <animate attributeName="d" values="M-6 2 Q 0 -14 6 2 Q 0 10 -6 2; M-7 3 Q 0 -18 7 3 Q 0 12 -7 3; M-6 2 Q 0 -14 6 2 Q 0 10 -6 2" dur="0.3s" repeatCount="indefinite" />
+    </path>
+  </g>
+</svg>
