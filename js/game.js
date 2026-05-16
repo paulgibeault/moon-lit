@@ -154,7 +154,11 @@ export function step(game, dtSec, layout) {
 function finishSettle(game, layout) {
   if (game.pendingDescent) {
     game.pendingDescent = false;
-    const ok = descend(game.board, layout, game.rng, game.colors);
+    // Pull the new top row only from colors currently in play, so a descent
+    // can't re-introduce a color the player has already cleared from the board.
+    const live = new Set(game.board.lanterns.map(l => l.color));
+    const palette = game.colors.filter(c => live.has(c));
+    const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors);
     if (!ok) {
       game.phase = PHASE.GAME_OVER;
       return;
