@@ -5,7 +5,7 @@
 
 import { PHASE } from './game.js';
 import {
-  drawBackground, drawMoon, drawBamboo, drawReflections, drawWaterline,
+  drawBackground, drawMoon, drawMoonBleed, drawBamboo, drawReflections, drawWaterline,
   drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
@@ -20,12 +20,15 @@ export function render(ctx, layout, game, settings) {
   tweenHud(game, settings);
 
   const { viewW, viewH } = layout;
-  drawBackground(ctx, viewW, viewH, settings);
-  drawMoon(ctx, viewW, viewH, game, settings);
+  drawBackground(ctx, layout, settings);
+  drawMoon(ctx, layout, game, settings);
   drawReflections(ctx, layout, game, settings);
   drawWaterline(ctx, layout);
   drawBamboo(ctx, viewW, viewH, game, settings);
   drawBoard(ctx, layout, game, settings);
+  // The bleed masks bamboo out of itself before compositing, so bamboo stays
+  // fully opaque and never overdraws lanterns. See drawMoonBleed for details.
+  drawMoonBleed(ctx, layout, settings);
   if (game.phase === PHASE.AIMING) {
     drawAimLine(ctx, layout, game);
   }

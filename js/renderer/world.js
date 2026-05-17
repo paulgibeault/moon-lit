@@ -10,20 +10,100 @@ import {
 import { mulberry32 } from '../prng.js';
 import {
   SERIF, SANS, HUD_OPACITY,
-  easeOut, mixWithWhite, mixWithBlack,
+  easeOut, mixWithWhite, mixWithBlack, hexToRgba,
 } from './style.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
-// Moon anchor: same math used by drawMoon, exposed here so the warm sky band
-// can sit centered under the moon — including when handedness flips it to
-// the opposite corner.
-function moonAnchor(w, h, handed) {
-  return {
-    cx: handed ? w * 0.22 : w * 0.78,
-    cy: h * 0.14,
-    r: Math.min(w, h) * 0.07,
-  };
+// Moon phase math. UTC-based synodic cycle from a known new-moon reference;
+// accurate to ~24h which is plenty for a game's celestial dressing.
+const MOON_REF_NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14, 0);
+const MOON_SYNODIC_MS = 29.530588 * 86400000;
+
+// Rising/setting cycle. Compressed vs. real time so players see the moon
+// arc within a session, but slow enough to feel ambient rather than
+// theatrical. MOON_VISIBLE_FRAC of the cycle is above the horizon; the
+// remainder is a quick dip below the waterline before the next rise from
+// the opposite side.
+const MOON_TRAVERSE_MS = 48 * 60 * 1000;
+const MOON_VISIBLE_FRAC = 0.85;
+
+// Tuning knob exposed to the admin panel for scrubbing through positions
+// while iterating on the moon-bleed look on lanterns. Negative values mean
+// "use real time" (the default cycle); 0..1 locks the moon to that point in
+// the traverse cycle. Persists in module state so admin edits take effect
+// immediately without restart.
+export const MOON_PARAMS = {
+  positionOverride: -1,
+};
+
+// Lantern body tuning, exposed to admin for quick iteration.
+//   * opacity: scales globalAlpha on the lantern sprite drawImage. 1.0 keeps
+//     the sprite's natural alpha (the SVG has translucent paper); below 1
+//     fades the lamp toward the sky.
+//   * backing: alpha of a solid color-keyed disc drawn behind the sprite.
+//     0 = sprite-only (translucent paper reads as paper-over-sky). >0 paints
+//     the lantern's color underneath so the body reads more solid against
+//     the moon-bleed / sky behind. Useful when the bleed makes lamps look
+//     washed out.
+export const LANTERN_PARAMS = {
+  opacity: 1.0,
+  backing: 0.0,
+};
+
+// Returns the moon's current screen position, radius, altitude (sin of arc
+// angle: 1 at zenith, 0 at horizon, negative when dipped below the waterline),
+// and lunar phase (0 = new, 0.25 = first quarter, 0.5 = full, 0.75 = last
+// quarter). All callers — sky wash, disc render, reflection — share this so
+// the moon, its glow, and its reflection stay locked together.
+//
+// Direction: rises right, traverses to the left, sets, then re-emerges on
+// the right. Handedness no longer pins position — the moon is its own
+// independent ambient element.
+//
+// Reduced motion: position freezes near the upper-right zenith of the arc so
+// the scene still reads as moonlit without any movement. Phase is still
+// computed from real time (changes slowly day-to-day; not "motion" in the
+// preference's sense).
+function moonState(layout, settings, nowMs) {
+  const { viewW: w, viewH: h, deadLineY } = layout;
+  const reducedMotion = !!(settings && settings.reducedMotion);
+  const r = Math.min(w, h) * 0.07;
+  const horizonY = deadLineY;
+  const peakY = h * 0.10;
+  const peakRise = horizonY - peakY;
+  const phase01 = (((nowMs - MOON_REF_NEW_MOON_MS) / MOON_SYNODIC_MS) % 1 + 1) % 1;
+
+  if (reducedMotion) {
+    return {
+      cx: w * 0.55, cy: peakY, r,
+      altitude: 1, phase01, horizonY,
+    };
+  }
+
+  // tCycle ∈ [0, 1). Visible arc occupies [0, MOON_VISIBLE_FRAC]; the rest
+  // is the off-screen dip below the waterline. Admin override pins the
+  // cycle to a specific point so the moon's position can be scrubbed in the
+  // admin panel while iterating on the bleed/transparency look.
+  const override = MOON_PARAMS.positionOverride;
+  const tCycle = override >= 0
+    ? Math.min(1, override)
+    : ((nowMs / MOON_TRAVERSE_MS) % 1 + 1) % 1;
+  let theta;
+  if (tCycle <= MOON_VISIBLE_FRAC) {
+    theta = (tCycle / MOON_VISIBLE_FRAC) * Math.PI;
+  } else {
+    theta = Math.PI + ((tCycle - MOON_VISIBLE_FRAC) / (1 - MOON_VISIBLE_FRAC)) * Math.PI;
+  }
+  const altitude = Math.sin(theta);
+  // cos(theta): +1 at rise (right edge offscreen) → 0 at zenith (center) →
+  // -1 at set (left edge offscreen). Pad the swing by +r so the disc fully
+  // leaves the frame at horizon rather than clipping in half mid-air.
+  const cx = w * 0.5 + (w * 0.5 + r) * Math.cos(theta);
+  const cy = altitude >= 0
+    ? horizonY - peakRise * altitude
+    : horizonY + (-altitude) * r * 1.4;   // brief dip below water during set
+  return { cx, cy, r, altitude, phase01, horizonY };
 }
 
 // Stable starfield, cached per viewport so resizing recomputes but per-frame
@@ -58,7 +138,8 @@ function getStars(w, h) {
   return stars;
 }
 
-export function drawBackground(ctx, w, h, settings) {
+export function drawBackground(ctx, layout, settings) {
+  const { viewW: w, viewH: h } = layout;
   // Base indigo gradient — unchanged.
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, PALETTE.bgTop);
@@ -66,19 +147,21 @@ export function drawBackground(ctx, w, h, settings) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
-  // Warm amber wash radiating from the moon's position. Low alpha so it
-  // never reads as a discrete object — it just makes the sky around the
-  // moon feel "lit." Sits under the moon and its halo so the moon's own
-  // gradient stops paint cleanly over the band's center.
-  const handed = !!(settings && settings.handedness === 'left');
-  const m = moonAnchor(w, h, handed);
-  const bandR = Math.max(w, h) * 0.55;
-  const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
-  band.addColorStop(0,   'rgba(232, 183, 112, 0.18)');
-  band.addColorStop(0.5, 'rgba(232, 183, 112, 0.06)');
-  band.addColorStop(1,   'rgba(232, 183, 112, 0)');
-  ctx.fillStyle = band;
-  ctx.fillRect(0, 0, w, h);
+  // Warm amber wash radiating from the moon's CURRENT position. Tracks the
+  // moon as it traverses so the brightest part of the sky always sits under
+  // the moon. Modulated by altitude so the wash dims at horizon — a setting
+  // moon shouldn't paint the entire sky just as bright as a moon at zenith.
+  const m = moonState(layout, settings, Date.now());
+  const altGate = Math.max(0, m.altitude);
+  if (altGate > 0.02) {
+    const bandR = Math.max(w, h) * 0.55;
+    const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
+    band.addColorStop(0,   `rgba(232, 183, 112, ${(0.18 * altGate).toFixed(3)})`);
+    band.addColorStop(0.5, `rgba(232, 183, 112, ${(0.06 * altGate).toFixed(3)})`);
+    band.addColorStop(1,   'rgba(232, 183, 112, 0)');
+    ctx.fillStyle = band;
+    ctx.fillRect(0, 0, w, h);
+  }
 
   // Starfield. ~110 cached dots, two size/alpha tiers, with ~7 slow twinklers.
   // Drawn behind the moon (moon draws after this), so the moon overpaints any
@@ -102,21 +185,80 @@ export function drawBackground(ctx, w, h, settings) {
   ctx.globalAlpha = 1;
 }
 
+// Exposed so future gameplay hooks (e.g. "moon-lit lanterns earn bonus
+// effects when within the moon's halo") can read the same numbers the
+// renderer uses without recomputing the cycle math.
+export function getMoonState(layout, settings) {
+  return moonState(layout, settings, Date.now());
+}
+
+// Trace the unlit portion of the disc as a Path2D and fill it with a deep
+// indigo. The terminator (lit/dark boundary) is a half-ellipse with vertical
+// semi-axis r and horizontal semi-axis r * |1 - 2k|, where k is the
+// illuminated fraction. Whether the terminator bulges toward the lit or dark
+// side of the disc depends on crescent vs. gibbous — together that means:
+//
+//   waxing crescent: dark = left limb arc + terminator bulging RIGHT (into lit)
+//   waxing gibbous : dark = left limb arc + terminator bulging LEFT  (into dark)
+//   waning gibbous : dark = right limb arc + terminator bulging RIGHT (into dark)
+//   waning crescent: dark = right limb arc + terminator bulging LEFT  (into lit)
+//
+// Fill is a translucent deep indigo (not black) so the dark side keeps
+// some sky-color presence — visually equivalent to "earthshine" without the
+// real-world astronomy.
+function drawPhaseShadow(ctx, cx, cy, r, phase01) {
+  const phaseAngle = phase01 * 2 * Math.PI;
+  const k = (1 - Math.cos(phaseAngle)) / 2;   // illuminated fraction 0..1
+  if (k >= 0.995) return;                     // full moon — no shadow
+  ctx.save();
+  if (k <= 0.005) {
+    // New moon — whole disc dark.
+    ctx.fillStyle = 'rgba(20, 28, 52, 0.86)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  const a = r * Math.abs(1 - 2 * k);
+  const waxing = phase01 < 0.5;
+  const crescent = k < 0.5;
+  // Limb arc traces the dark side of the disc; terminator on whichever side
+  // the geometry above prescribes. Canvas y is down, so angles -π/2 = top,
+  // +π/2 = bottom; ccw=true sweeps via x<0 (left), ccw=false via x>0 (right).
+  const limbDarkOnLeft = waxing;
+  const terminatorOnLeft = waxing ? !crescent : crescent;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, r, r, 0, -Math.PI / 2, Math.PI / 2, limbDarkOnLeft);
+  ctx.ellipse(cx, cy, a, r, 0,  Math.PI / 2, -Math.PI / 2, terminatorOnLeft);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(20, 28, 52, 0.78)';
+  ctx.fill();
+  ctx.restore();
+}
+
 // The moon is the game's quiet celebration meter AND the warm focal point of
-// the sky. Three behaviors layered together:
+// the sky. Behaviors layered together:
 //   * Always-on warm halo (multi-stop radial) that "breathes" — a slow
 //     low-amplitude sinusoid on radius + alpha so it reads as alive even at
 //     idle. Lifts further with combo.
 //   * Surface disc — either the loaded moon texture (clipped to a circle,
 //     slowly rotating, warm-overlay tinted) or a flat warm fallback.
+//   * Phase shadow — a deep-indigo path covering the unlit portion of the
+//     disc, computed from real-world lunar phase.
 //   * Inner glow rim — a soft luminous edge that makes the disc feel lit
 //     from within rather than pasted on.
-// Reduced motion: skips the halo and the rotation/breathing, keeping a
-// still warm disc + soft rim.
-export function drawMoon(ctx, w, h, game, settings) {
+// All passes share the moon's current traverse position so a setting moon
+// dips into the water with its halo and rim still attached; the disc is
+// clipped at the horizon so the lower limb appears to slip below the surface
+// rather than sit on it.
+export function drawMoon(ctx, layout, game, settings) {
   const reducedMotion = !!settings.reducedMotion;
-  const handed = settings.handedness === 'left';
-  const { cx, cy, r } = moonAnchor(w, h, handed);
+  const m = moonState(layout, settings, Date.now());
+  const { cx, cy, r, altitude, horizonY, phase01 } = m;
+  // Bail entirely once the disc + halo are fully below horizon. The very
+  // brief offscreen portion of the cycle skips rendering altogether.
+  if (cy - r * 4 > horizonY) return;
   const combo = game.combo | 0;
   const t = reducedMotion ? 0 : performance.now() / 1000;
 
@@ -173,8 +315,18 @@ export function drawMoon(ctx, w, h, game, settings) {
   }
 
   // Disc surface. Texture if loaded; otherwise a flat warm cream circle.
+  // Clipped to (above waterline) ∩ (disc circle) so a setting/rising moon
+  // dips into the water with its lower limb hidden, rather than sitting
+  // visibly on top of the surface. Consecutive clip() calls intersect, so
+  // the rect-then-arc stack gives the half-disc when the moon straddles the
+  // horizon and the full disc otherwise. Halos above are intentionally NOT
+  // clipped — atmospheric glow lingers in the sky even when the disc itself
+  // is half-submerged.
   const tex = getMoonTexture();
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, layout.viewW, horizonY);
+  ctx.clip();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
@@ -222,12 +374,14 @@ export function drawMoon(ctx, w, h, game, settings) {
     ctx.fillStyle = lift;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
   }
-  ctx.restore();
 
-  // Inner rim glow — paint a thin warm ring just inside the disc edge using
-  // an additive radial. Sells the "self-luminous" feel without washing out
-  // the surface detail in the center.
-  ctx.save();
+  // Phase shadow — covers the unlit portion of the disc. Drawn AFTER the
+  // disc and lift so it cleanly masks both, and BEFORE the rim so the rim
+  // glow remains visible all the way around the lit limb.
+  drawPhaseShadow(ctx, cx, cy, r, phase01);
+
+  // Inner rim glow — additive amber ring just inside the disc edge. Stays
+  // inside the same clip so a horizon-clipped moon's rim is also clipped.
   ctx.globalCompositeOperation = 'lighter';
   const rim = ctx.createRadialGradient(cx, cy, r * 0.78, cx, cy, r * 1.0);
   rim.addColorStop(0, 'rgba(255, 220, 170, 0)');
@@ -236,6 +390,101 @@ export function drawMoon(ctx, w, h, game, settings) {
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // Mark altitude unused-on-purpose for ESLint-style readers; it's consumed
+  // by the background wash and the reflection pass.
+  void altitude;
+  ctx.restore();
+}
+
+// Additive post-pass painted on top of the lantern board. Two layers:
+//   * A wide warm radial centered on the moon — "moonlight catching the
+//     lanterns and the air" — adds a subtle glow to anything sitting in
+//     the moon's hemisphere of the sky.
+//   * A faint disc bleed (texture re-painted at low alpha) — lanterns
+//     that physically overlap the moon disc get a ghosted hint of the
+//     surface showing through, which sets up the future "moon-lit lantern"
+//     gameplay hook by making the affordance visible to the player before
+//     any mechanics exist.
+// Both layers gate on altitude so a submerged moon casts no light.
+//
+// To keep bamboo silhouettes opaque AND let the bleed lighten the lanterns
+// behind them, we composite via an offscreen canvas: paint the bleed
+// normally, cut out the bamboo silhouettes (destination-out with the cached
+// bamboo canvas as a mask), then drawImage the result onto the main canvas
+// with 'lighter' so it acts as an additive layer everywhere except where
+// bamboo previously drew.
+let bleedCache = null;
+
+function getBleedCanvas(w, h, dpr) {
+  const pw = Math.max(1, Math.floor(w * dpr));
+  const ph = Math.max(1, Math.floor(h * dpr));
+  if (bleedCache && bleedCache.canvas.width === pw && bleedCache.canvas.height === ph) {
+    return bleedCache.canvas;
+  }
+  const c = document.createElement('canvas');
+  c.width = pw;
+  c.height = ph;
+  // Apply DPR transform once; the same 2d context is returned on subsequent
+  // getContext calls, so this scaling sticks for the lifetime of the canvas.
+  c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  bleedCache = { canvas: c };
+  return c;
+}
+
+export function drawMoonBleed(ctx, layout, settings) {
+  const m = moonState(layout, settings, Date.now());
+  if (m.altitude <= 0.02) return;
+  const { viewW, viewH } = layout;
+  const dpr = window.devicePixelRatio || 1;
+  const bleed = getBleedCanvas(viewW, viewH, dpr);
+  const bx = bleed.getContext('2d');
+  bx.clearRect(0, 0, viewW, viewH);
+
+  // Wide warm radial — atmospheric moonlight catching everything in the
+  // moon's hemisphere. Clipped above the waterline so it doesn't paint into
+  // the reflection (which has its own moon-driven warm column).
+  bx.save();
+  bx.beginPath();
+  bx.rect(0, 0, viewW, layout.deadLineY);
+  bx.clip();
+  const washR = m.r * 5.5;
+  const washAlpha = 0.11 * m.altitude;
+  const wash = bx.createRadialGradient(m.cx, m.cy, m.r * 0.4, m.cx, m.cy, washR);
+  wash.addColorStop(0,    `rgba(255, 220, 170, ${washAlpha.toFixed(3)})`);
+  wash.addColorStop(0.45, `rgba(255, 200, 140, ${(washAlpha * 0.45).toFixed(3)})`);
+  wash.addColorStop(1,    'rgba(255, 200, 140, 0)');
+  bx.fillStyle = wash;
+  bx.fillRect(0, 0, viewW, layout.deadLineY);
+
+  // Faint disc bleed — moon surface ghosting through anything in front of it.
+  const tex = getMoonTexture();
+  if (tex && tex.width > 0) {
+    bx.save();
+    bx.beginPath();
+    bx.arc(m.cx, m.cy, m.r, 0, Math.PI * 2);
+    bx.clip();
+    bx.globalAlpha = 0.22 * m.altitude;
+    const d = m.r * 2.12;
+    bx.drawImage(tex, m.cx - d / 2, m.cy - d / 2, d, d);
+    bx.restore();
+  }
+  bx.restore();
+
+  // Cut out bamboo silhouettes. destination-out erases bleed pixels wherever
+  // the bamboo cache has non-transparent alpha, so bamboo's repaint of itself
+  // at full opacity is no longer needed — the bleed simply doesn't reach
+  // those pixels.
+  if (bambooCache.canvas) {
+    bx.globalCompositeOperation = 'destination-out';
+    bx.drawImage(bambooCache.canvas, 0, 0, viewW, viewH);
+    bx.globalCompositeOperation = 'source-over';
+  }
+
+  // Composite the masked bleed onto the main canvas additively.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(bleed, 0, 0, viewW, viewH);
   ctx.restore();
 }
 
@@ -1041,6 +1290,42 @@ export function drawReflections(ctx, layout, game, settings) {
   ctx.rect(0, deadLineY, viewW, viewH - deadLineY);
   ctx.clip();
 
+  // Moon reflection — warm vertical column on the water, anchored under the
+  // moon's current X. Length and intensity scale with altitude (faint at
+  // horizon, brightest at zenith). Phase modulates intensity (a new moon
+  // reflects almost nothing; a full moon glows brightly). Painted FIRST so
+  // lantern reflections sit on top.
+  const m = moonState(layout, settings, Date.now());
+  if (m.altitude > 0.02) {
+    const k = (1 - Math.cos(m.phase01 * 2 * Math.PI)) / 2;  // illuminated frac
+    const intensity = m.altitude * (0.35 + 0.65 * k);
+    const length = Math.min(viewH - deadLineY, m.r * 3 + m.r * 9 * m.altitude);
+    const reflectionTop = deadLineY + 1;
+    const tNow = reducedMotion ? 0 : performance.now() / 1000;
+    const SLICES = 24;
+    const sliceH = length / SLICES;
+    for (let i = 0; i < SLICES; i++) {
+      const f = i / (SLICES - 1);
+      const vAlpha = Math.pow(1 - f, 1.6);   // bias the brightness to the top
+      if (vAlpha < 0.02) continue;
+      const sliceY = reflectionTop + i * sliceH;
+      // Per-slice horizontal jitter sells "water rippling" without needing a
+      // real shader. Amplitude grows downstream; phase advances with time.
+      const shimmer = reducedMotion ? 0 : Math.sin(f * 6.0 + tNow * 1.2) * m.r * 0.18 * f;
+      const cxJ = m.cx + shimmer;
+      // Widen toward the base — the reflection spreads as it crosses the
+      // moon's distance over the water surface.
+      const halfW = m.r * (0.9 + f * 0.7);
+      const a = (0.50 * vAlpha * intensity).toFixed(3);
+      const grad = ctx.createLinearGradient(cxJ - halfW, 0, cxJ + halfW, 0);
+      grad.addColorStop(0,   'rgba(245, 198, 132, 0)');
+      grad.addColorStop(0.5, `rgba(245, 198, 132, ${a})`);
+      grad.addColorStop(1,   'rgba(245, 198, 132, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(cxJ - halfW, sliceY, halfW * 2, sliceH + 1);
+    }
+  }
+
   for (const l of board.lanterns) {
     if (l.drown && l.drown.extinguished) continue;
     let dx = l.x, dy = l.y;
@@ -1187,7 +1472,37 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     // sit at the flared mouth.
     const rimY = cy + dh * 0.44;
     if (lit) drawEmberHalo(ctx, cx, rimY, size, level);
+    const prevAlpha = ctx.globalAlpha;
+    ctx.globalAlpha = prevAlpha * LANTERN_PARAMS.opacity;
     ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+    ctx.globalAlpha = prevAlpha;
+    // Optional opacity backing — overlays the lantern's color onto the sprite
+    // silhouette using 'source-atop' so only the painted pixels gain saturation.
+    // backing=0 (default) preserves the natural translucent paper look;
+    // backing=1 pushes the body fully toward the flat color.
+    //
+    // The overlay is a vertical gradient, NOT a flat fill: full strength at
+    // the top of the lantern body, tapering to a small fraction at the rim.
+    // Physical motivation — moonlight hits the lantern from above, so the
+    // top of the paper is exposed to the most direct light and blocks the
+    // sky behind most effectively; the bottom is where the flame's own warm
+    // glow takes over and the paper reads as backlit/translucent. The
+    // gradient sells "lit from outside above, lit from within below."
+    if (LANTERN_PARAMS.backing > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      const baseAlpha = prevAlpha * LANTERN_PARAMS.backing;
+      const color = COLORS[colorKey] || PALETTE.ember;
+      const top = cy - dh / 2;
+      const bot = cy + dh / 2;
+      const grad = ctx.createLinearGradient(0, top, 0, bot);
+      grad.addColorStop(0.0, hexToRgba(color, baseAlpha));
+      grad.addColorStop(0.6, hexToRgba(color, baseAlpha * 0.55));
+      grad.addColorStop(1.0, hexToRgba(color, baseAlpha * 0.20));
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - dw / 2, top, dw, dh);
+      ctx.restore();
+    }
     if (lit) {
       // Soft ambient warmth in the lower body, sitting around the flame.
       drawEmberCore(ctx, cx, cy + dh * 0.28, size, level);

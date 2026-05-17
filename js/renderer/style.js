@@ -25,6 +25,12 @@ export function easeOut(t) {
 
 export function mixWithWhite(hex, t) { return mixHex(hex, '#FFFFFF', t); }
 export function mixWithBlack(hex, t) { return mixHex(hex, '#000000', t); }
+export function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 export function mixHex(a, b, t) {
   const ra = parseInt(a.slice(1, 3), 16), ga = parseInt(a.slice(3, 5), 16), ba = parseInt(a.slice(5, 7), 16);
   const rb = parseInt(b.slice(1, 3), 16), gb = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);

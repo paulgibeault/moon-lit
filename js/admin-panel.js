@@ -4,12 +4,36 @@
 // frame. The "Copy" button writes the current params object to the clipboard
 // as JSON for pasting back into world.js defaults.
 
-import { BAMBOO_PARAMS, invalidateBambooCache, applyBambooProfile } from './renderer/world.js';
+import { BAMBOO_PARAMS, MOON_PARAMS, LANTERN_PARAMS, invalidateBambooCache, applyBambooProfile } from './renderer/world.js';
 
 // Slider specs grouped by purpose. `int: true` snaps to integer values.
 // `format` controls the displayed value string (default: 2 decimals for
-// floats, integer-cast for ints).
+// floats, integer-cast for ints). Each group writes to `target` (defaults
+// to BAMBOO_PARAMS) and calls `onChange` after each edit (defaults to
+// invalidating the bamboo cache).
 const PARAM_GROUPS = [
+  {
+    title: 'Moon',
+    target: MOON_PARAMS,
+    onChange: () => {},   // moon recomputes per-frame; no cache to bust
+    params: [
+      // Negative values = "live" (real-time cycle); 0..1 locks the moon's
+      // traverse-cycle position so the bleed look can be tested against
+      // every part of the arc without waiting through the 48-minute cycle.
+      { key: 'positionOverride', label: 'Position',
+        min: -0.05, max: 1.0, step: 0.005,
+        display: (v) => v < 0 ? 'live' : v.toFixed(3) },
+    ],
+  },
+  {
+    title: 'Lantern',
+    target: LANTERN_PARAMS,
+    onChange: () => {},
+    params: [
+      { key: 'opacity', label: 'Opacity', min: 0.30, max: 1.00, step: 0.01 },
+      { key: 'backing', label: 'Backing', min: 0.00, max: 1.00, step: 0.02 },
+    ],
+  },
   {
     title: 'Layout',
     params: [
@@ -52,27 +76,37 @@ const PARAM_GROUPS = [
   },
 ];
 
-// Snapshot of starting values so Reset can restore them. JSON round-trip
-// gives a real copy (params are flat primitives).
-const DEFAULTS = JSON.parse(JSON.stringify(BAMBOO_PARAMS));
+// Snapshot of starting values so Reset can restore them. Keyed by target
+// object so resetting touches every params object used by the panel
+// (BAMBOO_PARAMS, MOON_PARAMS, etc.), not just bamboo.
+const DEFAULTS = new Map();
+for (const group of PARAM_GROUPS) {
+  const t = group.target || BAMBOO_PARAMS;
+  if (!DEFAULTS.has(t)) DEFAULTS.set(t, JSON.parse(JSON.stringify(t)));
+}
 
 function fmtValue(spec, v) {
+  if (spec.display) return spec.display(v);
   if (spec.int) return String(v | 0);
   const d = spec.decimals != null ? spec.decimals : 2;
   return v.toFixed(d);
 }
 
+function targetOf(group)   { return group.target || BAMBOO_PARAMS; }
+function onChangeOf(group) { return group.onChange || invalidateBambooCache; }
+
 // Walks every slider in the panel and snaps both the input value and the
-// displayed text to the current BAMBOO_PARAMS state. Called after Reset and
-// after switching profiles, so the UI reflects the new values.
+// displayed text to the current params state. Called after Reset and after
+// switching profiles, so the UI reflects the new values.
 function syncSliders(root) {
   for (const group of PARAM_GROUPS) {
+    const target = targetOf(group);
     for (const spec of group.params) {
       const inp = root.querySelector(`input[data-key="${spec.key}"]`);
       if (!inp) continue;
-      inp.value = BAMBOO_PARAMS[spec.key];
+      inp.value = target[spec.key];
       const val = inp.parentElement.querySelector('.ba-val');
-      if (val) val.textContent = fmtValue(spec, BAMBOO_PARAMS[spec.key]);
+      if (val) val.textContent = fmtValue(spec, target[spec.key]);
     }
   }
 }
@@ -108,6 +142,8 @@ function buildPanel() {
   });
 
   for (const group of PARAM_GROUPS) {
+    const target = targetOf(group);
+    const onChange = onChangeOf(group);
     const g = document.createElement('div');
     g.className = 'ba-group';
     const title = document.createElement('div');
@@ -124,17 +160,17 @@ function buildPanel() {
       inp.min = spec.min;
       inp.max = spec.max;
       inp.step = spec.step;
-      inp.value = BAMBOO_PARAMS[spec.key];
+      inp.value = target[spec.key];
       inp.dataset.key = spec.key;
       const val = document.createElement('span');
       val.className = 'ba-val';
-      val.textContent = fmtValue(spec, BAMBOO_PARAMS[spec.key]);
+      val.textContent = fmtValue(spec, target[spec.key]);
       inp.addEventListener('input', () => {
         let v = parseFloat(inp.value);
         if (spec.int) v = v | 0;
-        BAMBOO_PARAMS[spec.key] = v;
+        target[spec.key] = v;
         val.textContent = fmtValue(spec, v);
-        invalidateBambooCache();
+        onChange();
       });
       row.appendChild(lbl);
       row.appendChild(inp);
@@ -162,7 +198,7 @@ function buildPanel() {
     }
   });
   r.querySelector('[data-action="reset"]').addEventListener('click', () => {
-    Object.assign(BAMBOO_PARAMS, DEFAULTS);
+    for (const [target, defaults] of DEFAULTS) Object.assign(target, defaults);
     invalidateBambooCache();
     syncSliders(r);
   });
