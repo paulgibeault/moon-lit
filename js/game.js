@@ -153,8 +153,12 @@ export function step(game, dtSec, layout) {
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
     addLantern(game.board, placed.x, placed.y, placed.color, layout);
-    resolvePlacement(game, layout);
     game.shot = null;
+    if (placed.y >= layout.deadLineY) {
+      startDrowning(game);
+      return true;
+    }
+    resolvePlacement(game, layout);
     advanceQueue(game);
     if (isCleared(game.board)) {
       const bonus = clearBonus(game.shotsUntilDescent);

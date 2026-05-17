@@ -2,7 +2,7 @@ import {
   GRID,
   BOARD_MARGIN_TOP, BOARD_MARGIN_BOTTOM, BOARD_MARGIN_SIDE,
   TRELLIS_HEIGHT, DEAD_LINE_OFFSET, LANE_LANTERNS,
-  LAUNCHER_BOTTOM_MARGIN, MIN_LANTERN_RADIUS,
+  MIN_LANTERN_RADIUS,
 } from './constants.js';
 import { SQRT3 } from './geometry.js';
 
@@ -32,11 +32,13 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
 
   const trellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
   const lastRowCenterY = trellisY + r + (maxRows - 1) * SQRT3 * r;
-  const baseDeadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
-  // Lift the waterline so it sits 130% of its prior distance above the
-  // viewport bottom — gives more visible water below the play area.
-  const deadLineY = viewH - (viewH - baseDeadLineY) * 1.3;
-  const tipY = viewH - LAUNCHER_BOTTOM_MARGIN;
+  const deadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+  // Sink the launcher so the cradled lantern's bottom hovers just above
+  // the waterline — the post enters the water, and the visible lamp reads
+  // as resting on the lake surface before it fires. The cradle sits ~0.18r
+  // above tipY, so a small additional offset (0.08r) leaves a hairline
+  // between the lantern and the water.
+  const tipY = deadLineY + r * 0.1;
 
   return {
     size: r, originX, trellisY, deadLineY, tipY,

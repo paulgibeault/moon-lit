@@ -144,27 +144,15 @@ export function drawMoon(ctx, w, h, game, settings) {
 }
 
 // Bamboo frame overlay. Sits on top of the gradient sky and moon so the moon
-// reads as glowing behind the bamboo. Cover-fits the viewport so the bamboo
-// always fills the frame — sides crop in portrait viewports, which is
-// preferable to letterboxing the sky.
+// reads as glowing behind the bamboo. Stretches to fill the viewport so the
+// side trunks flank the full play area and the shore hills sit at the bottom
+// of the lake, regardless of viewport aspect — the painted elements live at
+// the image's edges, so anamorphic scaling just lengthens/widens the bamboo
+// without cropping the frame.
 export function drawFrame(ctx, viewW, viewH) {
   const img = getBackgroundFrame(viewW, viewH);
   if (!img) return;
-  const imgAr = img.width / img.height;
-  const targetAr = viewW / viewH;
-  let dw, dh, dx, dy;
-  if (imgAr > targetAr) {
-    dh = viewH;
-    dw = viewH * imgAr;
-    dx = (viewW - dw) / 2;
-    dy = 0;
-  } else {
-    dw = viewW;
-    dh = viewW / imgAr;
-    dx = 0;
-    dy = (viewH - dh) / 2;
-  }
-  ctx.drawImage(img, dx, dy, dw, dh);
+  ctx.drawImage(img, 0, 0, viewW, viewH);
 }
 
 // Mirror each in-air lantern across the waterline as a faded, vertically
