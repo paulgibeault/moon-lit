@@ -4,7 +4,7 @@ import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 
@@ -16,7 +16,7 @@ await Arcade.ready;
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
 try {
-  await Promise.all([loadLanterns(), loadBambooSprites()]);
+  await Promise.all([loadLanterns(), loadBambooSprites(), loadMoonTexture()]);
 } catch (e) {
   console.warn(`[${GAME_ID}] sprite load failed — falling back`, e);
 }

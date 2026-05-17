@@ -5,6 +5,7 @@ import {
   getLanternSprite,
   getBambooTallSprites, getBambooCaneSprites, getBambooBaseSprites,
   getBambooTipSprites, getBambooStalkSprites, getBambooClusterSprites,
+  getMoonTexture,
 } from '../assets.js';
 import { mulberry32 } from '../prng.js';
 import {
@@ -101,35 +102,65 @@ export function drawBackground(ctx, w, h, settings) {
   ctx.globalAlpha = 1;
 }
 
-// The moon is the game's quiet celebration meter: its halo grows with the
-// current combo, and a one-shot pulse expands when the player crosses a
-// score milestone. Reduced motion skips the halo entirely.
+// The moon is the game's quiet celebration meter AND the warm focal point of
+// the sky. Three behaviors layered together:
+//   * Always-on warm halo (multi-stop radial) that "breathes" — a slow
+//     low-amplitude sinusoid on radius + alpha so it reads as alive even at
+//     idle. Lifts further with combo.
+//   * Surface disc — either the loaded moon texture (clipped to a circle,
+//     slowly rotating, warm-overlay tinted) or a flat warm fallback.
+//   * Inner glow rim — a soft luminous edge that makes the disc feel lit
+//     from within rather than pasted on.
+// Reduced motion: skips the halo and the rotation/breathing, keeping a
+// still warm disc + soft rim.
 export function drawMoon(ctx, w, h, game, settings) {
-  const reducedMotion = settings.reducedMotion;
+  const reducedMotion = !!settings.reducedMotion;
   const handed = settings.handedness === 'left';
   const { cx, cy, r } = moonAnchor(w, h, handed);
   const combo = game.combo | 0;
+  const t = reducedMotion ? 0 : performance.now() / 1000;
 
-  if (!reducedMotion) {
-    // Combo lifts the halo from 1.0x at combo 0 to ~1.55x at combo 6+.
+  // Slow breath: ±6% radius, ±15% alpha, ~12s period. Even without combo
+  // the halo never sits perfectly still — keeps the moon "alive."
+  const breath = reducedMotion ? 0 : Math.sin(2 * Math.PI * t / 12);
+  const breathR = 1 + 0.06 * breath;
+  const breathA = 1 + 0.15 * breath;
+
+  // Halos always paint — even in reduced motion the moon must read as
+  // "vivid and warm." Only the breath modulation is suppressed in that mode.
+  {
+    // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
+    const outerR = r * 3.8 * (reducedMotion ? 1 : breathR);
+    const outer = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, outerR);
+    outer.addColorStop(0,    'rgba(248, 206, 140, 0.34)');
+    outer.addColorStop(0.35, 'rgba(232, 183, 112, 0.16)');
+    outer.addColorStop(1,    'rgba(232, 183, 112, 0)');
+    ctx.fillStyle = outer;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Inner halo — tighter, hotter ring riding on the combo lift + breath.
     const comboLift = Math.min(1, combo / 6) * 0.55;
-    const haloR = r * (2.4 + comboLift);
-    const haloAlpha = 0x33 + Math.round(0x40 * Math.min(1, combo / 6));
+    const haloR = r * (2.2 + comboLift) * (reducedMotion ? 1 : breathR);
+    const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
+    const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * (reducedMotion ? 1 : breathA))));
     const haloHex = ('00' + haloAlpha.toString(16)).slice(-2);
-    const halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, haloR);
-    halo.addColorStop(0, PALETTE.moonHalo + haloHex);
-    halo.addColorStop(1, PALETTE.moonHalo + '00');
+    const halo = ctx.createRadialGradient(cx, cy, r * 0.7, cx, cy, haloR);
+    halo.addColorStop(0,    PALETTE.moonHalo + haloHex);
+    halo.addColorStop(0.55, PALETTE.moonHalo + '22');
+    halo.addColorStop(1,    PALETTE.moonHalo + '00');
     ctx.fillStyle = halo;
     ctx.beginPath();
     ctx.arc(cx, cy, haloR, 0, Math.PI * 2);
     ctx.fill();
 
-    // Milestone pulse: a second halo expands and fades over its lifetime.
+    // Milestone pulse: a single one-shot halo riding outward over its life.
     const pulse = game.moonPulse;
-    if (pulse && pulse.life > 0 && pulse.t < pulse.life) {
+    if (!reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life) {
       const tt = pulse.t / pulse.life;
       const pulseR = r * (2.4 + 1.6 * easeOut(tt));
-      const pulseAlpha = Math.round(0x55 * (1 - tt));
+      const pulseAlpha = Math.round(0x66 * (1 - tt));
       const pulseHex = ('00' + pulseAlpha.toString(16)).slice(-2);
       const pHalo = ctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, pulseR);
       pHalo.addColorStop(0, PALETTE.moon + pulseHex);
@@ -141,10 +172,71 @@ export function drawMoon(ctx, w, h, game, settings) {
     }
   }
 
-  ctx.fillStyle = PALETTE.moon;
+  // Disc surface. Texture if loaded; otherwise a flat warm cream circle.
+  const tex = getMoonTexture();
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+
+  if (tex && tex.width > 0) {
+    // Slow rotation (~8 min/turn) keeps surface detail drifting subtly. Skip
+    // when reduced motion is on so the disc reads as completely still.
+    const rot = reducedMotion ? 0 : (2 * Math.PI * t / 480);
+    ctx.translate(cx, cy);
+    ctx.rotate(rot);
+    // Slight oversample so rotation can't reveal an unpainted corner of the
+    // bounding box — 1.06 covers a 45° tilt comfortably.
+    const d = r * 2.12;
+    ctx.drawImage(tex, -d / 2, -d / 2, d, d);
+    ctx.rotate(-rot);
+    ctx.translate(-cx, -cy);
+
+    // Warm tint pass — multiply a soft amber over the texture so its
+    // mid-tones lean toward the palette's warm cream instead of staying
+    // pure white/grey from the source. Kept low alpha so the shadow-lifted
+    // texture (see cropMoonToDisc) reads as warmly luminous, not dim.
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = 'rgba(255, 222, 178, 0.30)';
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+    // "Lit from within" lift — a screen-blended radial that brightens the
+    // disc center toward warm cream, breathing with the same sinusoid as
+    // the halo so disc and halo feel like one organism.
+    ctx.globalCompositeOperation = 'screen';
+    const liftAlpha = 0.18 + (reducedMotion ? 0 : 0.06 * breath);
+    const lift = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    lift.addColorStop(0,    `rgba(255, 236, 198, ${liftAlpha.toFixed(3)})`);
+    lift.addColorStop(0.65, 'rgba(255, 220, 170, 0.05)');
+    lift.addColorStop(1,    'rgba(255, 220, 170, 0)');
+    ctx.fillStyle = lift;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    // Fallback: flat warm disc with a soft warm center lift.
+    ctx.fillStyle = PALETTE.moon;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+    const lift = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    lift.addColorStop(0, 'rgba(255, 240, 205, 0.40)');
+    lift.addColorStop(1, 'rgba(255, 240, 205, 0)');
+    ctx.fillStyle = lift;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  }
+  ctx.restore();
+
+  // Inner rim glow — paint a thin warm ring just inside the disc edge using
+  // an additive radial. Sells the "self-luminous" feel without washing out
+  // the surface detail in the center.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const rim = ctx.createRadialGradient(cx, cy, r * 0.78, cx, cy, r * 1.0);
+  rim.addColorStop(0, 'rgba(255, 220, 170, 0)');
+  rim.addColorStop(1, 'rgba(255, 220, 170, 0.45)');
+  ctx.fillStyle = rim;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 }
 
 // ─── Bamboo frame ──────────────────────────────────────────────────────────

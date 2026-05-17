@@ -78,6 +78,13 @@ const BAMBOO_OPAQUE_BELOW   = 60;
 const BAMBOO_TINT = [10, 18, 48];
 const bambooSprites = { tall: [], cane: [], base: [], tip: [], stalk: [], cluster: [], leaf: [] };
 
+// Moon surface texture. Optional — the renderer falls back to a flat warm
+// disc if the file is missing. Source is expected to be a square image; the
+// renderer samples it inside a circular clip with a warm overlay so the moon
+// stays harmonized with the night palette regardless of source color cast.
+const MOON_TEXTURE_SRC = 'img/moon.png';
+let moonTexture = null;
+
 // Pixel below this alpha is treated as transparent margin when measuring bbox.
 const ALPHA_THRESHOLD = 8;
 
@@ -328,3 +335,88 @@ export function getBambooTipSprites()     { return bambooSprites.tip;     }
 export function getBambooStalkSprites()   { return bambooSprites.stalk;   }
 export function getBambooClusterSprites() { return bambooSprites.cluster; }
 export function getBambooLeafSprites()    { return bambooSprites.leaf;    }
+
+// Returns the loaded moon surface image (or null if not yet loaded / missing).
+// The renderer checks this each frame and draws a flat warm disc as fallback.
+export function getMoonTexture() { return moonTexture; }
+
+// Bake the moon source into a tight square crop centered on the disc.
+// Source images typically have a black background with the disc inset by a
+// few percent; the renderer draws the texture at ~2× the moon radius, so any
+// margin baked into the source would show up as a dark ring inside the
+// rendered moon. Measure the bright-pixel bbox once, then redraw onto a
+// square canvas sized to the longer side and centered on the bbox so a
+// non-square disc still ends up axis-aligned and edge-to-edge.
+function cropMoonToDisc(img) {
+  const w = img.naturalWidth  || img.width;
+  const h = img.naturalHeight || img.height;
+  const probe = document.createElement('canvas');
+  probe.width = w; probe.height = h;
+  const pcx = probe.getContext('2d');
+  pcx.drawImage(img, 0, 0);
+  let data;
+  try { data = pcx.getImageData(0, 0, w, h).data; }
+  catch (_) { return img; }
+  // 32 on a 0..255 brightness scale: above this counts as "moon surface,"
+  // below counts as background black. Generous enough to include the
+  // shadowed limb yet still reject the pure-black margin.
+  const THRESH = 32;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      const i = row + x * 4;
+      const b = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      if (b >= THRESH) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return img;
+  const bw = maxX - minX + 1;
+  const bh = maxY - minY + 1;
+  const side = Math.max(bw, bh);
+  // Center the disc in a square — bw and bh may differ by a pixel or two
+  // even for a "round" disc due to anti-aliasing/lighting.
+  const sx = minX - Math.floor((side - bw) / 2);
+  const sy = minY - Math.floor((side - bh) / 2);
+  const out = document.createElement('canvas');
+  out.width = side; out.height = side;
+  const ocx = out.getContext('2d');
+  ocx.drawImage(img, sx, sy, side, side, 0, 0, side, side);
+
+  // Shadow-lift pass. Source photos of the moon are very high contrast —
+  // the maria sit near black. At the warm-lit size we render the moon, that
+  // contrast reads as a dark "smudge." Compress shadows toward a neutral
+  // mid-grey so the maria become visible-but-subdued surface detail, and
+  // also blank the background pixels around the disc to fully transparent
+  // so the renderer's circular clip composites cleanly even at oversample.
+  const LIFT = 95;          // floor each in-disc channel gets lifted to
+  const RANGE = 255 - LIFT; // compressed dynamic range above the floor
+  let imgData;
+  try { imgData = ocx.getImageData(0, 0, side, side); }
+  catch (_) { return out; }
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const b = (d[i] + d[i + 1] + d[i + 2]) / 3;
+    if (b < THRESH) {
+      d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; d[i + 3] = 0;
+    } else {
+      d[i]     = LIFT + Math.round(d[i]     * RANGE / 255);
+      d[i + 1] = LIFT + Math.round(d[i + 1] * RANGE / 255);
+      d[i + 2] = LIFT + Math.round(d[i + 2] * RANGE / 255);
+    }
+  }
+  ocx.putImageData(imgData, 0, 0);
+  return out;
+}
+
+export async function loadMoonTexture() {
+  try {
+    const img = await loadImage(MOON_TEXTURE_SRC);
+    moonTexture = cropMoonToDisc(img);
+  } catch (_) { moonTexture = null; }
+}
