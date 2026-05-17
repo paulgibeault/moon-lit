@@ -5,7 +5,7 @@
 
 import { PHASE } from './game.js';
 import {
-  drawBackground, drawMoon, drawFrame, drawWaterline, drawReflections,
+  drawBackground, drawMoon, drawFrame, drawReflections,
   drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
@@ -24,7 +24,6 @@ export function render(ctx, layout, game, settings) {
   drawMoon(ctx, viewW, viewH, game, settings);
   drawFrame(ctx, viewW, viewH);
   drawReflections(ctx, layout, game, settings);
-  drawWaterline(ctx, layout);
   drawBoard(ctx, layout, game, settings);
   if (game.phase === PHASE.AIMING) {
     drawAimLine(ctx, layout, game);

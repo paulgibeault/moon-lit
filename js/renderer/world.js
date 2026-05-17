@@ -167,21 +167,6 @@ export function drawFrame(ctx, viewW, viewH) {
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-// The dead-line IS the water surface. Drawn as a single subtle moonlit hairline
-// rather than a dashed warning band — the reflections below sell the "below
-// here is water" cue more clearly than a dashed line ever did.
-export function drawWaterline(ctx, layout) {
-  const { viewW, deadLineY } = layout;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(210, 225, 240, 0.22)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, deadLineY);
-  ctx.lineTo(viewW, deadLineY);
-  ctx.stroke();
-  ctx.restore();
-}
-
 // Mirror each in-air lantern across the waterline as a faded, vertically
 // flipped copy. The reflection's height-below-waterline equals the lantern's
 // height-above, so a lamp drifting down toward the dead-line visibly closes

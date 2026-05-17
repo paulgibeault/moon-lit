@@ -32,7 +32,10 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
 
   const trellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
   const lastRowCenterY = trellisY + r + (maxRows - 1) * SQRT3 * r;
-  const deadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+  const baseDeadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+  // Lift the waterline so it sits 130% of its prior distance above the
+  // viewport bottom — gives more visible water below the play area.
+  const deadLineY = viewH - (viewH - baseDeadLineY) * 1.3;
   const tipY = viewH - LAUNCHER_BOTTOM_MARGIN;
 
   return {
