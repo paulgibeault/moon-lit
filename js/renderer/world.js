@@ -910,6 +910,23 @@ function paintFallbackStalk(ctx, rng, xBase, xCurve, wBase, height, viewH, isMoo
   void isMoonSide;
 }
 
+// The dead-line IS the water surface. A 1px moonlit specular line, fading
+// to invisible at the screen edges so the bamboo-flanked banks read as
+// natural shoreline rather than meeting a hard horizon. Subtle by design —
+// the reflections below carry most of the "this is water" cue.
+export function drawWaterline(ctx, layout) {
+  const { viewW, deadLineY } = layout;
+  ctx.save();
+  const g = ctx.createLinearGradient(0, 0, viewW, 0);
+  g.addColorStop(0.00, 'rgba(230, 240, 255, 0)');
+  g.addColorStop(0.35, 'rgba(230, 240, 255, 0.28)');
+  g.addColorStop(0.65, 'rgba(230, 240, 255, 0.28)');
+  g.addColorStop(1.00, 'rgba(230, 240, 255, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, deadLineY, viewW, 1);
+  ctx.restore();
+}
+
 // Mirror each in-air lantern across the waterline as a faded, vertically
 // flipped copy. The reflection's height-below-waterline equals the lantern's
 // height-above, so a lamp drifting down toward the dead-line visibly closes
