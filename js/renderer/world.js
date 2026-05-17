@@ -190,12 +190,14 @@ export function drawReflections(ctx, layout, game, settings) {
   ctx.clip();
 
   for (const l of board.lanterns) {
+    if (l.drown && l.drown.extinguished) continue;
     let dx = l.x, dy = l.y;
     if (l.anim) {
       const e = easeOut(l.anim.t);
       dx = l.anim.fromX + (l.x - l.anim.fromX) * e;
       dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
     }
+    if (l.drown) { dx += l.drown.offsetX; dy += l.drown.offsetY; }
     const sourceY = dy + animY;
     const height = deadLineY - sourceY;
     if (height <= 0) continue;
@@ -245,7 +247,7 @@ export function drawReflections(ctx, layout, game, settings) {
 
 export function drawBoard(ctx, layout, game, settings) {
   const board = game.board;
-  const { size } = layout;
+  const { size, viewH } = layout;
   const animY = board.descentAnimY || 0;
   const reducedMotion = settings && settings.reducedMotion;
   for (const l of board.lanterns) {
@@ -255,9 +257,27 @@ export function drawBoard(ctx, layout, game, settings) {
       dx = l.anim.fromX + (l.x - l.anim.fromX) * e;
       dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
     }
+    let lit = true;
+    let spin = 0;
+    if (l.drown) {
+      dx += l.drown.offsetX;
+      dy += l.drown.offsetY;
+      if (dy - size * 2 > viewH) continue;
+      lit = !l.drown.extinguished;
+      spin = l.drown.spin;
+    }
     const boost = reducedMotion ? 0 : rippleBoost(game, l.nx, l.ny);
-    drawLantern(ctx, dx, dy + animY, size, l.color,
-      { lit: true, phase: phaseOf(l), boost });
+    if (spin) {
+      ctx.save();
+      ctx.translate(dx, dy + animY);
+      ctx.rotate(spin);
+      drawLantern(ctx, 0, 0, size, l.color,
+        { lit, phase: phaseOf(l), boost });
+      ctx.restore();
+    } else {
+      drawLantern(ctx, dx, dy + animY, size, l.color,
+        { lit, phase: phaseOf(l), boost });
+    }
   }
 }
 

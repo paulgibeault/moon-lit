@@ -14,7 +14,8 @@ import { settleAround, tickAnims } from './physics.js';
 import { clamp, SQRT3 } from './geometry.js';
 import { traceFromShot, launcherTip } from './projectile.js';
 import {
-  emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, tickEffects,
+  emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, spawnRipple,
+  tickEffects,
 } from './effects.js';
 
 export const PHASE = Object.freeze({
@@ -22,9 +23,29 @@ export const PHASE = Object.freeze({
   FLYING: 'flying',
   SETTLING: 'settling',
   DESCENDING: 'descending',
+  DROWNING: 'drowning',
   WIN: 'win',
   GAME_OVER: 'gameOver',
 });
+
+// Drowning sequence tuning. All speeds/accels are in lantern-radii per second
+// so the cinematic reads the same on a phone or full desktop viewport.
+const DROWN_INITIAL_VY      = 3.5;  // radii/sec — base downward kick
+const DROWN_INITIAL_VY_JIT  = 2.0;  // additional 0..N random downward push
+const DROWN_INITIAL_VX_RANGE = 1.8; // radii/sec horizontal drift (±)
+const DROWN_INITIAL_SPIN_RANGE = 5.0; // rad/sec tumble (±)
+const DROWN_AIR_ACCEL       = 18.0; // radii/sec² — heavier gravity, real drop
+const DROWN_SPLASH_DRAG     = 0.22; // vy multiplier on splash — water decelerates
+                                    // the lamp sharply but does not reverse it
+const DROWN_SPLASH_SPIN_DAMP = 0.4;  // spin multiplier on splash (water resists)
+const DROWN_WATER_ACCEL     = 4.0;  // radii/sec² — slow sink so the bubbles and
+                                    // sway underwater get screen time
+const DROWN_WATER_SWAY_AMP  = 0.35; // radii — horizontal wobble underwater
+const DROWN_WATER_SWAY_FREQ = 3.5;  // base sway rad/sec
+const DROWN_BUBBLE_MIN_INT  = 0.18; // seconds between bubble ripples (per lamp)
+const DROWN_BUBBLE_MAX_INT  = 0.5;
+const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
+const DROWN_END_PAUSE_SEC   = 0.3;
 
 export function createGame({ seed, layout, level = 1 } = {}) {
   const config = levelConfig(level);
@@ -122,6 +143,10 @@ export function step(game, dtSec, layout) {
     return true;
   }
 
+  if (game.phase === PHASE.DROWNING) {
+    return stepDrowning(game, dtSec, layout);
+  }
+
   if (game.phase !== PHASE.FLYING || !game.shot) return false;
 
   const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * dtSec, dtSec);
@@ -156,6 +181,115 @@ export function step(game, dtSec, layout) {
   return true;
 }
 
+// End-of-game cinematic: every lantern gets a per-lamp drop state so the
+// renderer can show the field tumbling into the water with varied speeds,
+// rotations, and a small horizontal drift. The upward wave of dimming
+// emerges naturally — bottom rows hit the waterline first.
+function startDrowning(game) {
+  const rng = game.rng;
+  for (const l of game.board.lanterns) {
+    l.drown = {
+      extinguished: false,
+      offsetX: 0,
+      offsetY: 0,
+      vx: (rng() - 0.5) * 2 * DROWN_INITIAL_VX_RANGE,
+      vy: DROWN_INITIAL_VY + rng() * DROWN_INITIAL_VY_JIT,
+      spin: 0,
+      spinVy: (rng() - 0.5) * 2 * DROWN_INITIAL_SPIN_RANGE,
+      // Underwater sway. Frequency and phase per-lamp so the surface doesn't
+      // pulse in lockstep.
+      swayPhase: rng() * Math.PI * 2,
+      swayFreq: DROWN_WATER_SWAY_FREQ * (0.7 + rng() * 0.6),
+      swayAmp: 0,        // grows on splash
+      preSplashX: 0,     // sway anchor at moment of splash
+      bubbleTimer: DROWN_BUBBLE_MIN_INT + rng() *
+        (DROWN_BUBBLE_MAX_INT - DROWN_BUBBLE_MIN_INT),
+    };
+  }
+  game.drown = { t: 0, doneAt: null };
+  game.phase = PHASE.DROWNING;
+  console.log('[moon-glow] drowning cinematic started, lanterns=', game.board.lanterns.length);
+}
+
+function stepDrowning(game, dtSec, layout) {
+  const r = layout.size;
+  const { deadLineY, viewH } = layout;
+  game.drown.t += dtSec;
+  const airAccel = DROWN_AIR_ACCEL * r;
+  const waterAccel = DROWN_WATER_ACCEL * r;
+  const bubbleStopDepth = DROWN_BUBBLE_DEPTH * r;
+  const rng = game.rng;
+  let anyVisible = false;
+
+  for (const l of game.board.lanterns) {
+    const d = l.drown;
+    if (!d) continue;
+
+    // Vertical: gravity in air, gentler accel underwater (so they bob and sway
+    // a moment before sinking out of view).
+    const accel = d.extinguished ? waterAccel : airAccel;
+    d.vy += accel * dtSec;
+    d.offsetY += d.vy * dtSec;
+
+    // Horizontal: linear drift in air, sinusoidal wobble underwater anchored
+    // at the splash position so the lamp visibly rocks side-to-side.
+    if (d.extinguished) {
+      d.swayPhase += d.swayFreq * dtSec;
+      d.offsetX = d.preSplashX + Math.sin(d.swayPhase) * d.swayAmp;
+    } else {
+      d.offsetX += d.vx * dtSec;
+    }
+
+    // Tumble. Spin continues throughout — water resistance is applied at the
+    // splash moment, not as a continuous drag (cheaper, and the residual spin
+    // reads as "wobbling as it sinks").
+    d.spin += d.spinVy * dtSec;
+
+    const displayY = l.y + d.offsetY;
+    const displayX = l.x + d.offsetX;
+
+    // Splash: when the lamp's center first crosses the waterline, kick the
+    // velocity slightly upward (bounce off the surface), damp the spin, lock
+    // in the sway anchor, and emit a chunky ripple at the impact point.
+    if (!d.extinguished && displayY >= deadLineY) {
+      d.extinguished = true;
+      d.vy *= DROWN_SPLASH_DRAG;
+      d.spinVy *= DROWN_SPLASH_SPIN_DAMP;
+      d.preSplashX = d.offsetX;
+      d.swayAmp = DROWN_WATER_SWAY_AMP * r * (0.7 + rng() * 0.6);
+      spawnRipple(game, displayX, deadLineY, layout,
+        { strength: 0.85, reach: 6.5 });
+    }
+
+    // Bubbles: tiny rising ripples emitted from the lamp's current X position,
+    // pinned to the waterline (where the air pocket would escape). Tapers off
+    // once the lamp has sunk well below the surface.
+    if (d.extinguished) {
+      const depth = displayY - deadLineY;
+      if (depth < bubbleStopDepth) {
+        d.bubbleTimer -= dtSec;
+        if (d.bubbleTimer <= 0) {
+          d.bubbleTimer = DROWN_BUBBLE_MIN_INT + rng() *
+            (DROWN_BUBBLE_MAX_INT - DROWN_BUBBLE_MIN_INT);
+          const bx = displayX + (rng() - 0.5) * r * 0.8;
+          spawnRipple(game, bx, deadLineY, layout,
+            { strength: 0.18, reach: 1.6 });
+        }
+      }
+    }
+
+    if (displayY - r * 2 < viewH) anyVisible = true;
+  }
+
+  if (!anyVisible) {
+    if (game.drown.doneAt == null) game.drown.doneAt = game.drown.t;
+    if (game.drown.t - game.drown.doneAt > DROWN_END_PAUSE_SEC) {
+      game.phase = PHASE.GAME_OVER;
+    }
+  }
+  return true;
+}
+
 function finishSettle(game, layout) {
   if (game.pendingDescent) {
     game.pendingDescent = false;
@@ -165,7 +299,7 @@ function finishSettle(game, layout) {
     const palette = game.colors.filter(c => live.has(c));
     const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors);
     if (!ok) {
-      game.phase = PHASE.GAME_OVER;
+      startDrowning(game);
       return;
     }
     const r = layout.size;

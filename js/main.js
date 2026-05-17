@@ -97,7 +97,7 @@ let lastPhase = null;
 // already-updated board, so saving there means a mid-anim refresh still
 // keeps the just-landed shot.
 function isResumablePhase(p) {
-  return p !== PHASE.FLYING;
+  return p !== PHASE.FLYING && p !== PHASE.DROWNING;
 }
 
 // Snapshot the game whenever the phase first re-enters a resumable state.
@@ -238,7 +238,8 @@ function frame(now) {
     const phaseAnimating =
       game.phase === PHASE.FLYING ||
       game.phase === PHASE.DESCENDING ||
-      game.phase === PHASE.SETTLING;
+      game.phase === PHASE.SETTLING ||
+      game.phase === PHASE.DROWNING;
     if (phaseAnimating || hasActiveEffects(game)) {
       step(game, dt, layout);
     }
