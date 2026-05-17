@@ -1326,6 +1326,7 @@ export function drawReflections(ctx, layout, game, settings) {
     }
   }
 
+  const jitterTSec = reducedMotion ? 0 : performance.now() / 1000;
   for (const l of board.lanterns) {
     if (l.drown && l.drown.extinguished) continue;
     let dx = l.x, dy = l.y;
@@ -1335,6 +1336,10 @@ export function drawReflections(ctx, layout, game, settings) {
       dy = l.anim.fromY + (l.y - l.anim.fromY) * e;
     }
     if (l.drown) { dx += l.drown.offsetX; dy += l.drown.offsetY; }
+    if (animY !== 0 && !reducedMotion && !l.drown) {
+      const j = descentJitter(l, layout, board, jitterTSec);
+      if (j) { dx += j.dx; dy += j.dy; }
+    }
     const sourceY = dy + animY;
     const height = deadLineY - sourceY;
     if (height <= 0) continue;
@@ -1382,11 +1387,47 @@ export function drawReflections(ctx, layout, game, settings) {
 
 // ─── Board + lanterns ──────────────────────────────────────────────────────
 
+const DESCENT_TOTAL_NY = Math.sqrt(3);   // one packed-row in normalized units
+
+// Visual-only sway applied to each lantern while the descent animation is
+// running. Returns {dx, dy} pixel offsets that should be ADDED to the lantern's
+// grid position. The envelope is zero at both endpoints of the descent so the
+// next phase always begins with lanterns exactly on their grid cells — this
+// never mutates board state, only what the player sees.
+//
+// Each lantern gets its own phase via phaseOf(); the nx/ny couplings make the
+// sway travel across the field like a connected system reacting to the push
+// from above, rather than every lantern dancing solo. The incommensurate
+// frequencies (3.1, 4.2, 5.3, 6.9) avoid the lockstep that read as mechanical.
+function descentJitter(l, layout, board, tSec) {
+  const animY = board.descentAnimY || 0;
+  if (animY === 0) return null;
+  const progress = 1 + animY / (DESCENT_TOTAL_NY * layout.size);
+  if (progress <= 0 || progress >= 1) return null;
+  const env = Math.sin(Math.PI * progress);
+
+  const phase = phaseOf(l);
+  const nx = l.nx || 0;
+  const ny = l.ny || 0;
+  const swayX = Math.sin(tSec * 3.1 + phase + ny * 1.7) * 0.65
+              + Math.sin(tSec * 5.3 + phase * 1.7 + nx * 0.43) * 0.45;
+  const swayY = Math.sin(tSec * 4.2 + phase * 0.9 + nx * 0.31) * 0.55
+              + Math.cos(tSec * 6.9 + phase * 1.3 + ny * 0.9) * 0.40;
+  const r = layout.size;
+  return {
+    // Horizontal sway is more pronounced (lanterns hang freely on their cords);
+    // vertical bobble is smaller (the cord resists stretching).
+    dx: swayX * r * 0.14 * env,
+    dy: swayY * r * 0.07 * env,
+  };
+}
+
 export function drawBoard(ctx, layout, game, settings) {
   const board = game.board;
   const { size, viewH } = layout;
   const animY = board.descentAnimY || 0;
   const reducedMotion = settings && settings.reducedMotion;
+  const tSec = reducedMotion ? 0 : performance.now() / 1000;
   for (const l of board.lanterns) {
     let dx = l.x, dy = l.y;
     if (l.anim) {
@@ -1402,6 +1443,10 @@ export function drawBoard(ctx, layout, game, settings) {
       if (dy - size * 2 > viewH) continue;
       lit = !l.drown.extinguished;
       spin = l.drown.spin;
+    }
+    if (animY !== 0 && !reducedMotion && !l.drown) {
+      const j = descentJitter(l, layout, board, tSec);
+      if (j) { dx += j.dx; dy += j.dy; }
     }
     const boost = reducedMotion ? 0 : rippleBoost(game, l.nx, l.ny);
     if (spin) {
