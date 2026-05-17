@@ -4,8 +4,9 @@ import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState } from './renderer.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBackgrounds } from './assets.js';
+import { loadLanterns, loadBambooSprites } from './assets.js';
 import { syncLanternPixels } from './board.js';
+import { initAdminPanel } from './admin-panel.js';
 
 await Arcade.ready;
 
@@ -15,9 +16,9 @@ await Arcade.ready;
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
 try {
-  await Promise.all([loadLanterns(), loadBackgrounds()]);
+  await Promise.all([loadLanterns(), loadBambooSprites()]);
 } catch (e) {
-  console.warn(`[${GAME_ID}] sprite/background load failed — falling back`, e);
+  console.warn(`[${GAME_ID}] sprite load failed — falling back`, e);
 }
 
 const canvas = document.getElementById('game');
@@ -298,6 +299,7 @@ attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
   onLossClick: restartLevel,
 });
+initAdminPanel();
 resize();
 rafId = requestAnimationFrame(frame);
 

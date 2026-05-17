@@ -21,3 +21,148 @@ html, body {
   height: 100%;
   touch-action: none;
 }
+
+/* ─── Bamboo admin panel ──────────────────────────────────────────────
+   Toggle with backtick (`) or load with ?admin=1. Mobile docks to bottom
+   so the canvas above stays usable while tuning. */
+#bamboo-admin {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 280px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 26, 50, 0.94);
+  color: #DBC49A;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  border: 1px solid rgba(232, 183, 112, 0.32);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  z-index: 10000;
+  overflow: hidden;
+}
+#bamboo-admin.ba-hidden { display: none; }
+
+#bamboo-admin .ba-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.28);
+  border-bottom: 1px solid rgba(232, 183, 112, 0.2);
+}
+
+#bamboo-admin .ba-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: #F5E9C9;
+}
+
+#bamboo-admin .ba-header button {
+  background: rgba(232, 183, 112, 0.18);
+  color: #DBC49A;
+  border: 1px solid rgba(232, 183, 112, 0.36);
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+#bamboo-admin .ba-header button:hover {
+  background: rgba(232, 183, 112, 0.30);
+}
+#bamboo-admin .ba-header button[data-action="hide"] {
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+#bamboo-admin .ba-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  background: rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid rgba(232, 183, 112, 0.14);
+}
+#bamboo-admin .ba-profile-label {
+  flex: 1;
+  font-size: 11px;
+  opacity: 0.78;
+}
+#bamboo-admin .ba-profile-row button {
+  background: rgba(95, 164, 124, 0.18);
+  color: #DBC49A;
+  border: 1px solid rgba(95, 164, 124, 0.40);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+#bamboo-admin .ba-profile-row button:hover {
+  background: rgba(95, 164, 124, 0.34);
+}
+
+#bamboo-admin .ba-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+}
+
+#bamboo-admin .ba-group { margin-top: 10px; }
+#bamboo-admin .ba-group-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.65;
+  padding-bottom: 3px;
+  border-bottom: 1px dashed rgba(232, 183, 112, 0.18);
+}
+
+#bamboo-admin .ba-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+#bamboo-admin .ba-row label {
+  font-size: 11px;
+  opacity: 0.92;
+}
+
+#bamboo-admin .ba-row input[type="range"] {
+  width: 100%;
+  accent-color: #E8B770;
+  height: 18px;
+}
+
+#bamboo-admin .ba-row .ba-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  opacity: 0.95;
+}
+
+@media (max-width: 560px) {
+  #bamboo-admin {
+    top: auto;
+    right: 8px;
+    left: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 55vh;
+  }
+  #bamboo-admin .ba-row {
+    /* Bigger touch target — easier to drag a slider with a thumb. */
+    padding: 8px 0;
+  }
+  #bamboo-admin .ba-row input[type="range"] {
+    height: 28px;
+  }
+}

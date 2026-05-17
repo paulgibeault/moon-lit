@@ -1,8 +1,8 @@
 # Moon Glow — Visual Design Plan
 
 A redesign of the in-canvas visuals to match the look and vibe of
-[img/logo.png](img/logo.png). Aligns with milestone **M8 — Visual polish core**
-in [SESSION_HANDOFF.md](SESSION_HANDOFF.md).
+[../img/logo.png](../img/logo.png). The M8 visual-polish milestone — see
+[design-concept.md](design-concept.md) for the broader design context.
 
 The goal is a cinematic, layered scene viewed from the lakeshore: the player
 (unseen) stands on the bank, looking out at a boatman on the open lake who
@@ -231,7 +231,7 @@ extend it as new master images come in, run once, commit the outputs.
 
 Image-generation prompts for the four masters live in [img-prompts.md](img-prompts.md)
 (to be created). Match the style anchors from
-[initial-concept-v2.md §7.1](initial-concept-v2.md): deep indigo night palette,
+[design-concept.md §7.1](design-concept.md): deep indigo night palette,
 warm lantern bloom, painterly paper-cut.
 
 ## Implementation phases

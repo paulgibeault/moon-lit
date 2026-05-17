@@ -16,15 +16,67 @@ const RASTER_SCALE = 2;
 const BURST_SRC = 'img/lantern-burst.png';
 let burstSheet = null;
 
-// Bamboo framing — square for portrait-ish viewports, wide for landscape.
-// Pre-processed at load so the white sky inside the arch becomes transparent
-// and the gradient + moon show through behind the bamboo.
-const BACKGROUND_SOURCES = {
-  square: 'img/background.png',
-  wide:   'img/background-wide.png',
+// Bamboo silhouette sprite library. Source PNGs are black-on-white at modest
+// resolution; loadBambooSprites() bakes each to a tinted alpha silhouette and
+// crops to its painted bbox so the renderer can place them by anchor without
+// guessing margins. Categorized so the renderer can pick stalks vs. clusters
+// vs. accent leaves independently — stalks form the trunk, clusters add
+// midground volume, leaves are fine accents.
+const BAMBOO_SOURCES = {
+  // Full-height bamboo with natural leaf branches at varied heights — the
+  // primary foreground framing element.
+  tall: [
+    'img/bamboo-tall-a.png',
+    'img/bamboo-tall-b.png',
+  ],
+  // Bare tileable cane segments — no leaves, designed to stack vertically.
+  // Used for slim background trunks where the foliage from the `tall` pool
+  // would compete with the play area.
+  cane: [
+    'img/bamboo-cane-tall.png',
+    'img/bamboo-cane-short.png',
+  ],
+  // Bamboo base with grass — anchors the bottom of a cane stack so the trunk
+  // doesn't read as floating or chopped off at the waterline.
+  base: [
+    'img/bamboo-base-a.png',
+    'img/bamboo-base-b.png',
+  ],
+  // Bamboo culm tips — natural tapering crowns that slot on top of cane
+  // stacks. Each shows a trunk extending off the BOTTOM edge (to match cane
+  // tile-ability) with a whippy curving tip reaching above varied leaf
+  // branches. Used as the topper when present (replaces the cluster cap).
+  tip: [
+    'img/bamboo-tip-a.png',
+    'img/bamboo-tip-b.png',
+    'img/bamboo-tip-c.png',
+  ],
+  // Smaller leafy branch sprites — used as midground/foreground accents.
+  stalk: [
+    'img/bamboo-stalk-a.png',
+    'img/bamboo-stalk-b.png',
+  ],
+  // Detached leaf clusters for corner accents and additional foliage volume.
+  cluster: [
+    'img/bamboo-cluster-dense.png',
+    'img/bamboo-cluster-multi.png',
+    'img/bamboo-cluster-wide.png',
+    'img/bamboo-cluster-fan.png',
+  ],
+  // Single leaf for fine particle/accent use.
+  leaf: [
+    'img/bamboo-leaf-single.png',
+  ],
 };
-const BACKGROUND_WIDE_AR_THRESHOLD = 1.3;
-let backgrounds = { square: null, wide: null };
+// Brightness above this counts as "background" and goes fully transparent;
+// below the OPAQUE threshold stays at full silhouette alpha; between them we
+// ramp so brush-stroke greys read as translucent dark instead of hard edges.
+const BAMBOO_TRANSPARENT_AT = 235;
+const BAMBOO_OPAQUE_BELOW   = 60;
+// Tint the silhouette pixels to a deep night-indigo so they composite over
+// the sky gradient as bamboo-in-shadow rather than pure black ink.
+const BAMBOO_TINT = [10, 18, 48];
+const bambooSprites = { tall: [], cane: [], base: [], tip: [], stalk: [], cluster: [], leaf: [] };
 
 // Pixel below this alpha is treated as transparent margin when measuring bbox.
 const ALPHA_THRESHOLD = 8;
@@ -124,12 +176,23 @@ export function getBurstSheet() {
   return burstSheet;
 }
 
-// Maps the source PNG's white sky to transparent and keeps bamboo opaque so
-// the rendered frame composites over the gradient + moon. Anti-aliased edges
-// between bamboo and sky get a soft alpha ramp in the 200..245 brightness
-// band so leaves don't develop a hard halo.
-function makeBambooFrame(img) {
-  const w = img.naturalWidth || img.width;
+// Converts a silhouette source image into a tinted, alpha-masked offscreen
+// canvas. Handles two source-encoding conventions:
+//
+//   RGB sources (older bamboo sprites): solid white background, dark
+//   silhouette. We derive alpha from brightness — white pixels become
+//   transparent, dark pixels become opaque, greys ramp.
+//
+//   RGBA sources (new bamboo sprites — cane, base, tall, tip): transparent
+//   background, painted silhouette with anti-aliased edges AND artistic
+//   white highlights inside the silhouette (e.g., reflective node bands on
+//   the cane). For these we trust the source alpha channel — using
+//   brightness would wrongly transparentize the interior white highlights
+//   and leave visible "splits" through the bamboo trunk.
+//
+// Detection: any near-corner pixel with alpha < 255 → RGBA. Otherwise RGB.
+function bakeSilhouette(img) {
+  const w = img.naturalWidth  || img.width;
   const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
   c.width = w;
@@ -143,39 +206,125 @@ function makeBambooFrame(img) {
     return c;
   }
   const d = imgData.data;
-  const TRANSPARENT_AT = 245;
-  const OPAQUE_BELOW = 200;
-  const RAMP = TRANSPARENT_AT - OPAQUE_BELOW;
+  const isRGBA = sourceIsRGBA(d, w, h);
+  const [tr, tg, tb] = BAMBOO_TINT;
+  const ramp = BAMBOO_TRANSPARENT_AT - BAMBOO_OPAQUE_BELOW;
   for (let i = 0; i < d.length; i += 4) {
-    const brightness = (d[i] + d[i + 1] + d[i + 2]) / 3;
-    if (brightness >= TRANSPARENT_AT) {
-      d[i + 3] = 0;
-    } else if (brightness > OPAQUE_BELOW) {
-      const t = (TRANSPARENT_AT - brightness) / RAMP;
-      d[i + 3] = Math.round(d[i + 3] * t);
+    let finalA;
+    if (isRGBA) {
+      // Trust source alpha — preserves anti-aliased silhouette edges and
+      // keeps any interior white highlights opaque (they're part of the
+      // brushwork, not background).
+      finalA = d[i + 3];
+    } else {
+      // RGB: derive alpha from brightness. Source alpha is uniformly 255.
+      const brightness = (d[i] + d[i + 1] + d[i + 2]) / 3;
+      if (brightness >= BAMBOO_TRANSPARENT_AT) finalA = 0;
+      else if (brightness <= BAMBOO_OPAQUE_BELOW) finalA = 255;
+      else finalA = Math.round(255 * (BAMBOO_TRANSPARENT_AT - brightness) / ramp);
     }
+    d[i]     = tr;
+    d[i + 1] = tg;
+    d[i + 2] = tb;
+    d[i + 3] = finalA;
   }
   cx.putImageData(imgData, 0, 0);
   return c;
 }
 
-export async function loadBackgrounds() {
-  const entries = await Promise.all(
-    Object.entries(BACKGROUND_SOURCES).map(async ([key, src]) => {
-      try {
-        const img = await loadImage(src);
-        return [key, makeBambooFrame(img)];
-      } catch (_) {
-        return [key, null];
-      }
-    })
-  );
-  for (const [key, canvas] of entries) backgrounds[key] = canvas;
+// Sample the 4 image corners. Any corner with alpha < 255 means the source
+// uses a transparent background (RGBA). All corners opaque means the source
+// uses a solid background (RGB, treat brightness as the alpha source).
+function sourceIsRGBA(d, w, h) {
+  const idx = (x, y) => (y * w + x) * 4 + 3;
+  const corners = [
+    d[idx(0, 0)],
+    d[idx(w - 1, 0)],
+    d[idx(0, h - 1)],
+    d[idx(w - 1, h - 1)],
+  ];
+  return corners.some((a) => a < 255);
 }
 
-export function getBackgroundFrame(viewW, viewH) {
-  if (!viewW || !viewH) return backgrounds.square || backgrounds.wide || null;
-  const wide = viewW / viewH >= BACKGROUND_WIDE_AR_THRESHOLD;
-  return (wide ? backgrounds.wide : backgrounds.square)
-      || backgrounds.square || backgrounds.wide || null;
+// Measures the painted silhouette near one horizontal edge of the cropped
+// bbox and returns { widthFrac, centerFrac } — width and center-x relative
+// to the bbox. Used by the renderer to size sprites so their painted
+// trunks match seamlessly at the seam (e.g. a culm-tip drawn directly
+// above a cane segment), AND to anchor them by trunk-center rather than
+// bbox-center — important for sprites where the AI placed the trunk
+// off-center inside the foliage spread.
+//
+// We sample a small band (a few rows) and take the median so a single
+// anti-aliased edge row doesn't skew the result.
+function measureEdge(canvas, bbox, edge) {
+  if (bbox.sw <= 0 || bbox.sh <= 0) return { widthFrac: 0, centerFrac: 0.5 };
+  const cw = canvas.width;
+  const ctx = canvas.getContext('2d');
+  let data;
+  try { data = ctx.getImageData(0, 0, cw, canvas.height).data; }
+  catch (_) { return { widthFrac: 0, centerFrac: 0.5 }; }
+  const bandH = Math.max(1, Math.min(bbox.sh, Math.floor(bbox.sh * 0.03)));
+  const y0 = edge === 'top' ? bbox.sy : bbox.sy + bbox.sh - bandH;
+  const widths = [];
+  const centers = [];
+  for (let y = y0; y < y0 + bandH; y++) {
+    let minX = bbox.sx + bbox.sw, maxX = -1;
+    for (let x = bbox.sx; x < bbox.sx + bbox.sw; x++) {
+      if (data[(y * cw + x) * 4 + 3] >= ALPHA_THRESHOLD) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+      }
+    }
+    if (maxX >= 0) {
+      widths.push(maxX - minX + 1);
+      centers.push((minX + maxX) / 2 - bbox.sx);
+    }
+  }
+  if (widths.length === 0) return { widthFrac: 0, centerFrac: 0.5 };
+  widths.sort((a, b) => a - b);
+  centers.sort((a, b) => a - b);
+  const mid = widths.length >> 1;
+  return {
+    widthFrac:  widths[mid]  / bbox.sw,
+    centerFrac: centers[mid] / bbox.sw,
+  };
 }
+
+async function loadBambooEntry(src) {
+  const img = await loadImage(src);
+  const canvas = bakeSilhouette(img);
+  const bbox = measureBbox(canvas);
+  const top    = measureEdge(canvas, bbox, 'top');
+  const bottom = measureEdge(canvas, bbox, 'bottom');
+  return {
+    image: canvas,
+    sx: bbox.sx, sy: bbox.sy, sw: bbox.sw, sh: bbox.sh,
+    topFrac:          top.widthFrac,
+    topCenterFrac:    top.centerFrac,
+    bottomFrac:       bottom.widthFrac,
+    bottomCenterFrac: bottom.centerFrac,
+  };
+}
+
+// Loads every sprite category in parallel. A failed sprite is skipped so a
+// missing file doesn't take down the rest — the renderer treats each pool as
+// "use what's available; fall back to procedural if a pool is empty."
+export async function loadBambooSprites() {
+  await Promise.all(
+    Object.entries(BAMBOO_SOURCES).map(async ([category, paths]) => {
+      const loaded = await Promise.all(paths.map(async (p) => {
+        try { return await loadBambooEntry(p); }
+        catch (_) { return null; }
+      }));
+      bambooSprites[category] = loaded.filter(Boolean);
+    })
+  );
+}
+
+export function getBambooTallSprites()    { return bambooSprites.tall;    }
+export function getBambooCaneSprites()    { return bambooSprites.cane;    }
+export function getBambooBaseSprites()    { return bambooSprites.base;    }
+export function getBambooTipSprites()     { return bambooSprites.tip;     }
+export function getBambooStalkSprites()   { return bambooSprites.stalk;   }
+export function getBambooClusterSprites() { return bambooSprites.cluster; }
+export function getBambooLeafSprites()    { return bambooSprites.leaf;    }

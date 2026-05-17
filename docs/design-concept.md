@@ -416,7 +416,7 @@ support for `data-theme="light"` and `data-theme="dark"`.
 ### 7.4 Theme handling
 
 - Festival mode: opts out of theme. Always night. Documented in README per
-  §5 of [GAME_INTEGRATION.md](../paulgibeault.github.io/GAME_INTEGRATION.md).
+  §5 of [GAME_INTEGRATION.md](../../paulgibeault.github.io/GAME_INTEGRATION.md).
 - Classic mode: full theme support. Light theme = "morning festival market"
   pastels; dark theme = the main palette above.
 - Splash, mode-select, festival map: render in a fixed midnight palette
@@ -645,14 +645,14 @@ e.g. on cosmetic unlock outside of a dedicated celebration screen.
 - 512×512 `images/moon-glow.png` PR'd against `paulgibeault/paulgibeault.github.io`.
 - Subtitle ≤ 20 chars: **"Lantern Shooter"**.
 - Update both `#games` and `#view-launcher` sections in
-  [index.html](../paulgibeault.github.io/index.html).
+  [index.html](../../paulgibeault.github.io/index.html).
 
 ---
 
 ## 11. Acceptance for v1
 
 Before we call v1 done, the game should pass every item in §13 of
-[GAME_INTEGRATION.md](../paulgibeault.github.io/GAME_INTEGRATION.md), plus
+[GAME_INTEGRATION.md](../../paulgibeault.github.io/GAME_INTEGRATION.md), plus
 these game-specific checks:
 
 - [ ] A new player can launch the game and fire their first shot in under
