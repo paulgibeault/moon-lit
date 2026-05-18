@@ -30,9 +30,20 @@ export function computeLayout(viewW, viewH, cols = GRID.cols, maxRows = GRID.max
   const wallRight = playLeft + totalPlayW;
   const originX   = playLeft + laneW + r;  // center of (col 0, even row 0)
 
-  const trellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
-  const lastRowCenterY = trellisY + r + (maxRows - 1) * SQRT3 * r;
-  const deadLineY = lastRowCenterY + r + DEAD_LINE_OFFSET;
+  // Natural top-anchored positions: trellis sits just under the top margin
+  // and the grid grows downward.
+  const naturalTrellisY = BOARD_MARGIN_TOP + TRELLIS_HEIGHT;
+  const gridHeight = r + (maxRows - 1) * SQRT3 * r + r + DEAD_LINE_OFFSET;
+  // On tall viewports (phones in portrait) width caps `r`, so the grid is
+  // much shorter than the available height. Top-anchoring strands the
+  // launcher mid-screen with dead water below; bottom-anchoring strands the
+  // grid in the lower half with dead sky above. Split the slack: half goes
+  // above the trellis (sky/moon), half below the launcher (water/reflection).
+  const naturalDeadLineY = naturalTrellisY + gridHeight;
+  const desiredDeadLineY = viewH - BOARD_MARGIN_BOTTOM;
+  const verticalShift = Math.max(0, desiredDeadLineY - naturalDeadLineY) / 2;
+  const trellisY = naturalTrellisY + verticalShift;
+  const deadLineY = naturalDeadLineY + verticalShift;
   // Sink the launcher so the cradled lantern's bottom hovers just above
   // the waterline — the post enters the water, and the visible lamp reads
   // as resting on the lake surface before it fires. The cradle sits ~0.18r

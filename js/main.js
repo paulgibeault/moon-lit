@@ -2,7 +2,7 @@ import { GAME_ID } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
-import { render, resetHudState } from './renderer.js';
+import { render, resetHudState, isHudSettled } from './renderer.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture } from './assets.js';
 import { syncLanternPixels } from './board.js';
@@ -91,6 +91,14 @@ let rafId = 0;
 let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
 let lastPhase = null;
+// Last pointer activity timestamp. While this is recent, the rAF loop keeps
+// running so ambient animations (star twinkle, moon halo breath, slow moon
+// traverse) play under the player's fingers. After INTERACTION_TAIL_MS of
+// quiet — and only if gameplay/effects/HUD tweens are all settled — the loop
+// stops scheduling frames at all, dropping the canvas's CPU/GPU load to zero
+// until something happens.
+const INTERACTION_TAIL_MS = 1200;
+let lastInteractionMs = 0;
 
 // Any phase except FLYING carries a fully resolved game state we can resume
 // from. FLYING is the only transient one (live projectile trajectory isn't
@@ -232,25 +240,58 @@ function recordOutcome(g, won) {
   }
 }
 
+// Anything left to animate? When this returns false the rAF loop is allowed
+// to stop scheduling itself. requestFrame() is the inverse — anything that
+// changes view-state has to call it to wake the loop back up.
+function isQuiescent() {
+  if (!game || !layout) return false;
+  if (performance.now() - lastInteractionMs < INTERACTION_TAIL_MS) return false;
+  if (game.phase !== PHASE.AIMING) return false;
+  if (hasActiveEffects(game)) return false;
+  if (!isHudSettled(game)) return false;
+  return true;
+}
+
 function frame(now) {
-  if (!suspended && layout) {
-    const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
-    lastTime = now;
-    const phaseAnimating =
-      game.phase === PHASE.FLYING ||
-      game.phase === PHASE.DESCENDING ||
-      game.phase === PHASE.SETTLING ||
-      game.phase === PHASE.DROWNING;
-    if (phaseAnimating || hasActiveEffects(game)) {
-      step(game, dt, layout);
-    }
-    maybePersistOnPhaseChange();
-    // Always render: the HUD counter tween, combo dots, and moon halo respond
-    // to view-only state that lives outside hasActiveEffects(). At this canvas
-    // size a 60fps redraw is cheap; the rAF is fully cancelled while suspended.
-    render(ctx, layout, game, settings);
+  if (suspended || !layout) { rafId = 0; return; }
+  const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  const phaseAnimating =
+    game.phase === PHASE.FLYING ||
+    game.phase === PHASE.DESCENDING ||
+    game.phase === PHASE.SETTLING ||
+    game.phase === PHASE.DROWNING;
+  if (phaseAnimating || hasActiveEffects(game)) {
+    step(game, dt, layout);
   }
+  maybePersistOnPhaseChange();
+  // Always render while the loop is alive: HUD counter tween, combo dots,
+  // and moon halo respond to view-only state that lives outside
+  // hasActiveEffects(). Once everything settles, isQuiescent() pulls the loop
+  // off the scheduler entirely until requestFrame() wakes it up.
+  render(ctx, layout, game, settings);
+
+  if (isQuiescent()) {
+    rafId = 0;
+    lastTime = 0;
+  } else {
+    rafId = requestAnimationFrame(frame);
+  }
+}
+
+// Wake the rAF loop. Idempotent — safe to call from any input/lifecycle
+// callback. Anything that mutates view-relevant state while the loop is
+// asleep MUST call this so the change is actually drawn.
+function requestFrame() {
+  if (suspended) return;
+  if (rafId) return;
+  lastTime = 0;
   rafId = requestAnimationFrame(frame);
+}
+
+function bumpInteraction() {
+  lastInteractionMs = performance.now();
+  requestFrame();
 }
 
 // Last-chance flush before the page goes away. onSuspend only fires from a
@@ -266,19 +307,36 @@ function flushPersist() {
 // Lifecycle: cancel the rAF entirely while hidden so we hold no slot in the
 // browser's animation budget. Flush progress to localStorage at the same
 // moment so an LRU eviction can't lose state set in the last few frames.
+function stopLoop() {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  lastTime = 0;
+}
+
 Arcade.onSuspend(() => {
   suspended = true;
-  if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  stopLoop();
   flushPersist();
 });
 Arcade.onResume(() => {
   suspended = false;
-  lastTime = 0;
-  if (!rafId) rafId = requestAnimationFrame(frame);
+  requestFrame();
 });
-window.addEventListener('pagehide', flushPersist);
+window.addEventListener('pagehide', () => {
+  flushPersist();
+  stopLoop();
+});
+// Tell the OS we're cooperative when the tab/iframe goes hidden: cancel the
+// rAF outright rather than relying on the browser's hidden-tab throttle, and
+// wake the loop the moment we're visible again. (Browsers already throttle
+// rAF in hidden tabs, but explicitly cancelling drops us off the animation
+// budget entirely and lets the system schedule other work.)
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushPersist();
+  if (document.visibilityState === 'hidden') {
+    flushPersist();
+    stopLoop();
+  } else {
+    if (!suspended) requestFrame();
+  }
 });
 
 // When the launcher imports a save, re-hydrate in place. Reset HUD tween
@@ -290,17 +348,22 @@ Arcade.onStateReplaced(() => {
   settings = readSettings();
   resetHudState(game.score, bestScore);
   Arcade.ui.toast('save loaded', { kind: 'info' });
+  requestFrame();
 });
 
-Arcade.onSettingsChange(() => { settings = readSettings(); });
+Arcade.onSettingsChange(() => {
+  settings = readSettings();
+  requestFrame();
+});
 
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => { resize(); requestFrame(); });
 attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
   onLossClick: restartLevel,
+  onInteract: bumpInteraction,
 });
 initAdminPanel();
 resize();
-rafId = requestAnimationFrame(frame);
+requestFrame();
 
 console.info(`[${GAME_ID}] M5 pressure+win/loss ready — framed=${Arcade.context.framed}`);

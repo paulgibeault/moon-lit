@@ -11,7 +11,11 @@ const UI_SAFE_TOP_PX = 56;
 // Replaces the previous mouse + touch duplication. The bounding-rect is
 // cached and only refreshed on window resize / scroll.
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
-  const { onWinClick, onLossClick } = callbacks;
+  const { onWinClick, onLossClick, onInteract } = callbacks;
+  // Bump on every pointer event so main.js can keep ambient animations
+  // (twinkle, moon halo breath) alive while the player is actively touching
+  // the interface, and let the rAF loop idle out shortly after they stop.
+  const bump = () => onInteract && onInteract();
 
   let rect = canvas.getBoundingClientRect();
   const refreshRect = () => { rect = canvas.getBoundingClientRect(); };
@@ -38,11 +42,13 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   let aimingPointerId = null;
 
   const onPointerMove = (e) => {
+    bump();
     if (isGameOver(getGame())) return;
     aimAt(e.clientX, e.clientY);
   };
 
   const onPointerDown = (e) => {
+    bump();
     const game = getGame();
     if (isGameOver(game)) {
       handleEndClick(game);
@@ -57,6 +63,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   };
 
   const onPointerUp = (e) => {
+    bump();
     if (aimingPointerId !== e.pointerId) return;
     aimingPointerId = null;
     const game = getGame();

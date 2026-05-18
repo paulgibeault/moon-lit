@@ -20,6 +20,15 @@ export function resetHudState(score = 0, best = 0) {
   hudState.prevBest = best;
 }
 
+// True when the score counter has converged on game.score and the best-flash
+// has decayed to zero — i.e. the next tweenHud call would be a no-op. main.js
+// uses this as part of the "is anything still animating?" check before
+// suspending the rAF loop.
+export function isHudSettled(game) {
+  return (hudState.displayScore | 0) === (game.score | 0)
+      && hudState.bestFlash === 0;
+}
+
 // Closes ~12% of the gap each frame at 60fps; instant under reducedMotion.
 // Good enough for a counter — no need for a real spring.
 export function tweenHud(game, settings) {

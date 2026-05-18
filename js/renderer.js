@@ -11,10 +11,11 @@ import {
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
+  isHudSettled,
 } from './renderer/hud.js';
 
 export { computeLayout } from './layout.js';
-export { resetHudState };
+export { resetHudState, isHudSettled };
 
 export function render(ctx, layout, game, settings) {
   tweenHud(game, settings);
