@@ -36,10 +36,13 @@ export const PALETTE = Object.freeze({
 // odd rows are offset by one radius so circles snuggle (close-pack).
 // initialRows is how many full rows are populated when a fresh game starts.
 // maxRows sizes the canvas so this many rows fit between trellis and dead-line.
+// 19 fills tall portrait viewports without leaving a dead air-gap below the
+// bottom row; on wide viewports the height-cap shrinks lanterns to keep all
+// 19 rows visible, so the play field has a consistent vertical depth.
 export const GRID = Object.freeze({
   cols: 8,
   initialRows: 5,
-  maxRows: 13,
+  maxRows: 19,
 });
 
 export const BOARD_MARGIN_TOP = 56;
@@ -80,10 +83,16 @@ export const DEAD_LINE_OFFSET = 36;
 // than overflow horizontally.
 export const MIN_LANTERN_RADIUS = 4;
 
-export const PROJECTILE_SPEED = 620;        // px/sec
-// Visual slide speed of the descent animation. Sized to one packed-row
-// height (sqrt(3)*r) so the move reads as "shift down by one row".
-export const DESCENT_DRIFT_SPEED = 240;     // px/sec
+// Speeds are in lantern-radii per second and multiplied by layout.size at
+// the call site. Keeping them viewport-relative means the projectile and
+// descent read at the same visual pace on a tiny phone canvas as on a full
+// desktop one — a fixed px/sec runs ~2× faster on phones where lanterns are
+// half the size. Calibrated so a typical laptop r≈28 reproduces the
+// historical feel (PROJECTILE_SPEED ≈ 620 px/sec, DESCENT ≈ 240 px/sec).
+export const PROJECTILE_SPEED = 22;         // radii/sec
+// Sized to one packed-row height (sqrt(3)*r) so the move reads as "shift
+// down by one row" — about 0.20s per row at this value.
+export const DESCENT_DRIFT_SPEED = 8.5;     // radii/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 

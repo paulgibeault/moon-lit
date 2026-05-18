@@ -114,7 +114,7 @@ export function step(game, dtSec, layout) {
   tickEffects(game, dtSec);
 
   if (game.phase === PHASE.DESCENDING) {
-    const stepPx = DESCENT_DRIFT_SPEED * dtSec;
+    const stepPx = DESCENT_DRIFT_SPEED * layout.size * dtSec;
     game.board.descentAnimY = Math.min(0, game.board.descentAnimY + stepPx);
     if (game.board.descentAnimY >= 0) {
       game.board.descentAnimY = 0;
@@ -149,7 +149,7 @@ export function step(game, dtSec, layout) {
 
   if (game.phase !== PHASE.FLYING || !game.shot) return false;
 
-  const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * dtSec, dtSec);
+  const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * layout.size * dtSec, dtSec);
   if (trace.settled) {
     const placed = { x: trace.x, y: trace.y, color: game.shot.color };
     addLantern(game.board, placed.x, placed.y, placed.color, layout);
