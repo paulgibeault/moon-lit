@@ -2,8 +2,10 @@ import { PALETTE } from '../constants.js';
 import { PHASE } from '../game.js';
 import {
   SERIF, SANS, HUD_OPACITY,
-  formatScore, hudPx, fontScaleOf,
+  formatScore, hudPx, fontScaleOf, hexToRgba,
 } from './style.js';
+import { getMoonState, drawPhaseShadow } from './world.js';
+import { MENU_RESERVE_PX } from './menu.js';
 
 // View-only state that lives outside the game model: the HUD score counter
 // tweens from `displayScore` toward `game.score` so a big swing reads as a
@@ -54,32 +56,104 @@ export function tweenHud(game, settings) {
   }
 }
 
+// Descent meter — a small visual countdown rather than text. A trellis bar
+// at the top slides down toward a faint waterline as shots tick away; the
+// number sits between them and tints cream → ember as the descent approaches.
+// Anchored opposite the score panel so the chrome reads as two clusters with
+// the river in between.
+const DESCENT_ICON_W = 44;
+const DESCENT_BAR_TOP = 10;
+const DESCENT_LINE_Y = 44;
+const DESCENT_BAR_W = 24;
+
 export function drawDescentMeter(ctx, layout, game, settings) {
   if (game.shotsUntilDescent == null) return;
-  const fontPx = hudPx(layout, 0.55, 11, settings);
-  // Lives opposite the score panel: score on the dominant side, descent
-  // meter on the other corner.
+  const n = game.shotsUntilDescent | 0;
+  const cap = (game.descentShots | 0) || 8;
+  // 0 at a fresh descent, 1 right before it triggers. Used for both the bar
+  // drop and the cream → ember color blend.
+  const progress = Math.max(0, Math.min(1, (cap - n) / cap));
   const handed = settings.handedness === 'left';
-  const x = handed ? 12 : layout.viewW - 12;
+  const iconLeft = handed ? 12 : layout.viewW - 12 - DESCENT_ICON_W;
+  const cx = iconLeft + DESCENT_ICON_W / 2;
+  const lineSpan = DESCENT_LINE_Y - DESCENT_BAR_TOP - 14;  // bar travel range
+  const barY = DESCENT_BAR_TOP + lineSpan * progress;
+  const tint = hexLerpRgba(PALETTE.moon, PALETTE.moonHalo, progress, HUD_OPACITY.strong);
+  const tintSoft = hexLerpRgba(PALETTE.moon, PALETTE.moonHalo, progress, HUD_OPACITY.soft);
+
   ctx.save();
-  ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
-  ctx.font = `500 ${fontPx}px ${SANS}`;
-  ctx.textAlign = handed ? 'left' : 'right';
+  // Trellis bar — the thing actually descending. A rounded stroke reads as
+  // a bamboo segment rather than a generic UI line.
+  ctx.strokeStyle = tint;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - DESCENT_BAR_W / 2, barY);
+  ctx.lineTo(cx + DESCENT_BAR_W / 2, barY);
+  ctx.stroke();
+  // Two short strings hanging from the bar — implies the lanterns it carries.
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = tintSoft;
+  for (const xo of [-6, 6]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + xo, barY + 2);
+    ctx.lineTo(cx + xo, barY + 6);
+    ctx.stroke();
+  }
+
+  // Countdown number — italic serif so it feels lantern-paper, not UI.
+  const numPx = hudPx(layout, 0.78, 14, settings);
+  ctx.font = `italic 500 ${numPx}px Georgia, serif`;
+  ctx.fillStyle = tint;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(n), cx, (barY + DESCENT_LINE_Y) / 2 + 1);
+
+  // Waterline — what the descent is closing on. Dashed and faint so it reads
+  // as ambient threat rather than a hard UI element.
+  ctx.strokeStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(cx - DESCENT_BAR_W / 2 - 2, DESCENT_LINE_Y);
+  ctx.lineTo(cx + DESCENT_BAR_W / 2 + 2, DESCENT_LINE_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // "descent" label sits under the waterline at hairline opacity — present
+  // for first-time players, invisible to anyone who already knows the icon.
+  const subPx = hudPx(layout, 0.42, 9, settings);
+  ctx.font = `400 ${subPx}px ${SANS}`;
+  ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
   ctx.textBaseline = 'top';
-  ctx.fillText(`descent in ${game.shotsUntilDescent}`, x, 10);
+  ctx.fillText('descent', cx, DESCENT_LINE_Y + 3);
   ctx.restore();
 }
 
-// Score panel anchored to the left (or right under handedness=left). Shows:
-//   ☾ <score>          — moon glyph + tween-counted total
+// Linear interpolation between two hex colors, returning an rgba() string.
+// Local to hud.js since both the descent tint and combo tier color need it.
+function hexLerpRgba(hexA, hexB, t, alpha) {
+  const ra = parseInt(hexA.slice(1, 3), 16), ga = parseInt(hexA.slice(3, 5), 16), ba = parseInt(hexA.slice(5, 7), 16);
+  const rb = parseInt(hexB.slice(1, 3), 16), gb = parseInt(hexB.slice(3, 5), 16), bb = parseInt(hexB.slice(5, 7), 16);
+  const r = Math.round(ra + (rb - ra) * t);
+  const g = Math.round(ga + (gb - ga) * t);
+  const b = Math.round(ba + (bb - ba) * t);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Score panel anchored to the score-side edge (left by default, right under
+// handedness=left). The menu button claims the first 12+38+8 px of that
+// edge, so the panel starts at MENU_RESERVE_PX. Shows:
+//   ☾ <score>          — moon glyph mirrors current sky-moon phase
 //     stage N · best M  — small subtext
-//     ●●○○○            — combo dots, fill from cream to ember as combo grows
+//     ×N ✦              — combo badge (only when combo ≥ 2)
 export function drawScoreHud(ctx, layout, game, settings) {
   const handed = settings.handedness === 'left';
   const fontPx = hudPx(layout, 0.95, 14, settings);
   const subPx  = hudPx(layout, 0.55, 11, settings);
   const align  = handed ? 'right' : 'left';
   const glyphPad = subPx * 0.7;
+  const edge = MENU_RESERVE_PX;
 
   ctx.save();
   ctx.textAlign = align;
@@ -92,17 +166,12 @@ export function drawScoreHud(ctx, layout, game, settings) {
   const moonR = fontPx * 0.32;
   const moonY = 8 + fontPx * 0.5;
   const moonX = handed
-    ? layout.viewW - 12 - scoreW - glyphPad - moonR
-    : 12 + moonR;
-  ctx.fillStyle = PALETTE.moon;
-  ctx.globalAlpha = HUD_OPACITY.strong;
-  ctx.beginPath();
-  ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+    ? layout.viewW - edge - scoreW - glyphPad - moonR
+    : edge + moonR;
+  drawMoonGlyph(ctx, layout, settings, moonX, moonY, moonR);
 
   ctx.fillStyle = PALETTE.moon;
-  const scoreTextX = handed ? layout.viewW - 12 : 12 + moonR * 2 + glyphPad;
+  const scoreTextX = handed ? layout.viewW - edge : edge + moonR * 2 + glyphPad;
   ctx.fillText(scoreText, scoreTextX, 8);
 
   // Subtext: "stage N · best M"
@@ -110,12 +179,13 @@ export function drawScoreHud(ctx, layout, game, settings) {
   if (settings.bestScore) sub += ` · best ${formatScore(settings.bestScore)}`;
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
   ctx.font = `400 ${subPx}px Georgia, ${SANS}`;
-  const subX = handed ? layout.viewW - 12 : 12;
+  const subX = handed ? layout.viewW - edge : edge;
   ctx.fillText(sub, subX, 8 + fontPx + 2);
 
-  // Combo dots — five slots that fill cream → ember as the combo grows. At
-  // combo ≥ 6 each filled dot becomes a four-point sparkle.
-  drawComboDots(ctx, layout, game, settings, subX, 8 + fontPx + subPx + 6, align);
+  // Combo badge — silent until the player is actually chaining. When the
+  // chain ends, the badge disappears with the next render and the celebration
+  // lives entirely in the world-side "combo ×N" float.
+  drawComboBadge(ctx, layout, game, settings, subX, 8 + fontPx + subPx + 6, align);
 
   // Best-flash glow: a soft moonHalo ring under the score for ~1.5s after a
   // new best lands. Honors reduced motion via tweenHud's instant-clear.
@@ -132,34 +202,90 @@ export function drawScoreHud(ctx, layout, game, settings) {
   ctx.restore();
 }
 
-function drawComboDots(ctx, layout, game, settings, x, y, align) {
+// Tiny moon icon next to the score that mirrors the sky-moon's current phase.
+// Same phase math as drawMoon — the HUD glyph waxes and wanes alongside the
+// real moon overhead, so the chrome is part of the world, not pasted on it.
+function drawMoonGlyph(ctx, layout, settings, cx, cy, r) {
+  ctx.save();
+  ctx.globalAlpha = HUD_OPACITY.strong;
+  ctx.fillStyle = PALETTE.moon;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  // Clip to the disc so the phase-shadow ellipse can't paint outside the
+  // moon's circular silhouette at small scales (1-px overshoot would look
+  // like a chipped icon).
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  const m = getMoonState(layout, settings);
+  drawPhaseShadow(ctx, cx, cy, r, m.phase01);
+  ctx.restore();
+}
+
+// Combo badge — silent at combo 0-1 (no UI furniture for nothing-is-happening),
+// then crescent → haloed crescent → sparkle as the chain climbs. Reads as an
+// italic-serif `×N` followed by a tier glyph: a small "you're on a streak"
+// note rather than five clickable-looking dots.
+function drawComboBadge(ctx, layout, game, settings, x, y, align) {
   const combo = game.combo | 0;
-  const slots = 5;
-  const dotR = hudPx(layout, 0.18, 3, settings);
-  const gap  = dotR * 2.4;
+  if (combo < 2) return;
+  const px = hudPx(layout, 0.62, 12, settings);
+  const glyphR = px * 0.42;
+  const gap = px * 0.35;
+  const isPeak = combo >= 6;
+  const color = combo >= 3 ? PALETTE.moonHalo : PALETTE.moon;
+
   ctx.save();
   ctx.textBaseline = 'top';
-  for (let i = 0; i < slots; i++) {
-    const dx = align === 'right'
-      ? x - i * gap - dotR
-      : x + i * gap + dotR;
-    const filled = i < combo;
-    const sparkle = combo >= 6 && filled;
-    if (sparkle) {
-      drawSparkle(ctx, dx, y + dotR, dotR * 1.6, PALETTE.moonHalo);
-    } else if (filled) {
-      ctx.fillStyle = combo >= 3 ? PALETTE.moonHalo : PALETTE.moon;
-      ctx.beginPath();
-      ctx.arc(dx, y + dotR, dotR, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(dx, y + dotR, dotR * 0.95, 0, Math.PI * 2);
-      ctx.stroke();
-    }
+  ctx.textAlign = align;
+  ctx.font = `italic 600 ${px}px ${SERIF}`;
+  const text = `×${combo}`;
+  const textW = ctx.measureText(text).width;
+
+  // Soft glow that intensifies with combo — never bright enough to overpower
+  // the score text above, just enough to register peripherally.
+  if (!settings.reducedMotion) {
+    ctx.shadowColor = PALETTE.moonHalo;
+    ctx.shadowBlur = isPeak ? 10 : combo >= 4 ? 6 : 3;
   }
+  ctx.fillStyle = hexToRgba(color, HUD_OPACITY.strong);
+  ctx.fillText(text, x, y);
+  ctx.shadowBlur = 0;
+
+  // Glyph position: opposite side of the text from the anchor.
+  const gx = align === 'right' ? x - textW - gap - glyphR : x + textW + gap + glyphR;
+  const gy = y + px * 0.5;
+  if (isPeak) {
+    drawSparkle(ctx, gx, gy, glyphR * 1.5, PALETTE.moonHalo);
+  } else {
+    drawCrescent(ctx, gx, gy, glyphR, color, combo >= 4);
+  }
+  ctx.restore();
+}
+
+// Mini-crescent glyph used by the combo badge. `haloed` paints a faint
+// outer ring for the mid-combo tier so the progression reads at a glance.
+function drawCrescent(ctx, cx, cy, r, color, haloed) {
+  ctx.save();
+  if (haloed) {
+    const halo = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 2.0);
+    halo.addColorStop(0, hexToRgba(PALETTE.moonHalo, 0.32));
+    halo.addColorStop(1, hexToRgba(PALETTE.moonHalo, 0));
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 2.0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = hexToRgba(color, HUD_OPACITY.primary);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  // Crescent bite — overpaint with bg-tinted disc shifted to the right.
+  ctx.fillStyle = 'rgba(14, 21, 56, 0.95)';
+  ctx.beginPath();
+  ctx.arc(cx + r * 0.45, cy - r * 0.05, r * 0.92, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 }
 

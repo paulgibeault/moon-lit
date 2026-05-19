@@ -13,11 +13,12 @@ import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
   isHudSettled,
 } from './renderer/hud.js';
+import { drawMenu } from './renderer/menu.js';
 
 export { computeLayout } from './layout.js';
 export { resetHudState, isHudSettled };
 
-export function render(ctx, layout, game, settings) {
+export function render(ctx, layout, game, settings, stats, scores) {
   tweenHud(game, settings);
 
   const { viewW, viewH } = layout;
@@ -43,4 +44,8 @@ export function render(ctx, layout, game, settings) {
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
     drawEndOverlay(ctx, layout, game, settings);
   }
+  // Menu (button + panels) draws last so it sits above the end-overlay too —
+  // the player can open the stage selector from a game-over screen to pick a
+  // different stage instead of being forced to retry the same one.
+  drawMenu(ctx, layout, game, settings, stats, scores);
 }

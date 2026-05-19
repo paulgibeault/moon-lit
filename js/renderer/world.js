@@ -242,7 +242,7 @@ export function getMoonState(layout, settings) {
 // Fill is a translucent deep indigo (not black) so the dark side keeps
 // some sky-color presence — visually equivalent to "earthshine" without the
 // real-world astronomy.
-function drawPhaseShadow(ctx, cx, cy, r, phase01) {
+export function drawPhaseShadow(ctx, cx, cy, r, phase01) {
   const phaseAngle = phase01 * 2 * Math.PI;
   const k = (1 - Math.cos(phaseAngle)) / 2;   // illuminated fraction 0..1
   if (k >= 0.995) return;                     // full moon — no shadow

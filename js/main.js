@@ -8,6 +8,9 @@ import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
+import {
+  isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu,
+} from './renderer/menu.js';
 
 await Arcade.ready;
 
@@ -44,6 +47,10 @@ const STATS_DEFAULTS = {
   totalPops: 0,
   totalDrops: 0,
   totalPlayMs: 0,
+  // Per-level summary, keyed by stage number as a string. Powers the stage
+  // selector — shows per-stage best score, whether the stage has ever been
+  // cleared, and how many attempts the player has made.
+  levels: {},
 };
 
 function loadProgressLevel() {
@@ -149,6 +156,17 @@ function readSettings() {
 }
 let settings = readSettings();
 
+// Cached menu inputs. The Records panel reads from these without going back
+// to localStorage every frame — they're refreshed when the menu opens and
+// after recordOutcome. Same defaults as the on-disk stats so the panel never
+// renders against a partial shape.
+let cachedStats  = Arcade.stats.getOrInit(STATS_KEY, STATS_DEFAULTS);
+let cachedScores = Arcade.scores.list(SCORES_CATEGORY, { limit: 10 });
+function refreshMenuData() {
+  cachedStats  = Arcade.stats.getOrInit(STATS_KEY, STATS_DEFAULTS);
+  cachedScores = Arcade.scores.list(SCORES_CATEGORY, { limit: 10 });
+}
+
 // Remap an in-flight shot from one layout's pixel basis to another, using the
 // same normalized origin (layout.originX, trellisY + size) and unit (size) as
 // lanterns. Direction (vx, vy) is a unit vector and stays put.
@@ -208,12 +226,24 @@ function nextLevel() {
   startGame(createGame({ layout, level: game.level + 1 }));
   saveProgress(game);
   resetHudState(0, bestScore);
+  refreshMenuData();
 }
 function restartLevel() {
   recordOutcome(game, /*won=*/false);
   startGame(createGame({ layout, level: game.level }));
   saveProgress(game);
   resetHudState(0, bestScore);
+  refreshMenuData();
+}
+// Menu-driven stage switch. Treated as a deliberate revisit rather than a
+// run abandonment, so we don't record an outcome against the current game —
+// the player isn't trying to win, they're choosing where to play.
+function startLevel(level) {
+  const lv = Math.max(1, level | 0);
+  startGame(createGame({ layout, level: lv }));
+  saveProgress(game);
+  resetHudState(0, bestScore);
+  refreshMenuData();
 }
 
 // End-of-stage bookkeeping: leaderboard entry, stats update, best-score
@@ -240,6 +270,17 @@ function recordOutcome(g, won) {
     s.totalPops   += g.counts.popped  | 0;
     s.totalDrops  += g.counts.dropped | 0;
     s.totalPlayMs += playDelta | 0;
+    // Per-stage rollup. cleared sticks once set (replaying a cleared stage
+    // never unclears it); bestScore is the high water-mark for that stage.
+    const lvKey = String(g.level | 0);
+    const levels = { ...(s.levels || {}) };
+    const cur = levels[lvKey] || { bestScore: 0, cleared: false, plays: 0 };
+    levels[lvKey] = {
+      bestScore: Math.max(cur.bestScore | 0, score),
+      cleared:   cur.cleared || won,
+      plays:     (cur.plays | 0) + 1,
+    };
+    s.levels = levels;
     return s;
   });
   const wasBest = commitBestIfHigher(score);
@@ -259,6 +300,10 @@ function isQuiescent() {
   if (game.phase !== PHASE.AIMING) return false;
   if (hasActiveEffects(game)) return false;
   if (!isHudSettled(game)) return false;
+  // Menu fade in/out and "still open" both need the loop alive — fade tween
+  // is view-only state outside the game model.
+  if (isMenuOpen()) return false;
+  if (!isMenuSettled()) return false;
   return true;
 }
 
@@ -280,11 +325,12 @@ function frame(now) {
     step(game, dt, layout);
   }
   maybePersistOnPhaseChange();
+  tickMenu(settings);
   // Always render while the loop is alive: HUD counter tween, combo dots,
   // and moon halo respond to view-only state that lives outside
   // hasActiveEffects(). Once everything settles, isQuiescent() pulls the loop
   // off the scheduler entirely until requestFrame() wakes it up.
-  render(ctx, layout, game, settings);
+  render(ctx, layout, game, settings, cachedStats, cachedScores);
 
   if (isQuiescent()) {
     rafId = 0;
@@ -362,6 +408,8 @@ Arcade.onStateReplaced(() => {
   bootstrapGame();
   settings = readSettings();
   resetHudState(game.score, bestScore);
+  refreshMenuData();
+  closeMenu();
   Arcade.ui.toast('save loaded', { kind: 'info' });
   requestFrame();
 });
@@ -376,6 +424,11 @@ attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
   onLossClick: restartLevel,
   onInteract: bumpInteraction,
+  onStartLevel: startLevel,
+  // Menu open/close needs to wake the rAF loop so the fade tween + panel
+  // body actually draw. Also refresh the cached leaderboard/stats on every
+  // open so the panel reflects the latest run without a reload.
+  onMenuChange: () => { refreshMenuData(); requestFrame(); },
 });
 initAdminPanel();
 resize();
