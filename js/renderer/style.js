@@ -54,3 +54,17 @@ export function hudPx(layout, factor, floor, settings) {
 export function fontScaleOf(settings) {
   return Math.max(0.5, settings && settings.fontScale ? settings.fontScale : 1);
 }
+
+// Touch-primary devices (phones, tablets) get a softer DPR cap and a halved
+// frame rate. The visual cost is small — at arm's length a 1.5× backbuffer is
+// indistinguishable from native 2-3× on a modern OLED panel — and the GPU/CPU
+// savings are large enough to noticeably extend battery life. Mouse-primary
+// devices keep full DPR / 60fps since they sit at typing distance.
+export const PERF_MODE =
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+const DPR_CAP = 1.5;
+export function getEffectiveDpr() {
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  return PERF_MODE ? Math.min(dpr, DPR_CAP) : dpr;
+}

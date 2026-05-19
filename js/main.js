@@ -3,6 +3,7 @@ import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
+import { getEffectiveDpr, PERF_MODE } from './renderer/style.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture } from './assets.js';
 import { syncLanternPixels } from './board.js';
@@ -100,6 +101,15 @@ let lastPhase = null;
 const INTERACTION_TAIL_MS = 1200;
 let lastInteractionMs = 0;
 
+// Touch-primary devices target ~30fps instead of the browser's default 60fps
+// rAF cadence. The rAF callback still fires every screen refresh, but most
+// ticks return early without stepping or drawing — halving GPU/CPU work on
+// phones for an animation-quality tradeoff that's near-invisible at arm's
+// length. The -1ms slack ensures refreshes that land just under the boundary
+// still count toward the next render.
+const TARGET_FRAME_MS = PERF_MODE ? 33 : 0;
+let lastFrameMs = 0;
+
 // Any phase except FLYING carries a fully resolved game state we can resume
 // from. FLYING is the only transient one (live projectile trajectory isn't
 // serialized); SETTLING/DESCENDING run only visual anims on top of an
@@ -172,7 +182,7 @@ function bootstrapGame() {
 }
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = getEffectiveDpr();
   const w = canvas.clientWidth;
   const h = canvas.clientHeight;
   canvas.width = Math.floor(w * dpr);
@@ -254,6 +264,11 @@ function isQuiescent() {
 
 function frame(now) {
   if (suspended || !layout) { rafId = 0; return; }
+  if (TARGET_FRAME_MS && (now - lastFrameMs) < TARGET_FRAME_MS - 1) {
+    rafId = requestAnimationFrame(frame);
+    return;
+  }
+  lastFrameMs = now;
   const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
   const phaseAnimating =

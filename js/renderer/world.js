@@ -11,6 +11,7 @@ import { mulberry32 } from '../prng.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
+  getEffectiveDpr,
 } from './style.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
@@ -65,9 +66,44 @@ export const LANTERN_PARAMS = {
 // the scene still reads as moonlit without any movement. Phase is still
 // computed from real time (changes slowly day-to-day; not "motion" in the
 // preference's sense).
+//
+// Per-frame memoization: drawBackground, drawMoon, drawMoonBleed and
+// drawReflections all call this with `Date.now()` during one render pass —
+// without caching that's four full re-runs of the phase + position math each
+// frame. The cache key includes everything computeMoonState reads (layout
+// dims, reduced motion, admin override) plus a 16ms time bucket, so the four
+// callsites' drift in Date.now() within one animation frame still hits the
+// cache. Moon position changes over minutes, so 16ms quantization is
+// imperceptible.
+let _moonStateCache = null;
 function moonState(layout, settings, nowMs) {
-  const { viewW: w, viewH: h, deadLineY } = layout;
   const reducedMotion = !!(settings && settings.reducedMotion);
+  const bucket = nowMs - (nowMs % 16);
+  const c = _moonStateCache;
+  if (c &&
+      c.bucket === bucket &&
+      c.w === layout.viewW &&
+      c.h === layout.viewH &&
+      c.deadLineY === layout.deadLineY &&
+      c.reducedMotion === reducedMotion &&
+      c.override === MOON_PARAMS.positionOverride) {
+    return c.value;
+  }
+  const value = computeMoonState(layout, reducedMotion, nowMs);
+  _moonStateCache = {
+    bucket,
+    w: layout.viewW,
+    h: layout.viewH,
+    deadLineY: layout.deadLineY,
+    reducedMotion,
+    override: MOON_PARAMS.positionOverride,
+    value,
+  };
+  return value;
+}
+
+function computeMoonState(layout, reducedMotion, nowMs) {
+  const { viewW: w, viewH: h, deadLineY } = layout;
   const r = Math.min(w, h) * 0.07;
   const horizonY = deadLineY;
   const peakY = h * 0.10;
@@ -436,7 +472,7 @@ export function drawMoonBleed(ctx, layout, settings) {
   const m = moonState(layout, settings, Date.now());
   if (m.altitude <= 0.02) return;
   const { viewW, viewH } = layout;
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = getEffectiveDpr();
   const bleed = getBleedCanvas(viewW, viewH, dpr);
   const bx = bleed.getContext('2d');
   bx.clearRect(0, 0, viewW, viewH);
@@ -632,7 +668,7 @@ function getBambooCanvas(w, h, handed, dpr, level) {
 
 export function drawBamboo(ctx, w, h, game, settings) {
   const handed = !!(settings && settings.handedness === 'left');
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = getEffectiveDpr();
   const gameLevel = ((game && game.level) | 0) || 1;
   const level = (BAMBOO_PARAMS.levelOverride | 0) || gameLevel;
   const c = getBambooCanvas(w, h, handed, dpr, level);
