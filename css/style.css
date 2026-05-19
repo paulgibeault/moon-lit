@@ -13,6 +13,13 @@ html, body {
   color: #F4ECDA;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   touch-action: manipulation;
+  /* iOS: suppress long-press callout (Copy/Look Up), the magnifying loupe,
+     "Select All", and the gray tap-flash. The canvas is not text and a held
+     touch should keep aiming, not summon a system gesture. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #game {
