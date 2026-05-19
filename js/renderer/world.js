@@ -450,13 +450,21 @@ export function drawMoon(ctx, layout, game, settings) {
 // bamboo canvas as a mask), then drawImage the result onto the main canvas
 // with 'lighter' so it acts as an additive layer everywhere except where
 // bamboo previously drew.
+// Cache shape: { canvas, key }. The painted content is fully determined by
+// moon position/altitude, viewport, dpr, and the bamboo mask identity; the
+// hash key encodes all of these (with moon position rounded to integer px
+// and altitude bucketed to 1%) so the expensive offscreen rebuild — clear,
+// wash gradient, optional texture blit, destination-out bamboo mask — runs
+// only when one of those inputs actually changes. The moon traverses
+// ~0.27 px/sec, so in practice the offscreen is rebuilt every few seconds
+// and the per-frame cost drops to a single drawImage composite.
 let bleedCache = null;
 
-function getBleedCanvas(w, h, dpr) {
+function ensureBleedCanvas(w, h, dpr) {
   const pw = Math.max(1, Math.floor(w * dpr));
   const ph = Math.max(1, Math.floor(h * dpr));
   if (bleedCache && bleedCache.canvas.width === pw && bleedCache.canvas.height === ph) {
-    return bleedCache.canvas;
+    return bleedCache;
   }
   const c = document.createElement('canvas');
   c.width = pw;
@@ -464,17 +472,12 @@ function getBleedCanvas(w, h, dpr) {
   // Apply DPR transform once; the same 2d context is returned on subsequent
   // getContext calls, so this scaling sticks for the lifetime of the canvas.
   c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-  bleedCache = { canvas: c };
-  return c;
+  bleedCache = { canvas: c, key: '' };
+  return bleedCache;
 }
 
-export function drawMoonBleed(ctx, layout, settings) {
-  const m = moonState(layout, settings, Date.now());
-  if (m.altitude <= 0.02) return;
-  const { viewW, viewH } = layout;
-  const dpr = getEffectiveDpr();
-  const bleed = getBleedCanvas(viewW, viewH, dpr);
-  const bx = bleed.getContext('2d');
+function paintBleed(canvas, m, viewW, viewH, deadLineY) {
+  const bx = canvas.getContext('2d');
   bx.clearRect(0, 0, viewW, viewH);
 
   // Wide warm radial — atmospheric moonlight catching everything in the
@@ -482,7 +485,7 @@ export function drawMoonBleed(ctx, layout, settings) {
   // the reflection (which has its own moon-driven warm column).
   bx.save();
   bx.beginPath();
-  bx.rect(0, 0, viewW, layout.deadLineY);
+  bx.rect(0, 0, viewW, deadLineY);
   bx.clip();
   const washR = m.r * 5.5;
   const washAlpha = 0.11 * m.altitude;
@@ -491,7 +494,7 @@ export function drawMoonBleed(ctx, layout, settings) {
   wash.addColorStop(0.45, `rgba(255, 200, 140, ${(washAlpha * 0.45).toFixed(3)})`);
   wash.addColorStop(1,    'rgba(255, 200, 140, 0)');
   bx.fillStyle = wash;
-  bx.fillRect(0, 0, viewW, layout.deadLineY);
+  bx.fillRect(0, 0, viewW, deadLineY);
 
   // Faint disc bleed — moon surface ghosting through anything in front of it.
   const tex = getMoonTexture();
@@ -516,11 +519,27 @@ export function drawMoonBleed(ctx, layout, settings) {
     bx.drawImage(bambooCache.canvas, 0, 0, viewW, viewH);
     bx.globalCompositeOperation = 'source-over';
   }
+}
 
-  // Composite the masked bleed onto the main canvas additively.
+export function drawMoonBleed(ctx, layout, settings) {
+  const m = moonState(layout, settings, Date.now());
+  if (m.altitude <= 0.02) return;
+  const { viewW, viewH } = layout;
+  const dpr = getEffectiveDpr();
+  const cache = ensureBleedCanvas(viewW, viewH, dpr);
+  // Bucket the inputs that vary frame-to-frame: integer px for position,
+  // 1% steps for altitude. Bamboo identity is included so a profile/handedness
+  // switch invalidates the cached cutout.
+  const key = `${Math.round(m.cx)}|${Math.round(m.cy)}|${(m.altitude * 100) | 0}|${viewW}|${viewH}|${dpr}|${bambooCache.key || ''}`;
+  if (cache.key !== key) {
+    paintBleed(cache.canvas, m, viewW, viewH, layout.deadLineY);
+    cache.key = key;
+  }
+
+  // Composite the (possibly cached) masked bleed onto the main canvas additively.
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.drawImage(bleed, 0, 0, viewW, viewH);
+  ctx.drawImage(cache.canvas, 0, 0, viewW, viewH);
   ctx.restore();
 }
 
