@@ -142,9 +142,8 @@ function scrimColor(fade) {
 
 // ─── Menu button ────────────────────────────────────────────────────────────
 
-// Anchored to the same edge as the score panel — left under default
-// handedness, right when handedness=left — so menu and score read as one
-// cluster. The UI_SAFE_TOP_PX dead-zone in input.js keeps regular shots from
+// Anchored to the left edge of the screen, same as the score panel, so the
+// menu and score read as one cluster. The UI_SAFE_TOP_PX dead-zone in input.js keeps regular shots from
 // firing here, and our own hitTest grabs taps on the button before they reach
 // the game. The score HUD reserves matching room (MENU_RESERVE_PX) so it
 // starts immediately after this button.
@@ -152,8 +151,7 @@ export const MENU_BUTTON_SIZE = 38;
 export const MENU_RESERVE_PX = 12 + MENU_BUTTON_SIZE + 8;   // 58
 function drawMenuButton(ctx, layout, settings) {
   const size = MENU_BUTTON_SIZE;
-  const handed = !!(settings && settings.handedness === 'left');
-  const x = handed ? layout.viewW - 12 - size : 12;
+  const x = 12;
   const y = 8;
   menuState.buttonRect = { x, y, w: size, h: size };
 

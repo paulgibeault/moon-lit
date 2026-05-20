@@ -5,7 +5,7 @@
 
 import { PHASE } from './game.js';
 import {
-  drawBackground, drawMoon, drawMoonBleed, drawBamboo, drawReflections, drawWaterline,
+  drawBackgroundSky, drawCelestialLayer, drawMoonBleed, drawBamboo,
   drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
@@ -22,10 +22,8 @@ export function render(ctx, layout, game, settings, stats, scores) {
   tweenHud(game, settings);
 
   const { viewW, viewH } = layout;
-  drawBackground(ctx, layout, settings);
-  drawMoon(ctx, layout, game, settings);
-  drawReflections(ctx, layout, game, settings);
-  drawWaterline(ctx, layout);
+  drawBackgroundSky(ctx, layout, settings);
+  drawCelestialLayer(ctx, layout, game, settings);
   drawBamboo(ctx, viewW, viewH, game, settings);
   drawBoard(ctx, layout, game, settings);
   // The bleed masks bamboo out of itself before compositing, so bamboo stays

@@ -28,6 +28,7 @@ const BAMBOO_SOURCES = {
   tall: [
     'img/bamboo-tall-a.png',
     'img/bamboo-tall-b.png',
+    'img/bamboo-tall-c.png',
   ],
   // Bare tileable cane segments — no leaves, designed to stack vertically.
   // Used for slim background trunks where the foliage from the `tall` pool
@@ -219,10 +220,14 @@ function bakeSilhouette(img) {
   for (let i = 0; i < d.length; i += 4) {
     let finalA;
     if (isRGBA) {
-      // Trust source alpha — preserves anti-aliased silhouette edges and
-      // keeps any interior white highlights opaque (they're part of the
-      // brushwork, not background).
-      finalA = d[i + 3];
+      // Boost source alpha to be fully opaque for pixels above threshold,
+      // ensuring the bamboo is solid and blocks elements behind it,
+      // while keeping a smooth ramp below the threshold for anti-aliasing.
+      if (d[i + 3] >= 30) {
+        finalA = 255;
+      } else {
+        finalA = Math.round(255 * (d[i + 3] / 30));
+      }
     } else {
       // RGB: derive alpha from brightness. Source alpha is uniformly 255.
       const brightness = (d[i] + d[i + 1] + d[i + 2]) / 3;

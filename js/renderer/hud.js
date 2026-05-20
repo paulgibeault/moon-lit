@@ -73,8 +73,7 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   // 0 at a fresh descent, 1 right before it triggers. Used for both the bar
   // drop and the cream → ember color blend.
   const progress = Math.max(0, Math.min(1, (cap - n) / cap));
-  const handed = settings.handedness === 'left';
-  const iconLeft = handed ? 12 : layout.viewW - 12 - DESCENT_ICON_W;
+  const iconLeft = layout.viewW - 12 - DESCENT_ICON_W;
   const cx = iconLeft + DESCENT_ICON_W / 2;
   const lineSpan = DESCENT_LINE_Y - DESCENT_BAR_TOP - 14;  // bar travel range
   const barY = DESCENT_BAR_TOP + lineSpan * progress;
@@ -141,17 +140,15 @@ function hexLerpRgba(hexA, hexB, t, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Score panel anchored to the score-side edge (left by default, right under
-// handedness=left). The menu button claims the first 12+38+8 px of that
+// Score panel anchored to the left edge. The menu button claims the first 12+38+8 px of that
 // edge, so the panel starts at MENU_RESERVE_PX. Shows:
 //   ☾ <score>          — moon glyph mirrors current sky-moon phase
 //     stage N · best M  — small subtext
 //     ×N ✦              — combo badge (only when combo ≥ 2)
 export function drawScoreHud(ctx, layout, game, settings) {
-  const handed = settings.handedness === 'left';
   const fontPx = hudPx(layout, 0.95, 14, settings);
   const subPx  = hudPx(layout, 0.55, 11, settings);
-  const align  = handed ? 'right' : 'left';
+  const align  = 'left';
   const glyphPad = subPx * 0.7;
   const edge = MENU_RESERVE_PX;
 
@@ -161,17 +158,14 @@ export function drawScoreHud(ctx, layout, game, settings) {
 
   ctx.font = `600 ${fontPx}px Georgia, ${SANS}`;
   const scoreText = formatScore(hudState.displayScore | 0);
-  const scoreW = ctx.measureText(scoreText).width;
 
   const moonR = fontPx * 0.32;
   const moonY = 8 + fontPx * 0.5;
-  const moonX = handed
-    ? layout.viewW - edge - scoreW - glyphPad - moonR
-    : edge + moonR;
+  const moonX = edge + moonR;
   drawMoonGlyph(ctx, layout, settings, moonX, moonY, moonR);
 
   ctx.fillStyle = PALETTE.moon;
-  const scoreTextX = handed ? layout.viewW - edge : edge + moonR * 2 + glyphPad;
+  const scoreTextX = edge + moonR * 2 + glyphPad;
   ctx.fillText(scoreText, scoreTextX, 8);
 
   // Subtext: "stage N · best M"
@@ -179,7 +173,7 @@ export function drawScoreHud(ctx, layout, game, settings) {
   if (settings.bestScore) sub += ` · best ${formatScore(settings.bestScore)}`;
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
   ctx.font = `400 ${subPx}px Georgia, ${SANS}`;
-  const subX = handed ? layout.viewW - edge : edge;
+  const subX = edge;
   ctx.fillText(sub, subX, 8 + fontPx + 2);
 
   // Combo badge — silent until the player is actually chaining. When the

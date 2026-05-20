@@ -149,7 +149,6 @@ function readSettings() {
   return {
     fontScale:     Arcade.settings.fontScale(),
     reducedMotion: Arcade.settings.reducedMotion(),
-    handedness:    Arcade.settings.handedness(),
     bestScore,
     playerName,
   };

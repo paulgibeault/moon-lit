@@ -59,8 +59,7 @@ export const LANTERN_PARAMS = {
 // the moon, its glow, and its reflection stay locked together.
 //
 // Direction: rises right, traverses to the left, sets, then re-emerges on
-// the right. Handedness no longer pins position — the moon is its own
-// independent ambient element.
+// the right. The moon is its own independent ambient element.
 //
 // Reduced motion: position freezes near the upper-right zenith of the arc so
 // the scene still reads as moonlit without any movement. Phase is still
@@ -174,7 +173,7 @@ function getStars(w, h) {
   return stars;
 }
 
-export function drawBackground(ctx, layout, settings) {
+export function drawBackgroundSky(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
   // Base indigo gradient — unchanged.
   const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -198,7 +197,10 @@ export function drawBackground(ctx, layout, settings) {
     ctx.fillStyle = band;
     ctx.fillRect(0, 0, w, h);
   }
+}
 
+export function drawStars(ctx, layout, settings) {
+  const { viewW: w, viewH: h } = layout;
   // Starfield. ~110 cached dots, two size/alpha tiers, with ~7 slow twinklers.
   // Drawn behind the moon (moon draws after this), so the moon overpaints any
   // stars that happen to fall on its disc.
@@ -220,6 +222,49 @@ export function drawBackground(ctx, layout, settings) {
   }
   ctx.globalAlpha = 1;
 }
+
+let celestialCache = null;
+
+function ensureCelestialCanvas(w, h, dpr) {
+  const pw = Math.max(1, Math.floor(w * dpr));
+  const ph = Math.max(1, Math.floor(h * dpr));
+  if (celestialCache && celestialCache.canvas.width === pw && celestialCache.canvas.height === ph) {
+    return celestialCache.canvas;
+  }
+  const c = document.createElement('canvas');
+  c.width = pw;
+  c.height = ph;
+  c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
+  celestialCache = { canvas: c };
+  return c;
+}
+
+export function drawCelestialLayer(ctx, layout, game, settings) {
+  const { viewW, viewH } = layout;
+  const dpr = getEffectiveDpr();
+  const cCanvas = ensureCelestialCanvas(viewW, viewH, dpr);
+  const cCtx = cCanvas.getContext('2d');
+  cCtx.clearRect(0, 0, viewW, viewH);
+
+  // A. Draw Stars, Moon, Reflections, and Waterline onto the offscreen celestial canvas
+  drawStars(cCtx, layout, settings);
+  drawMoon(cCtx, layout, game, settings);
+  drawReflections(cCtx, layout, game, settings);
+  drawWaterline(cCtx, layout);
+
+  // B. Erase the bamboo silhouette perfectly
+  const level = (BAMBOO_PARAMS.levelOverride | 0) || ((game && game.level) | 0) || 1;
+  const mask = getBambooMaskCanvas(viewW, viewH, dpr, level);
+
+  cCtx.save();
+  cCtx.globalCompositeOperation = 'destination-out';
+  cCtx.drawImage(mask, 0, 0, viewW, viewH);
+  cCtx.restore();
+
+  // C. Draw the celestial layers back onto the main screen
+  ctx.drawImage(cCanvas, 0, 0, viewW, viewH);
+}
+
 
 // Exposed so future gameplay hooks (e.g. "moon-lit lanterns earn bonus
 // effects when within the moon's halo") can read the same numbers the
@@ -511,12 +556,12 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY) {
   bx.restore();
 
   // Cut out bamboo silhouettes. destination-out erases bleed pixels wherever
-  // the bamboo cache has non-transparent alpha, so bamboo's repaint of itself
+  // the bamboo mask cache has non-transparent alpha, so bamboo's repaint of itself
   // at full opacity is no longer needed — the bleed simply doesn't reach
   // those pixels.
-  if (bambooCache.canvas) {
+  if (bambooCache.maskCanvas) {
     bx.globalCompositeOperation = 'destination-out';
-    bx.drawImage(bambooCache.canvas, 0, 0, viewW, viewH);
+    bx.drawImage(bambooCache.maskCanvas, 0, 0, viewW, viewH);
     bx.globalCompositeOperation = 'source-over';
   }
 }
@@ -528,7 +573,7 @@ export function drawMoonBleed(ctx, layout, settings) {
   const dpr = getEffectiveDpr();
   const cache = ensureBleedCanvas(viewW, viewH, dpr);
   // Bucket the inputs that vary frame-to-frame: integer px for position,
-  // 1% steps for altitude. Bamboo identity is included so a profile/handedness
+  // 1% steps for altitude. Bamboo identity is included so a profile or level
   // switch invalidates the cached cutout.
   const key = `${Math.round(m.cx)}|${Math.round(m.cy)}|${(m.altitude * 100) | 0}|${viewW}|${viewH}|${dpr}|${bambooCache.key || ''}`;
   if (cache.key !== key) {
@@ -546,7 +591,7 @@ export function drawMoonBleed(ctx, layout, settings) {
 // ─── Bamboo frame ──────────────────────────────────────────────────────────
 //
 // Sprite-based side bamboo, composed into an offscreen canvas keyed by
-// viewport + handedness + dpr. Per-frame cost is one drawImage; the cache
+// viewport + dpr. Per-frame cost is one drawImage; the cache
 // only rebuilds on resize or settings change.
 //
 // Composition strategy: each side gets one foreground tall stalk (pushed
@@ -664,39 +709,55 @@ export function applyBambooProfile(name) {
   invalidateBambooCache();
 }
 
-let bambooCache = { key: '', canvas: null };
+let bambooCache = { key: '', canvas: null, maskCanvas: null };
 
 // Called by the admin panel when a BAMBOO_PARAMS value changes. Drops the
 // cached canvas so the next render rebuilds with the new params.
 export function invalidateBambooCache() {
-  bambooCache = { key: '', canvas: null };
+  bambooCache = { key: '', canvas: null, maskCanvas: null };
 }
 
-function getBambooCanvas(w, h, handed, dpr, level) {
-  const key = `${w}|${h}|${handed ? 1 : 0}|${dpr}|${level}`;
-  if (bambooCache.key === key && bambooCache.canvas) return bambooCache.canvas;
+function ensureBambooCache(w, h, dpr, level) {
+  const key = `${w}|${h}|${dpr}|${level}`;
+  if (bambooCache.key === key && bambooCache.canvas && bambooCache.maskCanvas) {
+    return bambooCache;
+  }
+  
+  // 1. Build Visual Canvas (with atmospheric transparencies/depth)
   const c = document.createElement('canvas');
   c.width  = Math.max(1, Math.floor(w * dpr));
   c.height = Math.max(1, Math.floor(h * dpr));
   const cx = c.getContext('2d');
   cx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  paintBamboo(cx, w, h, handed, level);
-  bambooCache = { key, canvas: c };
-  return c;
+  paintBamboo(cx, w, h, level, false); // isMask = false
+
+  // 2. Build Mask Canvas (solid silhouettes for blocking the moon/stars/water/etc.)
+  const mc = document.createElement('canvas');
+  mc.width  = Math.max(1, Math.floor(w * dpr));
+  mc.height = Math.max(1, Math.floor(h * dpr));
+  const mcx = mc.getContext('2d');
+  mcx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  paintBamboo(mcx, w, h, level, true); // isMask = true
+
+  bambooCache = { key, canvas: c, maskCanvas: mc };
+  return bambooCache;
+}
+
+export function getBambooMaskCanvas(w, h, dpr, level) {
+  const cache = ensureBambooCache(w, h, dpr, level);
+  return cache.maskCanvas;
 }
 
 export function drawBamboo(ctx, w, h, game, settings) {
-  const handed = !!(settings && settings.handedness === 'left');
   const dpr = getEffectiveDpr();
   const gameLevel = ((game && game.level) | 0) || 1;
   const level = (BAMBOO_PARAMS.levelOverride | 0) || gameLevel;
-  const c = getBambooCanvas(w, h, handed, dpr, level);
-  ctx.drawImage(c, 0, 0, w, h);
+  const cache = ensureBambooCache(w, h, dpr, level);
+  ctx.drawImage(cache.canvas, 0, 0, w, h);
 }
 
-// Right-handed launcher → moon on the right; left-handed → moon on the left.
-// Each side flags whether it sits on the moon side, so clusters there avoid
-// the upper region where the moon's halo lives. Painted in passes so the
+// Moon on the right.
+// Each side flags whether it sits on the moon side. Painted in passes so the
 // top canopy can layer over the side stalks at the corners (where the real
 // bamboo grove would have leaves spilling from above the trunks).
 //
@@ -704,28 +765,21 @@ export function drawBamboo(ctx, w, h, game, settings) {
 // own grove composition — different stalk count picks, different cluster
 // placements, different canopy density patterns — while remaining stable on
 // refresh within a level.
-function paintBamboo(ctx, w, h, handed, level) {
+function paintBamboo(ctx, w, h, level, isMask) {
   const seed = (BAMBOO_SEED ^ (((level | 0) || 1) * BAMBOO_LEVEL_MULT)) >>> 0;
   const rng = mulberry32(seed);
-  paintSide(ctx, rng, w, h, 'left',  handed,  handed);
-  paintSide(ctx, rng, w, h, 'right', !handed, handed);
-  paintTopCanopy(ctx, rng, w, h, handed);
+  paintSide(ctx, rng, w, h, 'left',  false, isMask);
+  paintSide(ctx, rng, w, h, 'right', true, isMask);
+  paintTopCanopy(ctx, rng, w, h, isMask);
 }
 
 // Returns true when the canvas point (cx, cy) sits inside a generous
 // exclusion zone around the moon. The radius is sized to the moon's halo at
 // peak combo so the canopy never crowds the celebration meter, and so the
 // moon itself stays the obvious focal point at the top of the scene.
-function inMoonExclusion(cx, cy, w, h, handed) {
-  const moonX = handed ? w * 0.22 : w * 0.78;
-  const moonY = h * 0.14;
-  const moonR = Math.min(w, h) * 0.07;
-  // 3.6 ≈ peak halo (2.4 base + 0.55 comboLift) * a small safety margin so
-  // the band of "almost touching the halo" reads as clean sky, not crowded.
-  const exclusionR = moonR * 3.6;
-  const dx = cx - moonX;
-  const dy = cy - moonY;
-  return (dx * dx + dy * dy) < (exclusionR * exclusionR);
+function inMoonExclusion(cx, cy, w, h) {
+  // Disabled: the moon moving behind the bamboo is nice!
+  return false;
 }
 
 // Pick a sprite from a pool by seed-driven index. Returns null if pool empty.
@@ -733,384 +787,504 @@ function pickSprite(rng, pool) {
   if (!pool || pool.length === 0) return null;
   return pool[Math.floor(rng() * pool.length)];
 }
-
-// Draws a sprite anchored at (xCenter, yBottom) with the given draw height,
-// optionally flipped horizontally. Width preserves native aspect.
-function drawSpriteAnchored(ctx, sprite, xCenter, yBottom, drawH, flip) {
-  const drawW = drawH * (sprite.sw / sprite.sh);
-  const yTop = yBottom - drawH;
-  ctx.save();
-  if (flip) {
-    ctx.translate(xCenter + drawW / 2, yTop);
-    ctx.scale(-1, 1);
-    ctx.drawImage(sprite.image, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-      0, 0, drawW, drawH);
-  } else {
-    ctx.drawImage(sprite.image, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-      xCenter - drawW / 2, yTop, drawW, drawH);
-  }
-  ctx.restore();
-}
-
-function paintSide(ctx, rng, w, h, side, isMoonSide, handed) {
-  const tall     = getBambooTallSprites();
-  const cane     = getBambooCaneSprites();
-  const base     = getBambooBaseSprites();
-  const stalks   = getBambooStalkSprites();
-  const clusters = getBambooClusterSprites();
-
-  // Fall back entirely to procedural if we have no tall sprites — keeps the
-  // game playable on a fresh checkout before assets load.
-  if (tall.length === 0 && stalks.length === 0) {
-    paintFallbackStalks(ctx, rng, w, h, side, isMoonSide);
-    return;
-  }
-
-  // Layer 1 — background slim trunks: cane sprites stacked on root bases,
-  // placed further inside the edge band. Multiple per side so the "depth"
-  // beyond the foreground reads as a real grove rather than a single trunk.
-  // Root bases visible at the canvas bottom — the camera sits at ground level
-  // and the player should see the bamboo growing from the bank in front.
-  if (cane.length > 0 && base.length > 0) {
-    for (let i = 0; i < BAMBOO_PARAMS.trunksPerSide; i++) {
-      // Distribute trunks across the inner half of the edge band so they sit
-      // behind the foreground towers. Inner trunks are skinnier and shorter
-      // to read as further back in space.
-      const tBand = (i + 0.4 + rng() * 0.5) / BAMBOO_PARAMS.trunksPerSide;
-      paintBackgroundTrunk(ctx, rng, w, h, side, isMoonSide, cane, base, tBand, handed);
-    }
-  }
-
-  // Layer 2 — foreground tall stalks: multiple per side, distributed across
-  // the outer part of the edge band so they form a cluster of trunks rather
-  // than one isolated stalk. Each stalk also gets its own small root base so
-  // the grove is anchored at the ground.
-  const stalkPool = tall.length > 0 ? tall : stalks;
-  if (stalkPool.length > 0) {
-    for (let i = 0; i < BAMBOO_PARAMS.towersPerSide; i++) {
-      // tTower=0 nearest canvas edge, tTower=1 furthest in. Edge stalk biggest,
-      // inner ones progressively shorter to read as receding into the grove.
-      const tTower = i / Math.max(1, BAMBOO_PARAMS.towersPerSide - 1);
-      paintForegroundStalk(ctx, rng, w, h, side, isMoonSide, stalkPool, tTower, base);
-    }
-  }
-
-  // Layer 3 — midground clusters: extra clusters at varied heights along the
-  // edge band. The increased count (was 1, now BAMBOO_PARAMS.midgroundPerSide)
-  // fills the gaps between the trunks so the side reads as a thicket.
-  if (clusters.length > 0) {
-    for (let i = 0; i < BAMBOO_PARAMS.midgroundPerSide; i++) {
-      paintMidgroundCluster(ctx, rng, w, h, side, isMoonSide, clusters);
-    }
-  }
-
-  // Layer 4 — bottom corner accents: clusters at the foreground sitting on
-  // the bank. Two per side give a "grass + leaves at your feet" lushness now
-  // that the camera is at ground level.
-  if (clusters.length > 0) {
-    for (let i = 0; i < BAMBOO_PARAMS.cornerPerSide; i++) {
-      paintCornerCluster(ctx, rng, w, h, side, clusters, i);
-    }
-  }
-}
-
-// Foreground tall stalk. Placed with its trunk centered inside the canvas
-// edge band so the bare side of the stalk extends off-canvas and the leafy
-// side fans inward. Height is bounded so the inward foliage never crosses
-// the BAMBOO_PARAMS.edgeBand boundary. Each stalk also drops a small root base at
-// its foot so the camera-at-ground-level view shows where the bamboo grows
-// from rather than the trunk just disappearing into the bottom edge.
-//
-// tTower (0..1): 0 = stalk nearest the canvas edge (biggest, foreground),
-// 1 = stalk furthest into the band (smallest, recedes into grove).
-function paintForegroundStalk(ctx, rng, w, h, side, isMoonSide, pool, tTower, basePool) {
-  const sprite = pickSprite(rng, pool);
-  if (!sprite) return;
-
-  // Height target falls off with tower depth — edge stalks are tallest,
-  // inner ones are progressively shorter so the eye reads depth/recession.
-  // Moon side is uniformly shorter so leaves don't crowd the moon halo.
-  const baseHeight = isMoonSide ? 0.58 : 0.85;
-  const depthDrop  = 0.18;  // edge tallest, inner ~18% shorter
-  const heightFrac = baseHeight - tTower * depthDrop + (rng() - 0.5) * 0.06;
-  let drawH = h * heightFrac;
-  let drawW = drawH * (sprite.sw / sprite.sh);
-
-  // Trunk center: edge stalk at ~4% in, inner stalks at ~10%, ~16%. Within
-  // each slot, a small jitter keeps the line of trunks from being too regular.
-  const trunkOffsetFrac = 0.04 + tTower * 0.08 + rng() * 0.02;
-  const trunkOffset = w * trunkOffsetFrac;
-  const xCenter = side === 'left' ? trunkOffset : w - trunkOffset;
-
-  // Constrain inward extent: sprite's inward edge must not cross past
-  // BAMBOO_PARAMS.edgeBand from the canvas edge. If it would, shrink uniformly.
-  const maxInward = w * BAMBOO_PARAMS.edgeBand;
-  const inwardEdge = side === 'left'
-    ? (xCenter + drawW / 2)
-    : (w - (xCenter - drawW / 2));
-  if (inwardEdge > maxInward) {
-    const scale = maxInward / inwardEdge;
-    drawH *= scale;
-    drawW *= scale;
-  }
-
-  // Pick the base sprite up front so we can size and position the tall stalk
-  // to terminate cleanly in the base's internal-trunk region. Without this
-  // up-front coupling, the base's trunk width and the tall stalk's visible
-  // trunk width disagree and the two look stacked rather than continuous.
-  const baseSprite = (basePool && basePool.length > 0)
-    ? pickSprite(rng, basePool) : null;
-
-  // Size the base so its internal trunk equals the tall stalk's visible trunk
-  // width. The tall sprite is ~14% trunk; the base sprite is ~23% trunk —
-  // so the base's full draw-width is drawW * (TALL_TRUNK / BASE_TRUNK).
-  let baseDrawW = 0, baseDrawH = 0;
-  if (baseSprite) {
-    baseDrawW = drawW * (BAMBOO_PARAMS.tallTrunkFrac / BAMBOO_PARAMS.baseTrunkFrac);
-    baseDrawH = baseDrawW * (baseSprite.sh / baseSprite.sw);
-  }
-
-  // Anchor the base at the bank line so the grass sits visibly on the ground.
-  const baseYBottom = h * BAMBOO_PARAMS.bankYFrac;
-  const baseYTop = baseYBottom - baseDrawH;
-
-  // Anchor the tall stalk's bottom at the top of the base's grass region —
-  // i.e., the point where the base's internal trunk ends and grass begins.
-  // The base's internal trunk runs from baseYTop down through (1 - GRASS_FRAC)
-  // of its height; the stalk's trunk continues from above and meets that
-  // point. Since the trunk widths match (see baseDrawW above), the seam is
-  // invisible. The base, drawn on top, occludes any trunk that overshoots.
-  const trunkMeetY = baseSprite
-    ? baseYTop + baseDrawH * (1 - BAMBOO_PARAMS.baseGrassFrac)
-    : h * 0.97;
-  // Slight vertical recession with tower depth keeps inner stalks reading as
-  // further away.
-  const groundY = trunkMeetY - h * 0.005 * tTower;
-
-  // Flip orientation so leaves preferentially point INWARD on each side. The
-  // tall sprites have asymmetric leaf placement; flipping the left side
-  // aligns inward-facing leaves with the play area on both sides.
-  const flip = (side === 'left');
-  drawSpriteAnchored(ctx, sprite, xCenter, groundY, drawH, flip);
-
-  // Draw the base AFTER the stalk so the grass occludes any cane that
-  // overshoots, making the trunk read as growing OUT OF the grass clump
-  // rather than poking through it like a stick.
-  if (baseSprite) {
-    const baseFlip = rng() < 0.5;
-    drawSpriteAnchored(ctx, baseSprite, xCenter, baseYBottom, baseDrawH, baseFlip);
-  }
-}
-
-// Background slim trunk. A cane segment scaled to a target trunk width,
-// anchored on a root-base sprite at the bottom so the trunk doesn't read as
-// chopped. Sits further inside the edge band than the foreground stalks so
-// the two layers read as different depths.
-//
-// tBand (0..1): position within the band. 0 = closer to canvas edge, 1 =
-// further inside. Inner trunks are thinner and shorter to read as receding.
-function paintBackgroundTrunk(ctx, rng, w, h, side, isMoonSide, canePool, basePool, tBand, handed) {
-  const base = pickSprite(rng, basePool);
-  if (!base) return;
-
-  // Place further inside the edge band — but still outside the clearing.
-  // tBand pushes inner trunks deeper into the band (12–20% in).
-  const trunkOffsetFrac = 0.12 + tBand * 0.08 + (rng() - 0.5) * 0.02;
-  const xCenter = side === 'left'
-    ? w * trunkOffsetFrac
-    : w - w * trunkOffsetFrac;
-
-  // Slim trunk width with min — inner trunks are slightly thinner.
-  const widthFrac = 0.022 - tBand * 0.006;
-  const trunkW = Math.max(7, w * widthFrac);
-
-  // Size the base so its internal trunk equals the cane's visible trunk
-  // width. The cane sprite is ~82% trunk (it mostly IS the trunk); the base
-  // sprite is ~23% trunk. So when we draw the cane at trunkW wide, the
-  // visible trunk is trunkW * CANE_TRUNK_FRAC; to match, the base width is
-  // (trunkW * CANE_TRUNK_FRAC) / BASE_TRUNK_FRAC.
-  const baseDrawW = trunkW * (BAMBOO_PARAMS.caneTrunkFrac / BAMBOO_PARAMS.baseTrunkFrac);
-  const baseDrawH = baseDrawW * (base.sh / base.sw);
-  const baseYBottom = h * BAMBOO_PARAMS.bankYFrac;
-  const baseYTop = baseYBottom - baseDrawH;
-
-  // Cane stack runs from the top of the moon-clear ceiling down to just past
-  // the top of the base's grass region — so the cane terminates inside the
-  // base's internal-trunk area where the base (drawn next) will cover any
-  // overshoot. This makes the cane appear to grow OUT of the grass.
-  const stackHeightFrac = (isMoonSide ? 0.55 : 0.78) - tBand * 0.10;
-  const stackTop = h * (1 - stackHeightFrac);
-  const stackBottom = baseYTop + baseDrawH * (1 - BAMBOO_PARAMS.baseGrassFrac) * 0.85;
-  let y = stackBottom;
-  let safety = 32;
-  let segTopY = stackBottom;  // tracks the top of the highest-drawn cane segment
-  while (y > stackTop && safety-- > 0) {
-    const seg = pickSprite(rng, canePool);
-    if (!seg) break;
-    const segH = trunkW * (seg.sh / seg.sw);
-    drawSpriteAnchored(ctx, seg, xCenter, y, segH, false);
-    segTopY = y - segH;
-    y -= segH * 0.95;  // slight overlap so node seams blend
-  }
-
-  // Mask the cane stack's blunt top with a leaf cluster cap. Without this the
-  // tileable cane's top edge shows a node band that reads as "sawed off"
-  // instead of "growing past the frame." Skipped on moon side if it would
-  // cross the exclusion zone.
-  if (BAMBOO_PARAMS.caneTopperScale > 0) {
-    paintCaneTopper(ctx, rng, w, h, xCenter, segTopY, trunkW, handed, canePool);
-  }
-
-  // Draw base LAST so the grass clump occludes any cane that extends past
-  // the grass line. Without this the cane looks like a stick poking through
-  // the grass instead of bamboo growing from it.
-  drawSpriteAnchored(ctx, base, xCenter, baseYBottom, baseDrawH, rng() < 0.5);
-}
-
-// Draws a cap at the top of a cane stack to mask the cane sprite's blunt
-// node band. Prefers a dedicated tip sprite (purpose-built bamboo culm tip
-// that continues the trunk and tapers upward) when one is available, falling
-// back to a leaf cluster otherwise.
-function paintCaneTopper(ctx, rng, w, h, xCenter, caneTopY, trunkW, handed, canePool) {
+function paintSpriteStalk(ctx, rng, startX, startY, wBase, height, side, isMoonSide, isForeground, isMask) {
+  const basePool = getBambooBaseSprites();
+  const canePool = getBambooCaneSprites();
   const tipPool = getBambooTipSprites();
-  if (tipPool.length > 0) {
-    paintTipTopper(ctx, rng, w, h, xCenter, caneTopY, trunkW, handed, tipPool, canePool);
+  const stalkPool = getBambooStalkSprites();
+  const clusterPool = getBambooClusterSprites();
+
+  const baseSprite = pickSprite(rng, basePool);
+  if (!baseSprite) return;
+
+  ctx.save();
+  ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.45);
+
+  ctx.translate(startX, startY);
+  
+  let currentSprite = baseSprite;
+  const bottomW = baseSprite.sw * (baseSprite.bottomFrac || 0.5);
+  let currentScale = wBase / bottomW;
+
+  const avgCaneSprite = canePool[0] || baseSprite;
+  const avgCaneH = avgCaneSprite.sh * currentScale;
+  const segmentCount = Math.max(3, Math.min(8, Math.round((height - baseSprite.sh * currentScale) / avgCaneH)));
+
+  // Draw the base
+  ctx.save();
+  ctx.scale(currentScale, currentScale);
+  ctx.drawImage(currentSprite.image, currentSprite.sx, currentSprite.sy, currentSprite.sw, currentSprite.sh,
+                -currentSprite.sw * currentSprite.bottomCenterFrac, -currentSprite.sh, currentSprite.sw, currentSprite.sh);
+  ctx.restore();
+
+  const getNextTransition = (parent, child, parentScale) => {
+    const parentTopW = parent.sw * (parent.topFrac || 0.1);
+    const childBottomW = child.sw * (child.bottomFrac || 0.1);
+    return parentScale * (parentTopW / childBottomW);
+  };
+
+  for (let s = 0; s < segmentCount; s++) {
+    const isLast = (s === segmentCount - 1);
+    const nextSprite = isLast ? pickSprite(rng, tipPool) : pickSprite(rng, canePool);
+    if (!nextSprite) break;
+
+    // Move translation to current top seam
+    const tx = currentSprite.sw * (currentSprite.topCenterFrac - currentSprite.bottomCenterFrac) * currentScale;
+    const ty = -currentSprite.sh * currentScale;
+    ctx.translate(tx, ty);
+
+    // Apply lean
+    const lean = (rng() - 0.5) * (isForeground ? 0.03 : 0.06);
+    ctx.rotate(lean);
+
+    // Update scale
+    const nextScale = getNextTransition(currentSprite, nextSprite, currentScale);
+    currentScale = nextScale;
+    currentSprite = nextSprite;
+
+    // Draw
+    ctx.save();
+    ctx.scale(currentScale, currentScale);
+    ctx.drawImage(currentSprite.image, currentSprite.sx, currentSprite.sy, currentSprite.sw, currentSprite.sh,
+                  -currentSprite.sw * currentSprite.bottomCenterFrac, -currentSprite.sh, currentSprite.sw, currentSprite.sh);
+    ctx.restore();
+
+    // Sprout branches/clusters on upper joints
+    if (s >= 1 && rng() < 0.65) {
+      const branchOnLeft = rng() < 0.5;
+      const foliageSprite = rng() < 0.4 ? pickSprite(rng, clusterPool) : pickSprite(rng, stalkPool);
+      if (foliageSprite) {
+        ctx.save();
+        const baseAngle = branchOnLeft ? -Math.PI * 0.32 : Math.PI * 0.32;
+        const finalAngle = baseAngle + (rng() - 0.5) * 0.15;
+        
+        ctx.rotate(finalAngle);
+        // Scale foliage proportional to stalk scale
+        const folScale = currentScale * (1.1 + rng() * 0.7);
+        ctx.scale(folScale, folScale);
+        
+        const fx = -foliageSprite.sw * foliageSprite.bottomCenterFrac;
+        const fy = -foliageSprite.sh;
+        ctx.drawImage(foliageSprite.image, foliageSprite.sx, foliageSprite.sy, foliageSprite.sw, foliageSprite.sh,
+                      fx, fy, foliageSprite.sw, foliageSprite.sh);
+        ctx.restore();
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+function paintTallStalk(ctx, rng, startX, startY, wBase, height, side, isMoonSide, isForeground, isMask) {
+  const tallPool = getBambooTallSprites();
+  const tallSprite = pickSprite(rng, tallPool);
+  if (!tallSprite) return;
+
+  ctx.save();
+  ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.45);
+
+  ctx.translate(startX, startY);
+  
+  // Apply minor lean angle
+  const lean = (rng() - 0.5) * (isForeground ? 0.02 : 0.05);
+  ctx.rotate(lean);
+
+  // We want the tall sprite to span the desired height
+  const scale = height / tallSprite.sh;
+
+  ctx.scale(scale, scale);
+  ctx.drawImage(tallSprite.image, tallSprite.sx, tallSprite.sy, tallSprite.sw, tallSprite.sh,
+                -tallSprite.sw * tallSprite.bottomCenterFrac, -tallSprite.sh, tallSprite.sw, tallSprite.sh);
+  ctx.restore();
+}
+
+function paintSide(ctx, rng, w, h, side, isMoonSide, isMask) {
+  const isLeft = side === 'left';
+  const edgeFrac = 1 / 3; // Exactly cover left/right thirds (leaving center third open)
+  const shoreW = w * edgeFrac;
+
+  const colorBg = isMask ? '#000000' : '#0A122E'; // Deep background mound
+  const colorFg = isMask ? '#000000' : '#040816'; // Very dark foreground mound
+
+  // 1. Draw Background Shore Mound (Minor height adjustment to h * 0.88)
+  ctx.save();
+  ctx.fillStyle = colorBg;
+  ctx.globalAlpha = isMask ? 1.0 : 0.65;
+  ctx.beginPath();
+  if (isLeft) {
+    ctx.moveTo(-10, h * 1.05);
+    ctx.lineTo(-10, h * 0.88); // Elegantly raised background hill
+    ctx.quadraticCurveTo(shoreW * 0.40, h * 0.88, shoreW, h * 1.05);
+  } else {
+    ctx.moveTo(w + 10, h * 1.05);
+    ctx.lineTo(w + 10, h * 0.88);
+    ctx.quadraticCurveTo(w - shoreW * 0.40, h * 0.88, w - shoreW, h * 1.05);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  const basePool = getBambooBaseSprites();
+  const canePool = getBambooCaneSprites();
+  const tipPool = getBambooTipSprites();
+  const tallPool = getBambooTallSprites();
+  const hasSprites = basePool.length > 0 && canePool.length > 0 && tipPool.length > 0 && tallPool.length > 0;
+
+  // 2. Draw Layer 1: Background Bamboo Forest (Thin, dense, dark, atmospheric)
+  if (hasSprites) {
+    const bgStalks = 4;
+    const bgBandWidth = w * BAMBOO_PARAMS.edgeBand * 0.85;
+    for (let i = 0; i < bgStalks; i++) {
+      const tBand = (i + 0.3 + rng() * 0.4) / bgStalks;
+      const xBase = side === 'left' ? tBand * bgBandWidth : w - tBand * bgBandWidth;
+      const wBase = Math.max(6, w * (0.007 + rng() * 0.003));
+      const height = h * (0.75 + rng() * 0.15);
+      
+      if (rng() < 0.5) {
+        paintSpriteStalk(ctx, rng, xBase, h * 1.05, wBase, height, side, isMoonSide, false, isMask);
+      } else {
+        paintTallStalk(ctx, rng, xBase, h * 1.05, wBase, height, side, isMoonSide, false, isMask);
+      }
+    }
+  } else {
+    const bgStalks = 4;
+    const bgBandWidth = w * BAMBOO_PARAMS.edgeBand * 0.85;
+    for (let i = 0; i < bgStalks; i++) {
+      const tBand = (i + 0.3 + rng() * 0.4) / bgStalks;
+      const xBase = side === 'left' ? tBand * bgBandWidth : w - tBand * bgBandWidth;
+      const wBase = Math.max(7, w * (0.008 + rng() * 0.004));
+      const height = h * (0.75 + rng() * 0.15);
+      const bow = (side === 'left' ? 1 : -1) * w * (0.01 + rng() * 0.015);
+      const xOffsetTop = (side === 'left' ? 1 : -1) * w * (-0.02 + rng() * 0.035);
+      
+      paintProceduralStalk(ctx, rng, w, h, xBase, wBase, height, bow, xOffsetTop, side, isMoonSide, false, isMask);
+    }
+  }
+
+  // 3. Draw Foreground Shore Mound (Minor height adjustment to h * 0.91)
+  ctx.save();
+  ctx.fillStyle = colorFg;
+  ctx.globalAlpha = 1.0;
+  ctx.beginPath();
+  if (isLeft) {
+    ctx.moveTo(-10, h * 1.05);
+    ctx.lineTo(-10, h * 0.91); // Elegantly raised foreground hill
+    ctx.quadraticCurveTo(shoreW * 0.45, h * 0.91, shoreW, h * 1.05);
+  } else {
+    ctx.moveTo(w + 10, h * 1.05);
+    ctx.lineTo(w + 10, h * 0.91);
+    ctx.quadraticCurveTo(w - shoreW * 0.45, h * 0.91, w - shoreW, h * 1.05);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // 4. Draw Layer 2: Foreground Bamboo Flanks (Thick, highly textured, moonlit)
+  if (hasSprites) {
+    const fgStalks = 3;
+    const fgBandWidth = w * BAMBOO_PARAMS.edgeBand * 0.72;
+    for (let i = 0; i < fgStalks; i++) {
+      const tBand = (i + 0.25 + rng() * 0.50) / fgStalks;
+      const xBase = side === 'left' ? tBand * fgBandWidth : w - tBand * fgBandWidth;
+      const wBase = Math.max(12, w * (0.015 + rng() * 0.005));
+      const heightFrac = isMoonSide ? 0.58 + rng() * 0.08 : 0.80 + rng() * 0.10;
+      const height = h * heightFrac;
+      
+      if (rng() < 0.6) {
+        paintSpriteStalk(ctx, rng, xBase, h * 1.05, wBase, height, side, isMoonSide, true, isMask);
+      } else {
+        paintTallStalk(ctx, rng, xBase, h * 1.05, wBase, height, side, isMoonSide, true, isMask);
+      }
+    }
+  } else {
+    const fgStalks = 3;
+    const fgBandWidth = w * BAMBOO_PARAMS.edgeBand * 0.72;
+    for (let i = 0; i < fgStalks; i++) {
+      const tBand = (i + 0.25 + rng() * 0.50) / fgStalks;
+      const xBase = side === 'left' ? tBand * fgBandWidth : w - tBand * fgBandWidth;
+      const wBase = Math.max(11, w * (0.015 + rng() * 0.005));
+      const heightFrac = isMoonSide ? 0.58 + rng() * 0.08 : 0.80 + rng() * 0.10;
+      const height = h * heightFrac;
+      const bow = (side === 'left' ? 1 : -1) * w * (0.012 + rng() * 0.02);
+      const xOffsetTop = (side === 'left' ? 1 : -1) * w * (-0.01 + rng() * 0.04);
+      
+      paintProceduralStalk(ctx, rng, w, h, xBase, wBase, height, bow, xOffsetTop, side, isMoonSide, true, isMask);
+    }
+  }
+
+  // 5. Draw Layer 3: Bottom Ground Accents (Lush ground shrubbery/shading)
+  if (hasSprites) {
+    const groundAccents = 4;
+    const clusterPool = getBambooClusterSprites();
+    if (clusterPool.length > 0) {
+      for (let i = 0; i < groundAccents; i++) {
+        const tBand = (i + 0.25 + rng() * 0.5) / groundAccents;
+        const xOffset = w * (0.01 + tBand * 0.15);
+        const cx = side === 'left' ? xOffset : w - xOffset;
+        const cy = h * (0.96 + rng() * 0.035);
+        
+        const groundSprite = pickSprite(rng, clusterPool);
+        if (groundSprite) {
+          ctx.save();
+          // Draw background ground accent
+          ctx.globalAlpha = isMask ? 1.0 : 0.5;
+          ctx.translate(cx, cy);
+          const angle = side === 'left' ? -Math.PI * 0.15 : -Math.PI * 0.85;
+          ctx.rotate(angle + (rng() - 0.5) * 0.1);
+          const scale1 = Math.min(w, h) * (0.035 + rng() * 0.02) / groundSprite.sh * 2.0;
+          ctx.scale(scale1, scale1);
+          ctx.drawImage(groundSprite.image, groundSprite.sx, groundSprite.sy, groundSprite.sw, groundSprite.sh,
+                        -groundSprite.sw * groundSprite.bottomCenterFrac, -groundSprite.sh, groundSprite.sw, groundSprite.sh);
+          ctx.restore();
+
+          ctx.save();
+          // Draw foreground ground accent
+          ctx.globalAlpha = 1.0;
+          ctx.translate(cx, cy + h * 0.01);
+          ctx.rotate(angle + (rng() - 0.5) * 0.15);
+          const scale2 = scale1 * 1.35;
+          ctx.scale(scale2, scale2);
+          ctx.drawImage(groundSprite.image, groundSprite.sx, groundSprite.sy, groundSprite.sw, groundSprite.sh,
+                        -groundSprite.sw * groundSprite.bottomCenterFrac, -groundSprite.sh, groundSprite.sw, groundSprite.sh);
+          ctx.restore();
+        }
+      }
+    }
+  } else {
+    const groundAccents = 4;
+    for (let i = 0; i < groundAccents; i++) {
+      const tBand = (i + 0.25 + rng() * 0.5) / groundAccents;
+      const xOffset = w * (0.01 + tBand * 0.15);
+      const cx = side === 'left' ? xOffset : w - xOffset;
+      const cy = h * (0.96 + rng() * 0.035);
+      const leafScale = Math.min(w, h) * (0.035 + rng() * 0.02);
+      const leafAngle = side === 'left' ? -Math.PI * 0.28 : -Math.PI * 0.72;
+      
+      // Draw background accents first
+      paintProceduralLeafCluster(ctx, rng, w, h, cx, cy, leafScale, leafAngle, side, isMoonSide, false, isMask);
+      // Draw foreground accents
+      paintProceduralLeafCluster(ctx, rng, w, h, cx, cy, leafScale * 1.3, leafAngle + (rng() - 0.5) * 0.2, side, isMoonSide, true, isMask);
+    }
+  }
+}
+
+function paintProceduralStalk(ctx, rng, w, h, xBase, wBase, height, bow, xOffsetTop, side, isMoonSide, isForeground, isMask) {
+  const segments = 16;
+  const segLen = height / segments;
+  const wTop = wBase * 0.45;
+  const yBottom = h * 1.05;
+
+  const getCenter = (t) => {
+    const cx = xBase + t * xOffsetTop + Math.sin(t * Math.PI) * bow;
+    const cy = yBottom - t * height;
+    return { cx, cy };
+  };
+
+  let baseColor, shadowColor, highlightColor;
+  if (isForeground) {
+    baseColor = '#0b162f';
+    shadowColor = '#030710';
+    highlightColor = isMoonSide ? '#d4b785' : '#314b7e'; // Moon-facing side gets a warm gold/rice paper or rich blue tint
+  } else {
+    baseColor = '#050a16';
+    shadowColor = '#010307';
+    highlightColor = '#0f1f3a';
+  }
+
+  // Draw segment-by-segment
+  for (let i = 0; i < segments; i++) {
+    const tStart = i / segments;
+    const tEnd = (i + 1) / segments;
+    
+    const pStart = getCenter(tStart);
+    const pEnd = getCenter(tEnd);
+    
+    const wStart = wBase - (wBase - wTop) * tStart;
+    const wEnd = wBase - (wBase - wTop) * tEnd;
+
+    ctx.save();
+    ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.55);
+
+    const dx = pEnd.cx - pStart.cx;
+    const dy = pEnd.cy - pStart.cy;
+    const len = Math.hypot(dx, dy);
+    const nx = -dy / len;
+    const ny = dx / len;
+
+    const xLStart = pStart.cx + nx * (wStart / 2);
+    const yLStart = pStart.cy + ny * (wStart / 2);
+    const xRStart = pStart.cx - nx * (wStart / 2);
+    const yRStart = pStart.cy - ny * (wStart / 2);
+
+    const xLEnd = pEnd.cx + nx * (wEnd / 2);
+    const yLEnd = pEnd.cy + ny * (wEnd / 2);
+    const xREnd = pEnd.cx - nx * (wEnd / 2);
+    const yREnd = pEnd.cy - ny * (wEnd / 2);
+
+    const moonX = w * 0.78; // Always right-hand moon position
+    const highlightOnLeft = (moonX < pStart.cx);
+
+    const grad = ctx.createLinearGradient(xLStart, yLStart, xRStart, yRStart);
+    if (highlightOnLeft) {
+      grad.addColorStop(0, highlightColor);
+      grad.addColorStop(0.35, baseColor);
+      grad.addColorStop(1, shadowColor);
+    } else {
+      grad.addColorStop(0, shadowColor);
+      grad.addColorStop(0.65, baseColor);
+      grad.addColorStop(1, highlightColor);
+    }
+
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(xLStart, yLStart);
+    ctx.lineTo(xRStart, yRStart);
+    ctx.lineTo(xREnd, yREnd);
+    ctx.lineTo(xLEnd, yLEnd);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Node joint/knuckle ring
+    if (i < segments - 1) {
+      ctx.save();
+      ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.55);
+
+      const kWidth = wEnd * 1.28;
+      const kHeight = wEnd * 0.35;
+
+      ctx.translate(pEnd.cx, pEnd.cy);
+      const angle = Math.atan2(dy, dx);
+      ctx.rotate(angle + Math.PI / 2);
+
+      // Shadowed crease line
+      ctx.fillStyle = shadowColor;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, kWidth / 2, kHeight / 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Moonlit edge shelf highlight
+      ctx.strokeStyle = highlightColor;
+      ctx.lineWidth = Math.max(1, wEnd * 0.12);
+      ctx.beginPath();
+      if (highlightOnLeft) {
+        ctx.ellipse(0, 0, kWidth / 2, kHeight / 2, 0, Math.PI * 0.5, Math.PI * 1.5);
+      } else {
+        ctx.ellipse(0, 0, kWidth / 2, kHeight / 2, 0, -Math.PI * 0.5, Math.PI * 0.5);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Branching: upper 65% of the stalk has a chance to sprout branch clusters
+  let branchLeft = rng() < 0.5;
+  for (let i = Math.floor(segments * 0.35); i < segments; i++) {
+    const t = i / segments;
+    const pNode = getCenter(t);
+    const wNode = wBase - (wBase - wTop) * t;
+
+    if (rng() < 0.42) {
+      const bAngle = branchLeft ? -Math.PI * 0.28 : Math.PI * 0.28;
+      const bLen = height * (0.28 - t * 0.12) * (0.8 + rng() * 0.4);
+      paintProceduralBranch(ctx, rng, w, h, pNode.cx, pNode.cy, bLen, bAngle, wNode * 0.28, side, isMoonSide, isForeground, isMask);
+      branchLeft = !branchLeft;
+    }
+  }
+
+  // Top of the stalk terminates in a lush leaf cluster
+  const pTip = getCenter(1.0);
+  const pPrev = getCenter(0.9);
+  const tipAngle = Math.atan2(pTip.cy - pPrev.cy, pTip.cx - pPrev.cx);
+  paintProceduralLeafCluster(ctx, rng, w, h, pTip.cx, pTip.cy, wBase * 1.8, tipAngle, side, isMoonSide, isForeground, isMask);
+}
+
+function paintProceduralBranch(ctx, rng, w, h, xStart, yStart, length, angleOffset, wStart, side, isMoonSide, isForeground, isMask) {
+  const segments = 4;
+  const getPoint = (t) => {
+    const baseAngle = -Math.PI / 2 + angleOffset;
+    // Curves downward gently as it extends away from the main stalk
+    const cx = xStart + Math.sin(baseAngle) * length * t;
+    const cy = yStart + Math.cos(baseAngle) * length * t + Math.pow(t, 2) * (length * 0.16);
+    return { cx, cy, angle: baseAngle + t * 0.28 };
+  };
+
+  let baseColor = isForeground ? '#081329' : '#030812';
+  
+  ctx.save();
+  ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.55);
+  ctx.strokeStyle = baseColor;
+  ctx.lineWidth = wStart;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(xStart, yStart);
+  for (let i = 1; i <= segments; i++) {
+    const t = i / segments;
+    const p = getPoint(t);
+    ctx.lineTo(p.cx, p.cy);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Leaves along the branch and at the tip
+  for (let i = 2; i <= segments; i++) {
+    const t = i / segments;
+    const p = getPoint(t);
+    const scale = wStart * (5.8 - t * 2.2);
+    const isTip = (i === segments);
+    const leafScale = isTip ? scale * 1.25 : scale * 0.8;
+    paintProceduralLeafCluster(ctx, rng, w, h, p.cx, p.cy, leafScale, p.angle, side, isMoonSide, isForeground, isMask);
+  }
+}
+
+function paintProceduralLeafCluster(ctx, rng, w, h, x, y, scale, angle, side, isMoonSide, isForeground, isMask) {
+  if (inMoonExclusion(x, y, w, h)) {
     return;
   }
-  paintClusterTopper(ctx, rng, w, h, xCenter, caneTopY, trunkW, handed);
-}
 
-// Tip-sprite topper: drawn so the tip's PAINTED bottom-trunk width equals
-// the cane's PAINTED top-trunk width AND the tip's trunk-center sits
-// directly above the cane's trunk-center. Both width and center-x are
-// measured per-sprite at load time, so the seam aligns regardless of how
-// the generator placed the trunk inside the bbox (some tip sprites have
-// the trunk off-center, with foliage spread to one side).
-//
-// HEIGHT IS CONSTRAINED to the visible canvas area above the cane top.
-// Without this clamp, the tip's natural aspect (tall — bottom 60% is
-// trunk, top 40% is taper+foliage) puts the tapering portion off-screen,
-// so the visible part of the tip looks identical to the cane below
-// it and the trunk reads as blunt. Vertical squish keeps the taper +
-// leaves inside the visible area.
-//
-// No moon-exclusion check here — the cane stack already reached this
-// height; the tip is just its natural extension upward, not extra
-// foliage that could crowd the moon halo.
-//
-// caneTopperScale (BAMBOO_PARAMS) lets the user dial the tip width up
-// or down; 1.0 = exact trunk-width match.
-function paintTipTopper(ctx, rng, w, h, xCenter, caneTopY, trunkW, handed, pool, canePool) {
-  const sprite = pickSprite(rng, pool);
-  if (!sprite) return;
-  const caneTopFrac    = avgEdgeFrac(canePool, 'topFrac')       || 0.7;
-  const caneTopCenter  = avgEdgeFrac(canePool, 'topCenterFrac') || 0.5;
-  const tipBottomFrac  = sprite.bottomFrac;
-  const tipBottomCenter = sprite.bottomCenterFrac;
-  if (!tipBottomFrac) return;
-
-  // Width: painted tip-bottom = painted cane-top.
-  const canePaintedW = trunkW * caneTopFrac;
-  const drawW = (canePaintedW / tipBottomFrac) * BAMBOO_PARAMS.caneTopperScale;
-
-  // Height: prefer the sprite's natural aspect, but cap so the entire tip
-  // (including the tapering + leaves in its upper portion) sits inside
-  // the visible canvas above the cane. A small top buffer keeps the very
-  // tip from kissing the canvas edge.
-  const yBottom = caneTopY + trunkW * 0.4;
-  const naturalH = drawW * (sprite.sh / sprite.sw);
-  const availableH = Math.max(drawW * 1.5, yBottom - 12);
-  const drawH = Math.min(naturalH, availableH);
-
-  // Anchor by trunk-center, not bbox-center. Some tip sprites have their
-  // trunk pushed left or right inside the bbox; we want it directly above
-  // the cane trunk regardless of where the generator placed it.
-  const flip = rng() < 0.5;
-  const caneTrunkX = xCenter + (caneTopCenter - 0.5) * trunkW;
-  const tipCenterFrac = flip ? (1 - tipBottomCenter) : tipBottomCenter;
-  const tipDrawXCenter = caneTrunkX - (tipCenterFrac - 0.5) * drawW;
-  const yTop = yBottom - drawH;
-
-  ctx.save();
-  ctx.globalAlpha = 0.92 + rng() * 0.08;
-  if (flip) {
-    ctx.translate(tipDrawXCenter + drawW / 2, yTop);
-    ctx.scale(-1, 1);
-    ctx.drawImage(sprite.image, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-      0, 0, drawW, drawH);
+  const numLeaves = 3 + Math.floor(rng() * 4);
+  let baseColor, highlightColor;
+  if (isForeground) {
+    baseColor = '#0a1a38';
+    highlightColor = isMoonSide ? '#dfcfb0' : '#3c5a98'; // Glistening gold or rich blue moonlight highlight
   } else {
-    ctx.drawImage(sprite.image, sprite.sx, sprite.sy, sprite.sw, sprite.sh,
-      tipDrawXCenter - drawW / 2, yTop, drawW, drawH);
+    baseColor = '#040916';
+    highlightColor = '#0b162f';
   }
-  ctx.restore();
-}
 
-function avgEdgeFrac(pool, key) {
-  if (!pool || pool.length === 0) return 0;
-  let sum = 0, n = 0;
-  for (const s of pool) {
-    const v = s && s[key];
-    if (v > 0) { sum += v; n++; }
+  for (let i = 0; i < numLeaves; i++) {
+    const t = numLeaves > 1 ? i / (numLeaves - 1) : 0.5;
+    const spread = (t - 0.5) * 1.08;
+    const leafAngle = angle + spread + 0.22; // Fan out with natural droop
+    
+    const leafLen = scale * (0.85 + rng() * 0.35) * (isForeground ? 1.0 : 0.8);
+    const leafWidth = leafLen * (0.13 + rng() * 0.04);
+    
+    const ox = x + (rng() - 0.5) * (scale * 0.1);
+    const oy = y + (rng() - 0.5) * (scale * 0.1);
+    
+    paintProceduralLeaf(ctx, ox, oy, leafLen, leafWidth, leafAngle, baseColor, highlightColor, isForeground, isMask);
   }
-  return n === 0 ? 0 : sum / n;
 }
 
-// Fallback topper using a leaf cluster — used when no tip sprites are loaded.
-// The cluster's stem anchors at the cane top; leaves spray outward to hide
-// the blunt node band underneath.
-function paintClusterTopper(ctx, rng, w, h, xCenter, caneTopY, trunkW, handed) {
-  const pool = getBambooClusterSprites();
-  if (pool.length === 0) return;
-  const sprite = pickSprite(rng, pool);
-  if (!sprite) return;
-  const drawH = trunkW * 7 * BAMBOO_PARAMS.caneTopperScale;
-  const drawW = drawH * (sprite.sw / sprite.sh);
-  const yBottom = caneTopY + trunkW * 0.4;
-  const cyApprox = yBottom - drawH * 0.5;
-  if (inMoonExclusion(xCenter, cyApprox, w, h, handed)) return;
-  const flip = rng() < 0.5;
+function paintProceduralLeaf(ctx, x, y, len, width, angle, color, highlightColor, isForeground, isMask) {
   ctx.save();
-  ctx.globalAlpha = 0.85 + rng() * 0.15;
-  drawSpriteAnchored(ctx, sprite, xCenter, yBottom, drawH, flip);
-  ctx.restore();
-}
+  ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.55);
+  ctx.translate(x, y);
+  ctx.rotate(angle);
 
-// Corner accent cluster — at the bottom corner sitting on the bank. Multiple
-// per side (index varies x-offset) so the foreground reads as a cluster of
-// grass-and-leaves, not a single accent. Visible at canvas-bottom because the
-// camera is now at ground level.
-function paintCornerCluster(ctx, rng, w, h, side, pool, index) {
-  const sprite = pickSprite(rng, pool);
-  if (!sprite) return;
-  const drawH = h * (0.10 + rng() * 0.05);
-  // Index spreads multiple corner clusters across the edge band.
-  const xFrac = 0.04 + index * 0.07 + rng() * 0.02;
-  const xCenter = side === 'left' ? w * xFrac : w - w * xFrac;
-  const yBottom = h * (0.95 + rng() * 0.04);
-  // Flip so inward leaves point toward play area.
-  const flip = (side === 'left');
-  ctx.save();
-  ctx.globalAlpha = 0.88 + rng() * 0.10;
-  drawSpriteAnchored(ctx, sprite, xCenter, yBottom, drawH, flip);
-  ctx.restore();
-}
+  const grad = ctx.createLinearGradient(0, -width * 0.5, 0, width * 0.5);
+  grad.addColorStop(0, highlightColor || color);
+  grad.addColorStop(0.3, color);
+  grad.addColorStop(1, '#010307'); // Elegant shadow side of the leaf
 
-// Midground cluster — sits hanging off the foreground stalk at mid-canvas
-// height. Smaller than a corner cluster but larger than canopy elements, so
-// it reads as a leaf branch belonging to the visible trunk. Constrained to
-// the edge band; moon-side variant is smaller and pushed below the halo.
-function paintMidgroundCluster(ctx, rng, w, h, side, isMoonSide, pool) {
-  const sprite = pickSprite(rng, pool);
-  if (!sprite) return;
-  const drawH = h * (isMoonSide ? 0.08 + rng() * 0.03 : 0.10 + rng() * 0.04);
-  const xCenter = side === 'left' ? w * 0.09 : w - w * 0.09;
-  const yBand = isMoonSide
-    ? h * (0.55 + rng() * 0.25)   // lower half only on moon side
-    : h * (0.30 + rng() * 0.45);  // mid-canvas, with jitter
-  const flip = (side === 'left');
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  drawSpriteAnchored(ctx, sprite, xCenter, yBand, drawH, flip);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(len * 0.35, -width * 0.58, len, len * 0.12);
+  ctx.quadraticCurveTo(len * 0.32, width * 0.58, 0, 0);
+  ctx.closePath();
+  ctx.fill();
   ctx.restore();
 }
 
@@ -1131,7 +1305,7 @@ function paintMidgroundCluster(ctx, rng, w, h, side, isMoonSide, pool) {
 //   side stalks together with the canopy.
 //
 // All passes respect the moon exclusion. Density scales with viewport width.
-function paintTopCanopy(ctx, rng, w, h, handed) {
+function paintTopCanopy(ctx, rng, w, h, isMask) {
   const clusters = getBambooClusterSprites();
   const branches = getBambooStalkSprites();
   if (clusters.length === 0 && branches.length === 0) return;
@@ -1165,9 +1339,11 @@ function paintTopCanopy(ctx, rng, w, h, handed) {
     const drawW = drawH * (sprite.sw / sprite.sh);
     const yAnchor = -drawH * (0.05 + rng() * 0.15);  // stem above canvas
     const cyApprox = yAnchor + drawH * 0.5;
-    if (inMoonExclusion(cx, cyApprox, w, h, handed)) continue;
+    if (inMoonExclusion(cx, cyApprox, w, h)) continue;
+    const randAlpha = 0.65 + rng() * 0.20;
+    const alpha = isMask ? 1.0 : randAlpha;
     drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH,
-      (rng() - 0.5) * 0.4, rng() < 0.5, 0.65 + rng() * 0.20);
+      (rng() - 0.5) * 0.4, rng() < 0.5, alpha);
   }
 
   // ── Pass 2: mid canopy (arch-curve baseline) ──────────────────────────
@@ -1191,14 +1367,16 @@ function paintTopCanopy(ctx, rng, w, h, handed) {
     // *visible body bottom* lands roughly on the arch line.
     const yAnchor = archDepth - drawH * (0.75 + rng() * 0.2);
     const cyApprox = yAnchor + drawH * 0.5;
-    if (inMoonExclusion(cx, cyApprox, w, h, handed)) continue;
+    if (inMoonExclusion(cx, cyApprox, w, h)) continue;
     // Tilt: clusters near corners lean inward to follow the arch gesture.
     const leanDir = tx < 0.5 ? 1 : -1;
     const cornerCloseness = 1 - Math.abs(tx - 0.5) * 2;
     const leanMag = (1 - cornerCloseness) * 0.45;
     const rotation = leanDir * leanMag + (rng() - 0.5) * 0.35;
+    const randAlpha = 0.75 + rng() * 0.20;
+    const alpha = isMask ? 1.0 : randAlpha;
     drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH,
-      rotation, rng() < 0.5, 0.75 + rng() * 0.20);
+      rotation, rng() < 0.5, alpha);
   }
 
   // ── Pass 3: low hangers (corner-anchored long branches) ───────────────
@@ -1220,12 +1398,14 @@ function paintTopCanopy(ctx, rng, w, h, handed) {
     // Hang from the corner — start at top edge, reach down to ~22–35% of h.
     const yAnchor = -drawH * 0.08;
     const cyApprox = yAnchor + drawH * 0.5;
-    if (inMoonExclusion(cx, cyApprox, w, h, handed)) continue;
+    if (inMoonExclusion(cx, cyApprox, w, h)) continue;
     // Lean strongly inward — these are the "draping branches at the corner."
     const leanDir = fromLeft ? 1 : -1;
     const rotation = leanDir * (0.6 + rng() * 0.3);
+    const randAlpha = 0.80 + rng() * 0.18;
+    const alpha = isMask ? 1.0 : randAlpha;
     drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH,
-      rotation, fromLeft ? false : true, 0.80 + rng() * 0.18);
+      rotation, fromLeft ? false : true, alpha);
   }
 }
 
@@ -1245,66 +1425,6 @@ function drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH, rotation, hFl
   ctx.restore();
 }
 
-// Procedural fallback when no stalk sprites loaded. Wider than the previous
-// version (BAMBOO_FALLBACK_MIN_PX floor) so iPhones don't get scratchy lines.
-function paintFallbackStalks(ctx, rng, w, h, side, isMoonSide) {
-  const STALKS = 4;
-  const bandW = Math.max(64, w * 0.16);
-  for (let i = 0; i < STALKS; i++) {
-    const tBand = (i + 0.3 + rng() * 0.5) / STALKS;
-    const fromEdge = tBand * bandW;
-    const xBase = side === 'left' ? fromEdge : w - fromEdge;
-    const leanAmount = (1 - tBand) * (w * 0.04);
-    const xCurve = side === 'left' ? leanAmount : -leanAmount;
-    const wBase = Math.max(BAMBOO_FALLBACK_MIN_PX,
-                           w * 0.012 + rng() * w * 0.006);
-    paintFallbackStalk(ctx, rng, xBase, xCurve, wBase, h * (0.9 + rng() * 0.12), h, isMoonSide);
-  }
-}
-
-function paintFallbackStalk(ctx, rng, xBase, xCurve, wBase, height, viewH, isMoonSide) {
-  const wTop = wBase * (0.6 + rng() * 0.15);
-  const xTop = xBase + xCurve;
-  const yBottom = viewH + viewH * 0.04;
-  const yTop = viewH - height;
-  const SEGMENTS = 14;
-
-  ctx.fillStyle = BAMBOO_FALLBACK_FILL;
-  ctx.beginPath();
-  for (let i = 0; i <= SEGMENTS; i++) {
-    const t = i / SEGMENTS;
-    const arc = Math.sin(t * Math.PI) * (xCurve * 0.35);
-    const cx = xBase + (xTop - xBase) * t + arc;
-    const w = wBase + (wTop - wBase) * t;
-    const y = yBottom + (yTop - yBottom) * t;
-    if (i === 0) ctx.moveTo(cx - w / 2, y);
-    else ctx.lineTo(cx - w / 2, y);
-  }
-  for (let i = SEGMENTS; i >= 0; i--) {
-    const t = i / SEGMENTS;
-    const arc = Math.sin(t * Math.PI) * (xCurve * 0.35);
-    const cx = xBase + (xTop - xBase) * t + arc;
-    const w = wBase + (wTop - wBase) * t;
-    const y = yBottom + (yTop - yBottom) * t;
-    ctx.lineTo(cx + w / 2, y);
-  }
-  ctx.closePath();
-  ctx.fill();
-
-  // Knuckle bands
-  const nKnuckles = 6 + Math.floor(rng() * 3);
-  ctx.fillStyle = BAMBOO_FALLBACK_RING;
-  for (let k = 0; k < nKnuckles; k++) {
-    const t = (k + 0.5) / nKnuckles;
-    const arc = Math.sin(t * Math.PI) * (xCurve * 0.35);
-    const cx = xBase + (xTop - xBase) * t + arc;
-    const w = wBase + (wTop - wBase) * t;
-    const y = yBottom + (yTop - yBottom) * t;
-    const ringH = Math.max(2, w * 0.22);
-    ctx.fillRect(cx - w / 2, y - ringH / 2, w, ringH);
-  }
-  void isMoonSide;
-}
 
 // The dead-line IS the water surface. A 1px moonlit specular line, fading
 // to invisible at the screen edges so the bamboo-flanked banks read as
