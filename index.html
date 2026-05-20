@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Moon Glow</title>
+  <title>Moon Lit</title>
   <meta name="description" content="A lantern-festival bubble shooter — match colors, drop chains, watch the moon move the sky.">
   <meta name="theme-color" content="#0E1538">
   <link rel="manifest" href="manifest.json">
@@ -13,7 +13,7 @@
   <link rel="apple-touch-icon" href="img/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
   <script>
-    // Moon-glow does not register a service worker. A SW from the launcher
+    // Moon-lit does not register a service worker. A SW from the launcher
     // (or a sibling game's `./ago`) may still be registered on this origin
     // from an earlier dev session and intercept fetches. Wipe it on every
     // load so dev sessions stay self-healing.
@@ -27,7 +27,7 @@
     }
   </script>
   <script src="/arcade-sdk.js"></script>
-  <script>Arcade.init({ gameId: 'moon-glow' });</script>
+  <script>Arcade.init({ gameId: 'moon-lit' });</script>
 </head>
 <body>
   <canvas id="game"></canvas>

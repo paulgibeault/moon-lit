@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="img/logo.png" alt="Moon Glow" width="200" />
+<img src="img/logo.png" alt="Moon Lit" width="200" />
 
-# Moon Glow
+# Moon Lit
 
 **A lantern-festival bubble shooter for [Paul's Arcade](https://paulgibeault.github.io/).**
 
@@ -18,7 +18,7 @@
 
 > *"Float a lantern. Steady the moon. Don't let the trellis touch the water."*
 
-Moon Glow is a bubble shooter dressed in the quiet of a midsummer night
+Moon Lit is a bubble shooter dressed in the quiet of a midsummer night
 festival. A boatman launches paper lanterns up into a bamboo trellis;
 match three or more of the same color to set them adrift on the breeze
 before the trellis creeps down to the water.
@@ -52,11 +52,11 @@ the launcher and one or more games side-by-side on a single localhost origin
 
 ```sh
 cd ../paulgibeault.github.io
-./dev.sh ../moon-glow
+./dev.sh ../moon-lit
 ```
 
 Then open `http://127.0.0.1:4791/` for the launcher, or
-`http://127.0.0.1:4791/moon-glow/` for standalone mode.
+`http://127.0.0.1:4791/moon-lit/` for standalone mode.
 
 ## Theme
 

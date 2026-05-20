@@ -11,7 +11,7 @@
 #   img/favicon-32.png           browser tab icon (32×32, lossless PNG)
 #
 # Targets in the launcher repo (skipped if launcher dir not found):
-#   $LAUNCHER_DIR/images/moon-glow.png
+#   $LAUNCHER_DIR/images/moon-lit.png
 #                                Launcher card (600×600 JPEG saved with a
 #                                .png extension to match the repo's sibling
 #                                cards — pi-game.png, hecknsic.png, etc. are
@@ -53,7 +53,7 @@ emit_png 512 "$GAME_DIR/img/icon-512.png"
 emit_png  32 "$GAME_DIR/img/favicon-32.png"
 
 if [ -d "$LAUNCHER_DIR/images" ]; then
-  emit_jpeg_as_png 600 "$LAUNCHER_DIR/images/moon-glow.png" 80
+  emit_jpeg_as_png 600 "$LAUNCHER_DIR/images/moon-lit.png" 80
 else
   echo "  (skipping launcher card — $LAUNCHER_DIR/images not found)"
 fi

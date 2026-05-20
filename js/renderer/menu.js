@@ -295,7 +295,7 @@ function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
   const rect = cardRect(layout, 320 * fs, 320 * fs);
   drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Moon Glow', { fs });
+  const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
   const padX = 24;
   const rowH = Math.round(48 * fs);

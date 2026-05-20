@@ -1,4 +1,4 @@
-# Moon Glow — Visual Design Plan
+# Moon Lit — Visual Design Plan
 
 A redesign of the in-canvas visuals to match the look and vibe of
 [../img/logo.png](../img/logo.png). The M8 visual-polish milestone — see

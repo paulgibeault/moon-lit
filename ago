@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ago — "arcade-go". Stages moon-glow alongside the launcher into a single
+# ago — "arcade-go". Stages moon-lit alongside the launcher into a single
 # same-origin tree, and serves it with python3.
 #
 #   ./ago        — stage, serve, open browser
@@ -15,9 +15,9 @@
 #   index.html         (launcher, URLs rewritten)
 #   arcade-sdk.js      (rewritten)
 #   styles.css, profile.html, manifest.json, images/ (from launcher repo)
-#   moon-glow/         (this repo's static files, SDK URL rewritten)
+#   moon-lit/         (this repo's static files, SDK URL rewritten)
 #
-# Service workers (both launcher's and moon-glow's) are intentionally defanged —
+# Service workers (both launcher's and moon-lit's) are intentionally defanged —
 # they cache fixed asset lists and would mask edits during dev. Hard-refresh
 # works as expected.
 
@@ -132,21 +132,21 @@ fi
 # Images: symlink (large, no rewrite needed)
 ln -snf "$LAUNCHER_DIR/images" "$STAGE_DIR/images"
 
-# Game (this repo) → /moon-glow/. Static site — no build step.
+# Game (this repo) → /moon-lit/. Static site — no build step.
 # Copy only the assets the page actually serves; skip dev/test/tooling clutter.
-mkdir -p "$STAGE_DIR/moon-glow"
-cp "$GAME_DIR/index.html" "$STAGE_DIR/moon-glow/index.html"
-[ -f "$GAME_DIR/manifest.json" ] && cp "$GAME_DIR/manifest.json" "$STAGE_DIR/moon-glow/manifest.json"
-[ -f "$GAME_DIR/sw.js" ] && cp "$GAME_DIR/sw.js" "$STAGE_DIR/moon-glow/sw.js"
+mkdir -p "$STAGE_DIR/moon-lit"
+cp "$GAME_DIR/index.html" "$STAGE_DIR/moon-lit/index.html"
+[ -f "$GAME_DIR/manifest.json" ] && cp "$GAME_DIR/manifest.json" "$STAGE_DIR/moon-lit/manifest.json"
+[ -f "$GAME_DIR/sw.js" ] && cp "$GAME_DIR/sw.js" "$STAGE_DIR/moon-lit/sw.js"
 for d in css js img; do
-  [ -d "$GAME_DIR/$d" ] && cp -R "$GAME_DIR/$d" "$STAGE_DIR/moon-glow/$d"
+  [ -d "$GAME_DIR/$d" ] && cp -R "$GAME_DIR/$d" "$STAGE_DIR/moon-lit/$d"
 done
 
 # Rewrite SDK URL inside the staged game.
-sed_inplace "s|https://paulgibeault.github.io|$LOCAL_ORIGIN|g" "$STAGE_DIR/moon-glow/index.html"
+sed_inplace "s|https://paulgibeault.github.io|$LOCAL_ORIGIN|g" "$STAGE_DIR/moon-lit/index.html"
 
 # Defang the game's own service-worker registration too.
-sed_inplace "s|navigator\.serviceWorker\.register|/* SW disabled in ago */ false \&\& navigator.serviceWorker.register|g" "$STAGE_DIR/moon-glow/index.html"
+sed_inplace "s|navigator\.serviceWorker\.register|/* SW disabled in ago */ false \&\& navigator.serviceWorker.register|g" "$STAGE_DIR/moon-lit/index.html"
 
 # ─── start server ──────────────────────────────────────────────────────
 python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$STAGE_DIR" > "$LOG_FILE" 2>&1 &
@@ -164,7 +164,7 @@ cat <<EOF
   Arcade staged at $STAGE_DIR
 
     Launcher:  $LOCAL_ORIGIN/
-    Game:      $LOCAL_ORIGIN/moon-glow/    (standalone)
+    Game:      $LOCAL_ORIGIN/moon-lit/    (standalone)
     SDK:       $LOCAL_ORIGIN/arcade-sdk.js
 
     Server PID: $NEW_PID

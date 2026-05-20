@@ -212,7 +212,7 @@ function startDrowning(game) {
   }
   game.drown = { t: 0, doneAt: null };
   game.phase = PHASE.DROWNING;
-  console.log('[moon-glow] drowning cinematic started, lanterns=', game.board.lanterns.length);
+  console.log('[moon-lit] drowning cinematic started, lanterns=', game.board.lanterns.length);
 }
 
 function stepDrowning(game, dtSec, layout) {

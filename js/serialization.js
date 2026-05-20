@@ -1,4 +1,4 @@
-// JSON-safe snapshot/restore for a Moon Glow game. Captures everything
+// JSON-safe snapshot/restore for a Moon Lit game. Captures everything
 // needed to resume between shots: board, queue, score, level, phase, RNG
 // state. In-flight projectiles and per-frame anim/effect lifetimes are
 // intentionally omitted — callers may snapshot in any phase except FLYING.

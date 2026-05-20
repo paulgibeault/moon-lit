@@ -1,4 +1,4 @@
-export const GAME_ID = 'moon-glow';
+export const GAME_ID = 'moon-lit';
 
 // Paper-lantern palette tuned to traditional festival colors (Yi Peng, Loy
 // Krathong, Mid-Autumn) — clear, distinct hues, not muddy. Slightly pulled

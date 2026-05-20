@@ -1,4 +1,4 @@
-# Moon-Glow — Design Concept v2
+# Moon-Lit — Design Concept v2
 
 A bubble-shooter for Paul's Arcade. Two modes share one engine: a faithful
 1:1 *Bust-A-Move* called **Classic**, and a signature **Festival** mode that
@@ -366,7 +366,7 @@ progression itself.
 
 ### 6.3 No paywalls, no daily timers (other than the Daily challenge)
 
-Moon-Glow is a single-payment / free-to-play-without-traps game. Daily
+Moon-Lit is a single-payment / free-to-play-without-traps game. Daily
 challenge is a *single seed shared by everyone today*; missing a day is
 fine; old daily seeds are replayable but don't post to that day's
 leaderboard.
@@ -458,7 +458,7 @@ deterministic product of a 32-bit seed plus the player's shot list. This
 unlocks:
 
 1. **Daily Challenge.** One seed per day, derived from the date
-   (`moon-glow-daily-2026-05-05` → hash → seed). Everyone plays the same board.
+   (`moon-lit-daily-2026-05-05` → hash → seed). Everyone plays the same board.
 2. **Endless reproducibility.** Endless seeds itself from
    `Date.now() ^ playerName.hashCode()` at run start. The seed is shown
    on the game-over screen ("Your run: `4729183`") so players can share
@@ -506,7 +506,7 @@ unlocks:
 ### 9.4 State schema (saved via SDK)
 
 ```js
-// arcade.v1.moon-glow.run
+// arcade.v1.moon-lit.run
 {
     mode: 'festival' | 'classic' | 'endless' | 'daily' | 'master',
     chapter: 3,           // festival/master only
@@ -521,7 +521,7 @@ unlocks:
     startedAt: '2026-05-05T20:14:22.000Z'
 }
 
-// arcade.v1.moon-glow.progress
+// arcade.v1.moon-lit.progress
 {
     festivalCleared: { 1: 3, 2: 2, 3: 1, /* chapter: stars */ },
     masterUnlocked: [1, 2],
@@ -529,14 +529,14 @@ unlocks:
     cosmeticsEquipped: { hat: 'hat-fox', kimono: 'kimono-blue', trail: 'trail-ink' }
 }
 
-// arcade.v1.moon-glow.settings
+// arcade.v1.moon-lit.settings
 {
     aimAssist: true,
     snapPreview: true,
     queueDepth: 'standard' | 'minimal' | 'extended'
 }
 
-// (other state lives in arcade.v1.moon-glow.* via Arcade.scores / Arcade.stats)
+// (other state lives in arcade.v1.moon-lit.* via Arcade.scores / Arcade.stats)
 ```
 
 `shotList` grows during a run; we coalesce writes (debounce 250ms, flush
@@ -550,7 +550,7 @@ on `onSuspend`) so we don't thrash localStorage on every shot.
 
 ```html
 <script src="/arcade-sdk.js"></script>
-<script>Arcade.init({ gameId: 'moon-glow' });</script>
+<script>Arcade.init({ gameId: 'moon-lit' });</script>
 ```
 
 ```js
@@ -559,7 +559,7 @@ const run = Arcade.state.get('run');
 if (run) showContinuePrompt(run);
 ```
 
-### 10.2 State keys (all under `arcade.v1.moon-glow.*`)
+### 10.2 State keys (all under `arcade.v1.moon-lit.*`)
 
 | Key                  | Purpose                                  |
 | -------------------- | ---------------------------------------- |
@@ -580,7 +580,7 @@ if (run) showContinuePrompt(run);
 ### 10.4 Stats (`Arcade.stats.update`)
 
 ```js
-// arcade.v1.moon-glow.stats.lifetime
+// arcade.v1.moon-lit.stats.lifetime
 {
     runs: 0,
     pops: 0,
@@ -628,7 +628,7 @@ e.g. on cosmetic unlock outside of a dedicated celebration screen.
 
 ### 10.8 Standalone
 
-- The game must work end-to-end at `https://paulgibeault.github.io/moon-glow/`
+- The game must work end-to-end at `https://paulgibeault.github.io/moon-lit/`
   with no console errors and `Arcade.context.framed === false`.
 - All Festival features should function standalone — peer multiplayer is
   the only thing that gates on framed mode (and it's out of scope for v1).
@@ -636,13 +636,13 @@ e.g. on cosmetic unlock outside of a dedicated celebration screen.
 ### 10.9 Iframe sandbox & PWA
 
 - No top-level navigation. No `window.open`.
-- `manifest.json`: `"scope": "/moon-glow/"`, `"start_url": "/moon-glow/"`.
-- Service worker registered with `{ scope: '/moon-glow/' }` if used; never
-  caches `/arcade-sdk.js` or anything outside `/moon-glow/`.
+- `manifest.json`: `"scope": "/moon-lit/"`, `"start_url": "/moon-lit/"`.
+- Service worker registered with `{ scope: '/moon-lit/' }` if used; never
+  caches `/arcade-sdk.js` or anything outside `/moon-lit/`.
 
 ### 10.10 Card assets
 
-- 512×512 `images/moon-glow.png` PR'd against `paulgibeault/paulgibeault.github.io`.
+- 512×512 `images/moon-lit.png` PR'd against `paulgibeault/paulgibeault.github.io`.
 - Subtitle ≤ 20 chars: **"Lantern Shooter"**.
 - Update both `#games` and `#view-launcher` sections in
   [index.html](../../paulgibeault.github.io/index.html).

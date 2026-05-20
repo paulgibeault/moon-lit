@@ -1,6 +1,6 @@
 # docs/
 
-Design documentation for Moon Glow. The implementation in `js/` is the
+Design documentation for Moon Lit. The implementation in `js/` is the
 source of truth — these docs capture intent, decisions, and the broader
 visual plan.
 
