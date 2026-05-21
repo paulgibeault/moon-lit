@@ -428,7 +428,6 @@ export async function loadMoonTexture() {
 
 const BASE_SRC = 'img/cradle-base.png';
 const WHEEL_SRC = 'img/cradle-wheel.png';
-const PLATE_SRC = 'img/cradle-plate.png';
 
 function bakeHarness(img) {
   const w = img.naturalWidth  || img.width;
@@ -465,10 +464,9 @@ function bakeHarness(img) {
 
 export async function loadHarnessSprite() {
   try {
-    const [imgBase, imgWheel, imgPlate] = await Promise.all([
+    const [imgBase, imgWheel] = await Promise.all([
       loadImage(BASE_SRC),
-      loadImage(WHEEL_SRC),
-      loadImage(PLATE_SRC)
+      loadImage(WHEEL_SRC)
     ]);
 
     const canvasBase = bakeHarness(imgBase);
@@ -476,9 +474,6 @@ export async function loadHarnessSprite() {
 
     const canvasWheel = bakeHarness(imgWheel);
     record('launcher_wheel', canvasWheel, measureBbox(canvasWheel));
-
-    const canvasPlate = bakeHarness(imgPlate);
-    record('launcher_plate', canvasPlate, measureBbox(canvasPlate));
   } catch (e) {
     console.warn('[moon-lit] failed to load mechanical launcher wheel sprites', e);
   }
@@ -490,9 +485,5 @@ export function getLauncherBaseSprite() {
 
 export function getLauncherWheelSprite() {
   return sprites['launcher_wheel'] || null;
-}
-
-export function getLauncherPlateSprite() {
-  return sprites['launcher_plate'] || null;
 }
 

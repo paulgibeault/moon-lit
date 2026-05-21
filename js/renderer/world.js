@@ -6,7 +6,7 @@ import {
   getBambooTallSprites, getBambooCaneSprites, getBambooBaseSprites,
   getBambooTipSprites, getBambooStalkSprites, getBambooClusterSprites,
   getMoonTexture,
-  getLauncherBaseSprite, getLauncherWheelSprite, getLauncherPlateSprite,
+  getLauncherBaseSprite, getLauncherWheelSprite,
 } from '../assets.js';
 import { mulberry32 } from '../prng.js';
 import {
