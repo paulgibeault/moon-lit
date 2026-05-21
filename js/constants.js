@@ -22,6 +22,10 @@ export const PALETTE = Object.freeze({
   moonHalo:     '#E8B770',
   trellis:      '#8C6B3A',
   trellisKnot:  '#5C4322',
+  // Flat night-indigo silhouette used by the bamboo grove. The launcher
+  // cradle reuses this so the wooden harness reads as part of the same
+  // painted backdrop instead of popping out as a separate warm element.
+  bambooSilhouette: '#0A1230',
   river:        '#0A0F22',
   riverRipple:  '#3D5681',
   ember:        '#2A2A2A',
