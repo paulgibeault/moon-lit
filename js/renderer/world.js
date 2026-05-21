@@ -2015,15 +2015,16 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
   }
 
   // 2. Wheel rotation progress (smooth 90-degree transition)
-  //   Animate to ±π/2 during the first 0.4s of FLYING, then HOLD there until
-  //   the projectile lands and the queue advances. Snapping back to 0 mid-
-  //   flight would leave the new top fork (theta_mount=-π/2) empty, since it
-  //   only draws current during AIMING — see lantern visibility check below.
+  //   The wheel turns through a quarter revolution while the shot is airborne.
+  //   Quintic ease-out gives a heavy, deliberate "settles into place" feel —
+  //   it accelerates immediately on launch and decelerates gracefully into the
+  //   docked position. Holds at ±π/2 until landing snaps the queue forward.
+  const WHEEL_ROTATE_SEC = 2.2;
   const t_launch = tSec - (game.lastLaunchTime || 0);
   let wheelAngle = 0;
   if (game.phase === PHASE.FLYING) {
-    const p = Math.min(1, t_launch / 0.40);
-    const ease = 1 - Math.pow(1 - p, 3); // cubic ease out
+    const p = Math.min(1, t_launch / WHEEL_ROTATE_SEC);
+    const ease = 1 - Math.pow(1 - p, 5); // quintic ease out
     wheelAngle = (handedness === 'right' ? -Math.PI / 2 : Math.PI / 2) * ease;
   }
 
@@ -2189,29 +2190,23 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
           drawSparks(ctx, -d_hinge_lantern, r, tSec);
         }
       }
-    } else {
-      // Check if this fork holds the 'next' lantern in the queue
-      const isNextFork = (handedness === 'right' && theta_mount === 0) ||
-                         (handedness === 'left' && theta_mount === Math.PI);
-      if (isNextFork) {
-        // Next fork holds game.queue.next — unlit, waiting to rotate to the top
-        ctx.save();
-        ctx.translate(0, -d_hinge_lantern);
-        
-        // Add elegant float-in transition when queue advances
-        const t_advance = tSec - (game.lastQueueAdvanceTime || 0);
-        let alpha = 1.0;
-        let slideY = 0;
-        if (t_advance >= 0 && t_advance < 0.5) {
-          alpha = t_advance / 0.5;
-          slideY = (1.0 - alpha) * r * 1.5;
-          ctx.globalAlpha = ctx.globalAlpha * alpha;
-        }
-        ctx.translate(0, slideY);
-
-        drawLantern(ctx, 0, 0, r, game.queue.next, { lit: false });
-        ctx.restore();
-      }
+    } else if (isNextFork) {
+      // Next fork holds game.queue.next — unlit, riding the wheel toward the
+      // top. The float-in fade that used to mask the queue-advance pop is
+      // gone: with afterNext rotating up from below, lanterns now arrive
+      // continuously instead of appearing in place.
+      ctx.save();
+      ctx.translate(0, -d_hinge_lantern);
+      drawLantern(ctx, 0, 0, r, game.queue.next, { lit: false });
+      ctx.restore();
+    } else if (theta_mount === Math.PI / 2) {
+      // After-next fork at the bottom of the wheel — holds game.queue.afterNext.
+      // Between shots it sits below the waterline (hidden); during firing it
+      // rotates up into the on-deck side position.
+      ctx.save();
+      ctx.translate(0, -d_hinge_lantern);
+      drawLantern(ctx, 0, 0, r, game.queue.afterNext, { lit: false });
+      ctx.restore();
     }
 
     ctx.restore(); // restore fork context
