@@ -80,6 +80,9 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     level,
     colors,
     descentShots: config.descentShots,
+    lastLaunchTime: 0,
+    recoilTime: 0,
+    lastQueueAdvanceTime: 0,
   };
 }
 
@@ -108,6 +111,9 @@ export function fire(game, layout) {
     swayAmp,
   };
   game.phase = PHASE.FLYING;
+  const tSec = performance.now() / 1000;
+  game.lastLaunchTime = tSec;
+  game.recoilTime = tSec;
 }
 
 export function step(game, dtSec, layout) {
@@ -359,6 +365,7 @@ function advanceQueue(game) {
   const live = new Set(game.board.lanterns.map(l => l.color));
   const palette = game.colors.filter(c => live.has(c));
   game.queue.next = pick(game.rng, palette.length ? palette : game.colors);
+  game.lastQueueAdvanceTime = performance.now() / 1000;
 }
 
 // Re-exports so existing callers (renderer.js, tests) don't need to track

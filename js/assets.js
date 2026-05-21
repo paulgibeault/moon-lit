@@ -425,3 +425,74 @@ export async function loadMoonTexture() {
     moonTexture = cropMoonToDisc(img);
   } catch (_) { moonTexture = null; }
 }
+
+const BASE_SRC = 'img/cradle-base.png';
+const WHEEL_SRC = 'img/cradle-wheel.png';
+const PLATE_SRC = 'img/cradle-plate.png';
+
+function bakeHarness(img) {
+  const w = img.naturalWidth  || img.width;
+  const h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0);
+  let imgData;
+  try {
+    imgData = cx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return c;
+  }
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i];
+    const g = d[i+1];
+    const b = d[i+2];
+    const br = (r + g + b) / 3;
+    let alpha = d[i+3];
+    if (br < 12) {
+      alpha = 0;
+    } else if (br < 30) {
+      const t = (br - 12) / 18;
+      alpha = Math.round(d[i+3] * t);
+    }
+    d[i+3] = alpha;
+  }
+  cx.putImageData(imgData, 0, 0);
+  return c;
+}
+
+export async function loadHarnessSprite() {
+  try {
+    const [imgBase, imgWheel, imgPlate] = await Promise.all([
+      loadImage(BASE_SRC),
+      loadImage(WHEEL_SRC),
+      loadImage(PLATE_SRC)
+    ]);
+
+    const canvasBase = bakeHarness(imgBase);
+    record('launcher_base', canvasBase, measureBbox(canvasBase));
+
+    const canvasWheel = bakeHarness(imgWheel);
+    record('launcher_wheel', canvasWheel, measureBbox(canvasWheel));
+
+    const canvasPlate = bakeHarness(imgPlate);
+    record('launcher_plate', canvasPlate, measureBbox(canvasPlate));
+  } catch (e) {
+    console.warn('[moon-lit] failed to load mechanical launcher wheel sprites', e);
+  }
+}
+
+export function getLauncherBaseSprite() {
+  return sprites['launcher_base'] || null;
+}
+
+export function getLauncherWheelSprite() {
+  return sprites['launcher_wheel'] || null;
+}
+
+export function getLauncherPlateSprite() {
+  return sprites['launcher_plate'] || null;
+}
+
