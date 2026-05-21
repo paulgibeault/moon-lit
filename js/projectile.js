@@ -8,7 +8,9 @@ import { forEachLanternWithinSq } from './geometry.js';
 
 // Center of the launcher tip — origin of every shot.
 export function launcherTip(layout) {
-  return { x: layout.viewW / 2, y: layout.tipY };
+  const handedness = layout.handedness || 'right';
+  const offset = handedness === 'left' ? -layout.size * 1.0 : layout.size * 1.0;
+  return { x: layout.viewW / 2 + offset, y: layout.tipY };
 }
 
 // Find the nearest lantern that overlaps a circle of radius r centered at

@@ -5,7 +5,7 @@ import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
 import { getEffectiveDpr, PERF_MODE } from './renderer/style.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites, loadMoonTexture } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 import {
@@ -20,7 +20,7 @@ await Arcade.ready;
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
 try {
-  await Promise.all([loadLanterns(), loadBambooSprites(), loadMoonTexture()]);
+  await Promise.all([loadLanterns(), loadBambooSprites(), loadMoonTexture(), loadHarnessSprite()]);
 } catch (e) {
   console.warn(`[${GAME_ID}] sprite load failed — falling back`, e);
 }
@@ -149,6 +149,7 @@ function readSettings() {
   return {
     fontScale:     Arcade.settings.fontScale(),
     reducedMotion: Arcade.settings.reducedMotion(),
+    handedness:    (Arcade.settings && typeof Arcade.settings.handedness === 'function') ? Arcade.settings.handedness() : 'right',
     bestScore,
     playerName,
   };
@@ -207,6 +208,7 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const prevLayout = layout;
   layout = computeLayout(w, h);
+  layout.handedness = settings ? settings.handedness : 'right';
   if (!game) {
     bootstrapGame();
     return;
@@ -415,6 +417,9 @@ Arcade.onStateReplaced(() => {
 
 Arcade.onSettingsChange(() => {
   settings = readSettings();
+  if (layout) {
+    layout.handedness = settings.handedness;
+  }
   requestFrame();
 });
 

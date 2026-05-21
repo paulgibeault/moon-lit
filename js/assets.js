@@ -16,6 +16,14 @@ const RASTER_SCALE = 2;
 const BURST_SRC = 'img/lantern-burst.png';
 let burstSheet = null;
 
+// Horizontal flipbook for the hub flame at the wheel axis. Hand-painted source
+// has 8 frames laid out in a row, non-square (artist gave each cell horizontal
+// room for flicker drift), so we compute frame width explicitly from the
+// declared frame count instead of inferring it from height.
+const FLAME_SRC = 'img/flame-sprite.png';
+const FLAME_FRAMES = 8;
+let flameSheet = null;
+
 // Bamboo silhouette sprite library. Source PNGs are black-on-white at modest
 // resolution; loadBambooSprites() bakes each to a tinted alpha silhouette and
 // crops to its painted bbox so the renderer can place them by anchor without
@@ -174,6 +182,40 @@ export async function loadLanterns() {
   } catch (e) {
     burstSheet = null;
   }
+  try {
+    const img = await loadImage(FLAME_SRC);
+    const sheetW = img.naturalWidth  || img.width;
+    const sheetH = img.naturalHeight || img.height;
+    // Source PNG paints flames on a solid black field. Luminance-key it: each
+    // pixel's brightest channel becomes its alpha, so black → transparent and
+    // the painter's bronze/cream gradients keep their full hue when drawn with
+    // ordinary source-over (no 'lighter' wash, no grey AA halo bleeding onto
+    // the wheel). Done once at load; per-frame draws stay as plain drawImage.
+    const baked = document.createElement('canvas');
+    baked.width = sheetW;
+    baked.height = sheetH;
+    const bctx = baked.getContext('2d');
+    bctx.drawImage(img, 0, 0);
+    const px = bctx.getImageData(0, 0, sheetW, sheetH);
+    const d = px.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      d[i + 3] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    }
+    bctx.putImageData(px, 0, 0);
+    flameSheet = {
+      image: baked,
+      frames: FLAME_FRAMES,
+      frameW: sheetW / FLAME_FRAMES,
+      frameH: sheetH,
+    };
+  } catch (e) {
+    flameSheet = null;
+  }
+}
+
+export function getFlameSheet() {
+  return flameSheet;
 }
 
 export function getLanternSprite(colorKey) {
@@ -425,3 +467,71 @@ export async function loadMoonTexture() {
     moonTexture = cropMoonToDisc(img);
   } catch (_) { moonTexture = null; }
 }
+
+const WHEEL_SRC = 'img/cradle-wheel.png';
+
+// Source PNGs are realistic black-ink wash drawings. We collapse luminance
+// onto the same flat night-indigo tint the bamboo grove sprites use, so the
+// cradle reads as part of the painted silhouette backdrop rather than a
+// separately-lit warm-brown object. Alpha still varies smoothly along the
+// edges (see bakeHarness), so the harness retains its drawn shape — just in
+// one flat color matching the trees behind it.
+const HARNESS_TONES = [
+  { t: 256, r: 10, g: 18, b: 48 }, // PALETTE.bambooSilhouette / BAMBOO_TINT
+];
+
+function bakeHarness(img) {
+  const w = img.naturalWidth  || img.width;
+  const h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0);
+  let imgData;
+  try {
+    imgData = cx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return c;
+  }
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const br = (d[i] + d[i+1] + d[i+2]) / 3;
+    let alpha = d[i+3];
+    if (br < 12) {
+      alpha = 0;
+    } else if (br < 30) {
+      const t = (br - 12) / 18;
+      alpha = Math.round(alpha * t);
+    }
+    if (alpha === 0) {
+      d[i+3] = 0;
+      continue;
+    }
+    let tone = HARNESS_TONES[HARNESS_TONES.length - 1];
+    for (let k = 0; k < HARNESS_TONES.length; k++) {
+      if (br < HARNESS_TONES[k].t) { tone = HARNESS_TONES[k]; break; }
+    }
+    d[i]   = tone.r;
+    d[i+1] = tone.g;
+    d[i+2] = tone.b;
+    d[i+3] = alpha;
+  }
+  cx.putImageData(imgData, 0, 0);
+  return c;
+}
+
+export async function loadHarnessSprite() {
+  try {
+    const imgWheel = await loadImage(WHEEL_SRC);
+    const canvasWheel = bakeHarness(imgWheel);
+    record('launcher_wheel', canvasWheel, measureBbox(canvasWheel));
+  } catch (e) {
+    console.warn('[moon-lit] failed to load mechanical launcher wheel sprite', e);
+  }
+}
+
+export function getLauncherWheelSprite() {
+  return sprites['launcher_wheel'] || null;
+}
+

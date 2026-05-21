@@ -23,7 +23,11 @@ export function serializeGame(g) {
     score: g.score,
     aimAngle: g.aimAngle,
     phase: g.phase,
-    queue: { current: g.queue.current, next: g.queue.next },
+    queue: {
+      current:   g.queue.current,
+      next:      g.queue.next,
+      afterNext: g.queue.afterNext,
+    },
     breakdown: { ...g.breakdown },
     counts: { ...g.counts },
     combo: g.combo,
@@ -76,7 +80,8 @@ function migrateV1ToV2(state) {
     version: 2,
     queue: state.queue ? {
       current: mapColor(state.queue.current),
-      next: mapColor(state.queue.next)
+      next: mapColor(state.queue.next),
+      afterNext: state.queue.afterNext ? mapColor(state.queue.afterNext) : undefined
     } : undefined,
     board: state.board ? {
       ...state.board,
@@ -92,7 +97,8 @@ function migrateV2ToV3(state) {
     version: 3,
     queue: state.queue ? {
       current: mapColor(state.queue.current),
-      next: mapColor(state.queue.next)
+      next: mapColor(state.queue.next),
+      afterNext: state.queue.afterNext ? mapColor(state.queue.afterNext) : undefined
     } : undefined,
     board: state.board ? {
       ...state.board,
@@ -108,7 +114,8 @@ function migrateV3ToV4(state) {
     version: 4,
     queue: state.queue ? {
       current: mapColor(state.queue.current),
-      next: mapColor(state.queue.next)
+      next: mapColor(state.queue.next),
+      afterNext: state.queue.afterNext ? mapColor(state.queue.afterNext) : undefined
     } : undefined,
     board: state.board ? {
       ...state.board,
@@ -167,13 +174,18 @@ export function restoreGame(saved) {
   
   const queueCurrent = mapColor(migrated.queue?.current || COLOR_KEYS[0]);
   const queueNext = mapColor(migrated.queue?.next || COLOR_KEYS[1]);
+  // Older saves predate the third magazine slot; fall back to a deterministic
+  // pick so the on-deck lantern has something to rotate up the first time.
+  const queueAfterNext = mapColor(
+    migrated.queue?.afterNext || COLOR_KEYS[2] || COLOR_KEYS[0]
+  );
 
   return {
     rng,
     board,
     phase: migrated.phase || 'aiming',
     aimAngle: migrated.aimAngle || 0,
-    queue: { current: queueCurrent, next: queueNext },
+    queue: { current: queueCurrent, next: queueNext, afterNext: queueAfterNext },
     shot: null,
     score: migrated.score | 0,
     effects: [],
