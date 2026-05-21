@@ -429,6 +429,19 @@ export async function loadMoonTexture() {
 const BASE_SRC = 'img/cradle-base.png';
 const WHEEL_SRC = 'img/cradle-wheel.png';
 
+// Source PNGs are realistic black-ink wash drawings. We re-tone luminance into
+// a moonlit version of the night-festival palette: the cradle sits dim under
+// the sky, with only the top edges catching faint moonHalo and a touch of
+// lantern warmth. Thresholds are biased high so most of the silhouette stays
+// in the deep-brown range; only true highlights bloom warm.
+const HARNESS_TONES = [
+  { t:  80, r:  34, g:  24, b:  14 }, // ink lines, lashings — deeper than PALETTE.launcher
+  { t: 140, r:  58, g:  41, b:  22 }, // bamboo shadow — PALETTE.launcher
+  { t: 195, r:  92, g:  67, b:  34 }, // bamboo body — PALETTE.trellisKnot
+  { t: 235, r: 150, g: 115, b:  68 }, // moonlit edge — muted moonHalo (warm dim)
+  { t: 256, r: 200, g: 160, b: 105 }, // catchlight — softened paper/moonHalo blend
+];
+
 function bakeHarness(img) {
   const w = img.naturalWidth  || img.width;
   const h = img.naturalHeight || img.height;
@@ -445,17 +458,25 @@ function bakeHarness(img) {
   }
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
-    const r = d[i];
-    const g = d[i+1];
-    const b = d[i+2];
-    const br = (r + g + b) / 3;
+    const br = (d[i] + d[i+1] + d[i+2]) / 3;
     let alpha = d[i+3];
     if (br < 12) {
       alpha = 0;
     } else if (br < 30) {
       const t = (br - 12) / 18;
-      alpha = Math.round(d[i+3] * t);
+      alpha = Math.round(alpha * t);
     }
+    if (alpha === 0) {
+      d[i+3] = 0;
+      continue;
+    }
+    let tone = HARNESS_TONES[HARNESS_TONES.length - 1];
+    for (let k = 0; k < HARNESS_TONES.length; k++) {
+      if (br < HARNESS_TONES[k].t) { tone = HARNESS_TONES[k]; break; }
+    }
+    d[i]   = tone.r;
+    d[i+1] = tone.g;
+    d[i+2] = tone.b;
     d[i+3] = alpha;
   }
   cx.putImageData(imgData, 0, 0);

@@ -1948,44 +1948,32 @@ function drawBambooFork(ctx, r) {
 
   ctx.save();
 
-  // --- Left tine ---
-  const lGrad = ctx.createLinearGradient(-tineLen, 0, -gapHalf, 0);
-  lGrad.addColorStop(0,   '#7A6545');
-  lGrad.addColorStop(0.3, '#B09060');
-  lGrad.addColorStop(0.6, '#C8A870');
-  lGrad.addColorStop(1,   '#A08050');
-  ctx.fillStyle = lGrad;
-  ctx.beginPath();
-  ctx.roundRect(-tineLen, -thick / 2, tineLen - gapHalf, thick, thick / 3);
-  ctx.fill();
+  // Flat painted bamboo, dimmed to feel moonlit: the body sits in the deep
+  // shadow range, only the top edge catches a muted warm moonHalo, and the
+  // underside disappears into near-ink. No gradients — reads as illustration.
+  const body    = PALETTE.trellisKnot;     // bamboo body (dim)
+  const hilite  = 'rgb(150, 115, 68)';     // muted moonlit edge
+  const shadow  = 'rgb(34, 24, 14)';       // underside shadow (below launcher)
+  const ink     = 'rgb(34, 24, 14)';       // node rings + lashings
+  const hl = thick * 0.28;
 
-  // --- Right tine (mirrored gradient) ---
-  const rGrad = ctx.createLinearGradient(gapHalf, 0, tineLen, 0);
-  rGrad.addColorStop(0,   '#A08050');
-  rGrad.addColorStop(0.4, '#C8A870');
-  rGrad.addColorStop(0.7, '#B09060');
-  rGrad.addColorStop(1,   '#7A6545');
-  ctx.fillStyle = rGrad;
-  ctx.beginPath();
-  ctx.roundRect(gapHalf, -thick / 2, tineLen - gapHalf, thick, thick / 3);
-  ctx.fill();
+  for (const sign of [-1, 1]) {
+    const x0 = sign < 0 ? -tineLen : gapHalf;
+    const w  = tineLen - gapHalf;
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.roundRect(x0, -thick / 2, w, thick, thick / 3);
+    ctx.fill();
+    ctx.fillStyle = hilite;
+    ctx.fillRect(x0 + thick * 0.3, -thick / 2 + hl * 0.15, w - thick * 0.6, hl);
+    ctx.fillStyle = shadow;
+    ctx.fillRect(x0 + thick * 0.3, thick / 2 - hl - hl * 0.15, w - thick * 0.6, hl);
+  }
 
-  // --- Highlight stripe along top edge (light reflection) ---
-  const hl = thick * 0.22;
-  ctx.fillStyle = 'rgba(215, 190, 145, 0.45)';
-  ctx.fillRect(-tineLen + thick * 0.3, -thick / 2, tineLen - gapHalf - thick * 0.6, hl);
-  ctx.fillRect(gapHalf + thick * 0.3, -thick / 2, tineLen - gapHalf - thick * 0.6, hl);
-
-  // --- Shadow stripe along bottom edge ---
-  ctx.fillStyle = 'rgba(50, 35, 15, 0.35)';
-  ctx.fillRect(-tineLen + thick * 0.3, thick / 2 - hl, tineLen - gapHalf - thick * 0.6, hl);
-  ctx.fillRect(gapHalf + thick * 0.3, thick / 2 - hl, tineLen - gapHalf - thick * 0.6, hl);
-
-  // --- Bamboo node bands (darker rings at intervals) ---
-  ctx.strokeStyle = '#6B5535';
-  ctx.lineWidth = Math.max(1, thick * 0.12);
-  const nodePositions = [-tineLen * 0.85, -tineLen * 0.50, tineLen * 0.50, tineLen * 0.85];
-  for (const nx of nodePositions) {
+  // Node bands — short dark strokes painted across the cane.
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = Math.max(1, thick * 0.14);
+  for (const nx of [-tineLen * 0.85, -tineLen * 0.50, tineLen * 0.50, tineLen * 0.85]) {
     if (Math.abs(nx) > gapHalf + thick * 0.3) {
       ctx.beginPath();
       ctx.moveTo(nx, -thick / 2 - 0.5);
@@ -1994,8 +1982,8 @@ function drawBambooFork(ctx, r) {
     }
   }
 
-  // --- Rope lashing where tines meet the spoke ---
-  ctx.strokeStyle = '#8B7355';
+  // Rope lashing where the tines meet the spoke — same trellisKnot ink.
+  ctx.strokeStyle = ink;
   ctx.lineWidth = Math.max(1.5, thick * 0.18);
   for (const nx of [-gapHalf - thick * 0.15, gapHalf + thick * 0.15]) {
     for (let dy = -thick * 0.8; dy <= thick * 0.8; dy += thick * 0.4) {
@@ -2027,10 +2015,14 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
   }
 
   // 2. Wheel rotation progress (smooth 90-degree transition)
+  //   Animate to ±π/2 during the first 0.4s of FLYING, then HOLD there until
+  //   the projectile lands and the queue advances. Snapping back to 0 mid-
+  //   flight would leave the new top fork (theta_mount=-π/2) empty, since it
+  //   only draws current during AIMING — see lantern visibility check below.
   const t_launch = tSec - (game.lastLaunchTime || 0);
   let wheelAngle = 0;
-  if (t_launch >= 0 && t_launch < 0.40) {
-    const p = t_launch / 0.40;
+  if (game.phase === PHASE.FLYING) {
+    const p = Math.min(1, t_launch / 0.40);
     const ease = 1 - Math.pow(1 - p, 3); // cubic ease out
     wheelAngle = (handedness === 'right' ? -Math.PI / 2 : Math.PI / 2) * ease;
   }
@@ -2050,9 +2042,14 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
   const R_wheel = dw / 2;
   const R_mount = R_wheel * 0.85; // mounting radius
 
+  // Lift the entire cradle so the wheel hub and axle peg sit above the
+  // waterline. tipY is intentionally a touch below deadLineY (lantern hovers
+  // on the surface); without this lift the wheel and stand are submerged.
+  const cradleLift = r * 0.6;
+
   // Axle center position relative to tip
   const x_wheel = bobY === 0 ? 0 : swayX;
-  const y_wheel = d_hinge_lantern + R_mount + bobY;
+  const y_wheel = d_hinge_lantern + R_mount + bobY - cradleLift;
 
   // Axle Base stand scaling
   const bw = r * 5.0;
@@ -2090,21 +2087,24 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
     const pilotTipY = y_wheel - R_mount + fuelPelletBelow;
     const postBaseY = y_wheel;  // starts at the hub
 
-    // Draw the thin bamboo post
+    // Painted bamboo post — dim body + a muted moonlit edge stripe. The top
+    // cup catches a touch of lantern warmth from the flame just above it.
     ctx.save();
     const postW = r * 0.07;
-    const postGrad = ctx.createLinearGradient(pilotX - postW, 0, pilotX + postW, 0);
-    postGrad.addColorStop(0,   '#7A6545');
-    postGrad.addColorStop(0.4, '#B09060');
-    postGrad.addColorStop(0.6, '#C8A870');
-    postGrad.addColorStop(1,   '#7A6545');
-    ctx.fillStyle = postGrad;
+    ctx.fillStyle = PALETTE.trellisKnot;
     ctx.fillRect(pilotX - postW / 2, pilotTipY, postW, postBaseY - pilotTipY);
+    ctx.fillStyle = 'rgb(150, 115, 68)';
+    ctx.fillRect(pilotX - postW * 0.35, pilotTipY, postW * 0.22, postBaseY - pilotTipY);
 
-    // Draw a small copper cup/brazier at the post tip
-    ctx.fillStyle = '#9B7340';
+    // Brazier cup at the post tip — sits dim except for a warm rim where the
+    // pilot flame above licks it.
+    ctx.fillStyle = 'rgb(34, 24, 14)';
     ctx.beginPath();
     ctx.ellipse(pilotX, pilotTipY, r * 0.12, r * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgb(180, 120, 60)';
+    ctx.beginPath();
+    ctx.ellipse(pilotX, pilotTipY - r * 0.012, r * 0.085, r * 0.025, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -2118,6 +2118,13 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
   ctx.save();
   ctx.translate(x_wheel, y_wheel);
 
+  // Scale interpolation: as the wheel rotates, the outgoing top fork shrinks
+  // 1.0 → 0.70 and the incoming "next" fork grows 0.70 → 1.0, so the lantern
+  // arrives at the top already at full size instead of popping.
+  const SCALE_TOP = 1.0;
+  const SCALE_SIDE = 0.70;
+  const rotProgress = Math.abs(wheelAngle) / (Math.PI / 2);
+
   const mountAngles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
   for (let i = 0; i < 4; i++) {
     const theta_mount = mountAngles[i];
@@ -2127,15 +2134,20 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
     const py = R_mount * Math.sin(theta_world);
 
     const isTopFork = theta_mount === -Math.PI / 2;
+    const isNextFork = (handedness === 'right' && theta_mount === 0) ||
+                       (handedness === 'left' && theta_mount === Math.PI);
 
     // Save context to draw this fork
     ctx.save();
     ctx.translate(px, py);
 
-    // Apply scale factor: non-active forks are rendered 30% smaller (0.70 scale)
-    let pScale = 1.0;
-    if (!isTopFork) {
-      pScale = 0.70;
+    let pScale;
+    if (isTopFork) {
+      pScale = SCALE_TOP + (SCALE_SIDE - SCALE_TOP) * rotProgress;
+    } else if (isNextFork) {
+      pScale = SCALE_SIDE + (SCALE_TOP - SCALE_SIDE) * rotProgress;
+    } else {
+      pScale = SCALE_SIDE;
     }
     ctx.scale(pScale, pScale);
 
@@ -2151,10 +2163,14 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
 
     // Draw lantern held by the fork
     if (isTopFork) {
-      // Top fork: contains the active aiming lantern (current).
-      // The lantern rim rests on the fork; body extends upward.
-      // The fuel pellet has been ignited by the pilot flame.
-      if (game.phase === PHASE.AIMING) {
+      // Top fork: contains the active loaded lantern (current). Show it in
+      // every "between shots" phase, not just AIMING — settling and descending
+      // are brief, but the loaded lantern shouldn't pop out and back in.
+      const loadedVisible =
+        game.phase === PHASE.AIMING ||
+        game.phase === PHASE.SETTLING ||
+        game.phase === PHASE.DESCENDING;
+      if (loadedVisible) {
         ctx.save();
         ctx.translate(0, -d_hinge_lantern);
         ctx.rotate(-activeAim); // Keep lantern visually upright
