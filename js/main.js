@@ -107,6 +107,7 @@ let lastPhase = null;
 // until something happens.
 const INTERACTION_TAIL_MS = 1200;
 let lastInteractionMs = 0;
+let lastFrameTimeMs = performance.now();
 
 // Touch-primary devices target ~30fps instead of the browser's default 60fps
 // rAF cadence. The rAF callback still fires every screen refresh, but most
@@ -307,6 +308,7 @@ function isQuiescent() {
 }
 
 function frame(now) {
+  lastFrameTimeMs = performance.now();
   if (suspended || !layout) { rafId = 0; return; }
   if (TARGET_FRAME_MS && (now - lastFrameMs) < TARGET_FRAME_MS - 1) {
     rafId = requestAnimationFrame(frame);
@@ -344,7 +346,13 @@ function frame(now) {
 // asleep MUST call this so the change is actually drawn.
 function requestFrame() {
   if (suspended) return;
-  if (rafId) return;
+  if (rafId) {
+    if (performance.now() - lastFrameTimeMs > 500) {
+      console.warn(`[${GAME_ID}] rAF loop appears stuck (rafId=${rafId}, last frame ${Math.round(performance.now() - lastFrameTimeMs)}ms ago). Forcing wake-up.`);
+      forceRequestFrame();
+    }
+    return;
+  }
   lastTime = 0;
   rafId = requestAnimationFrame(frame);
 }
@@ -408,8 +416,19 @@ document.addEventListener('visibilitychange', () => {
     flushPersist();
     stopLoop();
   } else {
-    if (!suspended) forceRequestFrame();
+    suspended = false;
+    forceRequestFrame();
   }
+});
+
+window.addEventListener('pageshow', () => {
+  suspended = false;
+  forceRequestFrame();
+});
+
+window.addEventListener('focus', () => {
+  suspended = false;
+  forceRequestFrame();
 });
 
 // When the launcher imports a save, re-hydrate in place. Reset HUD tween
