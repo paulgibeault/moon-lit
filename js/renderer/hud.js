@@ -203,6 +203,12 @@ export function drawScoreHud(ctx, layout, game, settings) {
 // real moon overhead, so the chrome is part of the world, not pasted on it.
 function drawMoonGlyph(ctx, layout, settings, cx, cy, r) {
   ctx.save();
+  // Apply Southern Hemisphere 180-degree rotation around the glyph's center
+  if (layout && layout.handedness === 'left') {
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI);
+    ctx.translate(-cx, -cy);
+  }
   ctx.globalAlpha = HUD_OPACITY.strong;
   ctx.fillStyle = PALETTE.moon;
   ctx.beginPath();
