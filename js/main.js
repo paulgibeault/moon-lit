@@ -301,9 +301,7 @@ function isQuiescent() {
   if (game.phase !== PHASE.AIMING) return false;
   if (hasActiveEffects(game)) return false;
   if (!isHudSettled(game)) return false;
-  // Menu fade in/out and "still open" both need the loop alive — fade tween
-  // is view-only state outside the game model.
-  if (isMenuOpen()) return false;
+  // Menu fade in/out needs the loop alive — fade tween is view-only state outside the game model.
   if (!isMenuSettled()) return false;
   return true;
 }

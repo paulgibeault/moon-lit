@@ -8,9 +8,9 @@
 // and panel opacity; reduced motion snaps. The fade is included in
 // isMenuSettled so main.js's rAF idle check waits for it to land.
 
-import { PALETTE, COLORS, COLOR_KEYS, LEVELS, levelConfig } from '../constants.js';
+import { PALETTE, COLORS, COLOR_KEYS, LEVELS, levelConfig, PERF_CONFIG } from '../constants.js';
 import {
-  SERIF, SANS, HUD_OPACITY, hexToRgba, fontScaleOf,
+  SERIF, SANS, HUD_OPACITY, hexToRgba, fontScaleOf, PERF_MODE,
 } from './style.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
@@ -162,7 +162,7 @@ function drawMenuButton(ctx, layout, settings) {
 
   ctx.save();
   // Soft moon-halo halo behind the icon when open.
-  if (glow > 0.5) {
+  if (glow > 0.5 && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
     ctx.shadowColor = GOLD;
     ctx.shadowBlur = 12;
   }
@@ -588,8 +588,10 @@ function drawStageTile(ctx, x, y, w, h, level, currentLevel, data, fs) {
 
   // Border — cream hairline; current stage gets a gold ring with a small glow.
   if (isCurrent) {
-    ctx.shadowColor = GOLD;
-    ctx.shadowBlur = 8;
+    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = GOLD;
+      ctx.shadowBlur = 8;
+    }
     ctx.strokeStyle = hexToRgba(GOLD, 0.75);
     ctx.lineWidth = 1.4;
   } else if (cleared) {

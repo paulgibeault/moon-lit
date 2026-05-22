@@ -147,3 +147,11 @@ export function levelConfig(level) {
   const idx = Math.max(0, Math.min(LEVELS.length - 1, (level | 0) - 1));
   return LEVELS[idx];
 }
+
+// Performance and rendering optimizations configuration.
+export const PERF_CONFIG = {
+  // Controls whether hardware canvas shadowBlur is disabled on mobile/touch screens (pointer: coarse).
+  // Set to true to fully disable shadow blur on mobile for massive rendering speedups.
+  // Set to false to retain shadow blur on mobile despite potential thermal issues.
+  disableMobileShadows: true,
+};

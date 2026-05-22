@@ -1,8 +1,8 @@
-import { PALETTE } from '../constants.js';
+import { PALETTE, PERF_CONFIG } from '../constants.js';
 import { PHASE } from '../game.js';
 import {
   SERIF, SANS, HUD_OPACITY,
-  formatScore, hudPx, fontScaleOf, hexToRgba,
+  formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
 } from './style.js';
 import { getMoonState, drawPhaseShadow } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
@@ -186,8 +186,10 @@ export function drawScoreHud(ctx, layout, game, settings) {
   if (hudState.bestFlash > 0) {
     const a = hudState.bestFlash;
     ctx.save();
-    ctx.shadowColor = PALETTE.moonHalo;
-    ctx.shadowBlur = 20 * a;
+    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = PALETTE.moonHalo;
+      ctx.shadowBlur = 20 * a;
+    }
     ctx.fillStyle = `rgba(232, 183, 112, ${0.35 * a})`;
     ctx.font = `600 ${fontPx}px ${SERIF}`;
     ctx.fillText(scoreText, scoreTextX, 8);
@@ -239,7 +241,7 @@ function drawComboBadge(ctx, layout, game, settings, x, y, align) {
 
   // Soft glow that intensifies with combo — never bright enough to overpower
   // the score text above, just enough to register peripherally.
-  if (!settings.reducedMotion) {
+  if (!settings.reducedMotion && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
     ctx.shadowColor = PALETTE.moonHalo;
     ctx.shadowBlur = isPeak ? 10 : combo >= 4 ? 6 : 3;
   }

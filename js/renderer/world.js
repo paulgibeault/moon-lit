@@ -1,4 +1,4 @@
-import { COLORS, PALETTE } from '../constants.js';
+import { COLORS, PALETTE, PERF_CONFIG } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
 import { rippleBoost } from '../effects.js';
 import {
@@ -13,7 +13,7 @@ import { mulberry32 } from '../prng.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   easeOut, mixWithWhite, mixWithBlack, hexToRgba,
-  getEffectiveDpr,
+  getEffectiveDpr, PERF_MODE,
 } from './style.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
@@ -201,28 +201,68 @@ export function drawBackgroundSky(ctx, layout, settings) {
   }
 }
 
-export function drawStars(ctx, layout, settings) {
-  const { viewW: w, viewH: h } = layout;
-  // Starfield. ~110 cached dots, two size/alpha tiers, with ~7 slow twinklers.
-  // Drawn behind the moon (moon draws after this), so the moon overpaints any
-  // stars that happen to fall on its disc.
-  const reducedMotion = !!(settings && settings.reducedMotion);
-  const t = reducedMotion ? 0 : performance.now() / 1000;
+let starfieldCanvasCache = null;
+
+function ensureStarfieldCanvas(w, h, dpr, allStatic) {
+  const pw = Math.max(1, Math.floor(w * dpr));
+  const ph = Math.max(1, Math.floor(h * dpr));
+  if (starfieldCanvasCache &&
+      starfieldCanvasCache.canvas.width === pw &&
+      starfieldCanvasCache.canvas.height === ph &&
+      starfieldCanvasCache.allStatic === allStatic) {
+    return starfieldCanvasCache.canvas;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = pw;
+  canvas.height = ph;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   const stars = getStars(w, h);
   ctx.fillStyle = PALETTE.moon;
   for (let i = 0; i < stars.length; i++) {
     const s = stars[i];
-    let a = s.alpha;
-    if (s.twinkle && !reducedMotion) {
-      // Modulate 60..100% of baseline so twinklers never blink fully out.
-      a *= 0.6 + 0.4 * Math.sin(2 * Math.PI * s.freq * t + s.phase);
+    if (!allStatic && s.twinkle) {
+      continue;
     }
-    ctx.globalAlpha = a;
+    ctx.globalAlpha = s.alpha;
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+
+  starfieldCanvasCache = { canvas, allStatic };
+  return canvas;
+}
+
+export function drawStars(ctx, layout, settings) {
+  const { viewW: w, viewH: h } = layout;
+  const dpr = getEffectiveDpr();
+  const reducedMotion = !!(settings && settings.reducedMotion);
+  const useAllStatic = PERF_MODE || reducedMotion;
+
+  const starfieldCanvas = ensureStarfieldCanvas(w, h, dpr, useAllStatic);
+  ctx.drawImage(starfieldCanvas, 0, 0, w, h);
+
+  if (!useAllStatic) {
+    const t = performance.now() / 1000;
+    const stars = getStars(w, h);
+    ctx.fillStyle = PALETTE.moon;
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      if (s.twinkle) {
+        let a = s.alpha;
+        a *= 0.6 + 0.4 * Math.sin(2 * Math.PI * s.freq * t + s.phase);
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 let celestialCache = null;
@@ -1479,7 +1519,7 @@ export function drawReflections(ctx, layout, game, settings) {
     const length = Math.min(viewH - deadLineY, m.r * 3 + m.r * 9 * m.altitude);
     const reflectionTop = deadLineY + 1;
     const tNow = reducedMotion ? 0 : performance.now() / 1000;
-    const SLICES = 24;
+    const SLICES = PERF_MODE ? 12 : 24;
     const sliceH = length / SLICES;
     for (let i = 0; i < SLICES; i++) {
       const f = i / (SLICES - 1);
@@ -1529,7 +1569,7 @@ export function drawReflections(ctx, layout, game, settings) {
     ctx.translate(dx, reflectY);
     ctx.scale(1, -1);
     drawLantern(ctx, 0, 0, layout.size, l.color,
-      { lit: true, intensity: 0.55, phase: phaseOf(l), boost });
+      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true });
     ctx.restore();
   }
 
@@ -1553,7 +1593,7 @@ export function drawReflections(ctx, layout, game, settings) {
         ctx.translate(drawX, deadLineY + height);
         ctx.scale(1, -1);
         drawLantern(ctx, 0, 0, layout.size, shot.color,
-          { lit: true, intensity: ignite * 0.55, phase });
+          { lit: true, intensity: ignite * 0.55, phase, isReflection: true });
         ctx.restore();
       }
     }
@@ -1678,6 +1718,7 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const phase = opts && opts.phase != null ? opts.phase : 0;
   const boost = opts && opts.boost != null ? opts.boost : 0;
   const level = lit ? emberLevel(phase, intensity, boost) : 0;
+  const isReflection = opts && opts.isReflection;
 
   const sprite = getLanternSprite(colorKey);
   if (sprite) {
@@ -1693,6 +1734,14 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     // the lantern center in screen space. Anchor the fuel/flame there so they
     // sit at the flared mouth.
     const rimY = cy + dh * 0.44;
+    if (isReflection) {
+      if (lit) drawEmberHalo(ctx, cx, rimY, size, level);
+      const prevAlpha = ctx.globalAlpha;
+      ctx.globalAlpha = prevAlpha * LANTERN_PARAMS.opacity;
+      ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+      ctx.globalAlpha = prevAlpha;
+      return;
+    }
     if (lit) drawEmberHalo(ctx, cx, rimY, size, level);
     const prevAlpha = ctx.globalAlpha;
     ctx.globalAlpha = prevAlpha * LANTERN_PARAMS.opacity;
