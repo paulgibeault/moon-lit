@@ -3,7 +3,7 @@
 // positions, never mutate. The trellis (top wall) and side walls live in
 // `layout`; lantern positions live in `board.lanterns`.
 
-import { SETTLE_NUDGE_RAD } from './constants.js';
+import { SETTLE_NUDGE_RAD, COLLISION_TOLERANCE } from './constants.js';
 import { forEachLanternWithinSq } from './geometry.js';
 
 // Center of the launcher tip — origin of every shot.
@@ -17,7 +17,8 @@ export function launcherTip(layout) {
 // (x, y). Returns null if none. Used for both flight collision and the
 // in-arc sweep when nudging into a pocket.
 export function lanternCollision(board, x, y, r) {
-  const overlapSq = (2 * r) * (2 * r);
+  const colR = 2 * r * COLLISION_TOLERANCE;
+  const overlapSq = colR * colR;
   const reachSq = (3 * r) * (3 * r);
   let best = null, bestDistSq = Infinity;
   forEachLanternWithinSq(board, x, y, reachSq, (l, d2) => {
@@ -30,7 +31,8 @@ export function lanternCollision(board, x, y, r) {
 }
 
 function nearestOverlapping(board, x, y, r, exclude) {
-  const overlapSq = (2 * r) * (2 * r) - 1e-3;
+  const colR = 2 * r * COLLISION_TOLERANCE;
+  const overlapSq = colR * colR - 1e-3;
   const reachSq = (3 * r) * (3 * r);
   let best = null, bestDistSq = Infinity;
   forEachLanternWithinSq(board, x, y, reachSq, (l, d2) => {
@@ -46,7 +48,8 @@ function nearestOverlapping(board, x, y, r, exclude) {
 // before crossing the trellis line. Used to disambiguate when a step crosses
 // both: the projectile should resolve against whichever it touched first.
 function hitsBeforeTrellis(x0, y0, x1, y1, lantern, r, trellisY) {
-  const lanternT = segmentToCircleT(x0, y0, x1, y1, lantern.x, lantern.y, 2 * r);
+  const colR = 2 * r * COLLISION_TOLERANCE;
+  const lanternT = segmentToCircleT(x0, y0, x1, y1, lantern.x, lantern.y, colR);
   if (lanternT == null) return false;
   const dy = y1 - y0;
   if (Math.abs(dy) < 1e-9) return true;
@@ -69,7 +72,7 @@ function segmentToCircleT(x0, y0, x1, y1, cx, cy, radius) {
 function backupSegmentToCircle(x0, y0, x1, y1, cx, cy, radius) {
   const t = segmentToCircleT(x0, y0, x1, y1, cx, cy, radius);
   if (t == null) return { x: x0, y: y0 };
-  const tc = Math.max(0, Math.min(1, t));
+  const tc = Math.max(-0.5, Math.min(1, t));
   return { x: x0 + tc * (x1 - x0), y: y0 + tc * (y1 - y0) };
 }
 
@@ -194,7 +197,7 @@ export function traceFromShot(layout, board, shot, distance, dtSec) {
 export function traceAimLine(layout, board, angle, maxBounces = 1) {
   const origin = launcherTip(layout);
   const r = layout.size;
-  const stepSize = Math.max(1, r * 0.4);
+  const stepSize = Math.max(1, r * 0.25);
   const maxSteps = 4000;
 
   const points = [{ x: origin.x, y: origin.y }];

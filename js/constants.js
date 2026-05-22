@@ -62,7 +62,13 @@ export const LANE_LANTERNS = 1.0;
 // centers are within (2 * radius * this factor). >1 forgives small float gaps
 // and the fact that lamp sprites are drawn taller than 2*radius, so visually
 // overlapping lamps can sit slightly past pure circle-contact.
-export const ADJACENCY_TOLERANCE = 1.15;
+export const ADJACENCY_TOLERANCE = 1.22;
+
+// Scale factor for projectile-to-lantern collision checking. <1 allows the
+// projectile to "sneak" through tight visual gaps slightly before registering
+// a collision, reducing frustrating "snags" on nearby corners.
+export const COLLISION_TOLERANCE = 0.95;
+
 
 // Local settle: when a new lantern lands, its 2-hop neighborhood is allowed
 // to slide to absorb the impact. Top-row lanterns are pinned (anchored to
