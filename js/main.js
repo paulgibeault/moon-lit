@@ -351,6 +351,19 @@ function requestFrame() {
   rafId = requestAnimationFrame(frame);
 }
 
+// Force-wake the rAF loop, cancelling any potentially stale or discarded
+// requestAnimationFrame ID from the browser before scheduling a new one.
+// Essential for resuming reliably after device locks / tab suspensions.
+function forceRequestFrame() {
+  if (suspended) return;
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+  lastTime = 0;
+  rafId = requestAnimationFrame(frame);
+}
+
 function bumpInteraction() {
   lastInteractionMs = performance.now();
   requestFrame();
@@ -381,7 +394,7 @@ Arcade.onSuspend(() => {
 });
 Arcade.onResume(() => {
   suspended = false;
-  requestFrame();
+  forceRequestFrame();
 });
 window.addEventListener('pagehide', () => {
   flushPersist();
@@ -397,7 +410,7 @@ document.addEventListener('visibilitychange', () => {
     flushPersist();
     stopLoop();
   } else {
-    if (!suspended) requestFrame();
+    if (!suspended) forceRequestFrame();
   }
 });
 
@@ -412,7 +425,7 @@ Arcade.onStateReplaced(() => {
   refreshMenuData();
   closeMenu();
   Arcade.ui.toast('save loaded', { kind: 'info' });
-  requestFrame();
+  forceRequestFrame();
 });
 
 Arcade.onSettingsChange(() => {
