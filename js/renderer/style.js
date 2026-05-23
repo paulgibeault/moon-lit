@@ -60,8 +60,18 @@ export function fontScaleOf(settings) {
 // indistinguishable from native 2-3× on a modern OLED panel — and the GPU/CPU
 // savings are large enough to noticeably extend battery life. Mouse-primary
 // devices keep full DPR / 60fps since they sit at typing distance.
-export const PERF_MODE =
+export let PERF_MODE =
   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+export function setPerfModeOverride(override) {
+  if (override === 'default') {
+    PERF_MODE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  } else if (override === 'high') {
+    PERF_MODE = false;
+  } else if (override === 'low') {
+    PERF_MODE = true;
+  }
+}
 
 const DPR_CAP = 1.5;
 export function getEffectiveDpr() {

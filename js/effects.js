@@ -3,7 +3,7 @@
 // draws them — this module is the model side: spawn, tick, and decide when
 // they're done.
 
-import { BURST_DURATION_SEC } from './constants.js';
+import { BURST_DURATION_SEC, ENV_PARAMS } from './constants.js';
 
 // Per-kind presentation tuning for floating score labels. Vertical rise and
 // life come from here; the renderer reads each kind's text/x/y/t/life.
@@ -77,9 +77,12 @@ export function spawnRipple(game, x, y, layout, { strength = 0.6, reach = 8 } = 
   if (!game.ripples) game.ripples = [];
   const nx = (x - layout.originX) / layout.size;
   const ny = (y - layout.trellisY - layout.size) / layout.size;
-  const life = reach / RIPPLE_SPEED + RIPPLE_PASS + RIPPLE_TAIL;
+  const speedScale = ENV_PARAMS.rippleSpeedScale || 1.0;
+  const speed = RIPPLE_SPEED * speedScale;
+  const pass = RIPPLE_PASS / speedScale;
+  const life = reach / speed + pass + RIPPLE_TAIL;
   game.ripples.push({
-    nx, ny, t: 0, life, strength, reach, speed: RIPPLE_SPEED, pass: RIPPLE_PASS,
+    nx, ny, t: 0, life, strength, reach, speed, pass,
   });
 }
 

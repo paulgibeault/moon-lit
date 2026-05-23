@@ -1,9 +1,9 @@
-import { GAME_ID } from './constants.js';
+import { GAME_ID, SYSTEM_OVERRIDES } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
-import { getEffectiveDpr, PERF_MODE } from './renderer/style.js';
+import { getEffectiveDpr, PERF_MODE, setPerfModeOverride } from './renderer/style.js';
 import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite } from './assets.js';
 import { syncLanternPixels } from './board.js';
@@ -115,7 +115,7 @@ let lastFrameTimeMs = performance.now();
 // phones for an animation-quality tradeoff that's near-invisible at arm's
 // length. The -1ms slack ensures refreshes that land just under the boundary
 // still count toward the next render.
-const TARGET_FRAME_MS = PERF_MODE ? 33 : 0;
+const targetFrameMs = () => (PERF_MODE ? 33 : 0);
 let lastFrameMs = 0;
 
 // Any phase except FLYING carries a fully resolved game state we can resume
@@ -209,7 +209,9 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const prevLayout = layout;
   layout = computeLayout(w, h);
-  layout.handedness = settings ? settings.handedness : 'right';
+  layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
+    ? SYSTEM_OVERRIDES.handedness
+    : (settings ? settings.handedness : 'right');
   if (!game) {
     bootstrapGame();
     return;
@@ -310,7 +312,8 @@ function isQuiescent() {
 function frame(now) {
   lastFrameTimeMs = performance.now();
   if (suspended || !layout) { rafId = 0; return; }
-  if (TARGET_FRAME_MS && (now - lastFrameMs) < TARGET_FRAME_MS - 1) {
+  const limitMs = targetFrameMs();
+  if (limitMs && (now - lastFrameMs) < limitMs - 1) {
     rafId = requestAnimationFrame(frame);
     return;
   }
@@ -448,7 +451,9 @@ Arcade.onStateReplaced(() => {
 Arcade.onSettingsChange(() => {
   settings = readSettings();
   if (layout) {
-    layout.handedness = settings.handedness;
+    layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
+      ? SYSTEM_OVERRIDES.handedness
+      : settings.handedness;
   }
   requestFrame();
 });
@@ -464,6 +469,18 @@ attachInput(canvas, () => game, () => layout, {
   // open so the panel reflects the latest run without a reload.
   onMenuChange: () => { refreshMenuData(); requestFrame(); },
 });
+window.triggerAdminUpdate = () => {
+  settings = readSettings();
+  setPerfModeOverride(SYSTEM_OVERRIDES.perfMode);
+  if (layout) {
+    layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
+      ? SYSTEM_OVERRIDES.handedness
+      : settings.handedness;
+  }
+  resize();
+  forceRequestFrame();
+};
+
 initAdminPanel();
 resize();
 requestFrame();

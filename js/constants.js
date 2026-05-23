@@ -62,12 +62,12 @@ export const LANE_LANTERNS = 1.0;
 // centers are within (2 * radius * this factor). >1 forgives small float gaps
 // and the fact that lamp sprites are drawn taller than 2*radius, so visually
 // overlapping lamps can sit slightly past pure circle-contact.
-export const ADJACENCY_TOLERANCE = 1.22;
+export let ADJACENCY_TOLERANCE = 1.22;
 
 // Scale factor for projectile-to-lantern collision checking. <1 allows the
 // projectile to "sneak" through tight visual gaps slightly before registering
 // a collision, reducing frustrating "snags" on nearby corners.
-export const COLLISION_TOLERANCE = 0.95;
+export let COLLISION_TOLERANCE = 0.95;
 
 
 // Local settle: when a new lantern lands, its 2-hop neighborhood is allowed
@@ -99,10 +99,10 @@ export const MIN_LANTERN_RADIUS = 4;
 // desktop one — a fixed px/sec runs ~2× faster on phones where lanterns are
 // half the size. Calibrated so a typical laptop r≈28 reproduces the
 // historical feel (PROJECTILE_SPEED ≈ 620 px/sec, DESCENT ≈ 240 px/sec).
-export const PROJECTILE_SPEED = 22;         // radii/sec
+export let PROJECTILE_SPEED = 22;         // radii/sec
 // Sized to one packed-row height (sqrt(3)*r) so the move reads as "shift
 // down by one row" — about 0.20s per row at this value.
-export const DESCENT_DRIFT_SPEED = 8.5;     // radii/sec
+export let DESCENT_DRIFT_SPEED = 8.5;     // radii/sec
 export const AIM_MIN_ANGLE = -85 * Math.PI / 180;
 export const AIM_MAX_ANGLE =  85 * Math.PI / 180;
 
@@ -126,7 +126,7 @@ export const BURST_SCALE = 2.0;
 
 export const M3_DEFAULT_SEED = 0x4D6F6F6E;   // 'Moon' in ASCII; placeholder until M7
 
-export const DESCENT_SHOTS = 6;
+export let DESCENT_SHOTS = 6;
 
 // Beginner-friendly opening curve. Stage 1 should be clearable on a
 // cold-start playthrough with no instructions; later stages ramp toward
@@ -155,3 +155,29 @@ export const PERF_CONFIG = {
   // Set to false to retain shadow blur on mobile despite potential thermal issues.
   disableMobileShadows: true,
 };
+
+// ─── Admin and Tuning overrides ──────────────────────────────────────────────
+export const MOON_OVERRIDE = {
+  phase: -1,     // -1 = live, 0..1 = synodic phase
+  position: -1,  // -1 = live, 0..1 = traverse-cycle position
+};
+
+export const ENV_PARAMS = {
+  windSpeed: 0.0,        // 0..2
+  windFrequency: 1.0,    // 0.1..3
+  glowIntensity: 1.0,    // 0..3
+  rippleSpeedScale: 1.0, // 0.2..3
+};
+
+export const SYSTEM_OVERRIDES = {
+  handedness: 'default', // 'default', 'left', 'right'
+  perfMode: 'default',   // 'default', 'high', 'low'
+};
+
+export function updateTuningParam(key, value) {
+  if (key === 'PROJECTILE_SPEED') PROJECTILE_SPEED = value;
+  else if (key === 'DESCENT_DRIFT_SPEED') DESCENT_DRIFT_SPEED = value;
+  else if (key === 'ADJACENCY_TOLERANCE') ADJACENCY_TOLERANCE = value;
+  else if (key === 'COLLISION_TOLERANCE') COLLISION_TOLERANCE = value;
+  else if (key === 'DESCENT_SHOTS') DESCENT_SHOTS = value;
+}

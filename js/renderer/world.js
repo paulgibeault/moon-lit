@@ -1,4 +1,4 @@
-import { COLORS, PALETTE, PERF_CONFIG } from '../constants.js';
+import { COLORS, PALETTE, PERF_CONFIG, MOON_OVERRIDE, ENV_PARAMS, SYSTEM_OVERRIDES } from '../constants.js';
 import { launcherTip, traceAimLine, PHASE } from '../game.js';
 import { rippleBoost } from '../effects.js';
 import {
@@ -87,7 +87,9 @@ function moonState(layout, settings, nowMs) {
       c.h === layout.viewH &&
       c.deadLineY === layout.deadLineY &&
       c.reducedMotion === reducedMotion &&
-      c.override === MOON_PARAMS.positionOverride) {
+      c.override === MOON_PARAMS.positionOverride &&
+      c.overridePos === MOON_OVERRIDE.position &&
+      c.overridePhase === MOON_OVERRIDE.phase) {
     return c.value;
   }
   const value = computeMoonState(layout, reducedMotion, nowMs);
@@ -98,6 +100,8 @@ function moonState(layout, settings, nowMs) {
     deadLineY: layout.deadLineY,
     reducedMotion,
     override: MOON_PARAMS.positionOverride,
+    overridePos: MOON_OVERRIDE.position,
+    overridePhase: MOON_OVERRIDE.phase,
     value,
   };
   return value;
@@ -109,7 +113,10 @@ function computeMoonState(layout, reducedMotion, nowMs) {
   const horizonY = deadLineY;
   const peakY = h * 0.10;
   const peakRise = horizonY - peakY;
-  const phase01 = (((nowMs - MOON_REF_NEW_MOON_MS) / MOON_SYNODIC_MS) % 1 + 1) % 1;
+  const overridePhase = MOON_OVERRIDE.phase;
+  const phase01 = overridePhase >= 0
+    ? Math.min(1.0, overridePhase)
+    : (((nowMs - MOON_REF_NEW_MOON_MS) / MOON_SYNODIC_MS) % 1 + 1) % 1;
 
   if (reducedMotion) {
     return {
@@ -122,9 +129,9 @@ function computeMoonState(layout, reducedMotion, nowMs) {
   // is the off-screen dip below the waterline. Admin override pins the
   // cycle to a specific point so the moon's position can be scrubbed in the
   // admin panel while iterating on the bleed/transparency look.
-  const override = MOON_PARAMS.positionOverride;
-  const tCycle = override >= 0
-    ? Math.min(1, override)
+  const overridePos = MOON_OVERRIDE.position >= 0 ? MOON_OVERRIDE.position : MOON_PARAMS.positionOverride;
+  const tCycle = overridePos >= 0
+    ? Math.min(1, overridePos)
     : ((nowMs / MOON_TRAVERSE_MS) % 1 + 1) % 1;
   let theta;
   if (tCycle <= MOON_VISIBLE_FRAC) {
@@ -193,8 +200,8 @@ export function drawBackgroundSky(ctx, layout, settings) {
   if (altGate > 0.02) {
     const bandR = Math.max(w, h) * 0.55;
     const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
-    band.addColorStop(0,   `rgba(232, 183, 112, ${(0.18 * altGate).toFixed(3)})`);
-    band.addColorStop(0.5, `rgba(232, 183, 112, ${(0.06 * altGate).toFixed(3)})`);
+    band.addColorStop(0,   `rgba(232, 183, 112, ${(0.18 * altGate * ENV_PARAMS.glowIntensity).toFixed(3)})`);
+    band.addColorStop(0.5, `rgba(232, 183, 112, ${(0.06 * altGate * ENV_PARAMS.glowIntensity).toFixed(3)})`);
     band.addColorStop(1,   'rgba(232, 183, 112, 0)');
     ctx.fillStyle = band;
     ctx.fillRect(0, 0, w, h);
@@ -473,8 +480,8 @@ export function drawMoon(ctx, layout, game, settings) {
     // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
     const outerR = r * (1.6 + 2.2 * k) * (reducedMotion ? 1 : breathR);
     const outer = ctx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
-    outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod).toFixed(3)})`);
-    outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod).toFixed(3)})`);
+    outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
+    outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
     outer.addColorStop(1,    'rgba(232, 183, 112, 0)');
     ctx.fillStyle = outer;
     ctx.beginPath();
@@ -486,7 +493,7 @@ export function drawMoon(ctx, layout, game, settings) {
     const haloBaseR = r * (1.1 + 1.1 * k + comboLift);
     const haloR = haloBaseR * (reducedMotion ? 1 : breathR);
     const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
-    const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA))));
+    const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA) * ENV_PARAMS.glowIntensity)));
     const rgbHalo = hexToRgb(PALETTE.moonHalo);
     const stop0Alpha = (haloAlpha / 255).toFixed(3);
     const stop1Alpha = ((haloAlpha * 0.13) / 255).toFixed(3);
@@ -504,7 +511,7 @@ export function drawMoon(ctx, layout, game, settings) {
     if (!reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life) {
       const tt = pulse.t / pulse.life;
       const pulseR = r * (2.4 + 1.6 * easeOut(tt));
-      const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod);
+      const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod * ENV_PARAMS.glowIntensity);
       const rgbMoon = hexToRgb(PALETTE.moon);
       const pHalo = ctx.createRadialGradient(hx, cy, r * 0.8, hx, cy, pulseR);
       pHalo.addColorStop(0, `rgba(${rgbMoon}, ${(pulseAlpha / 255).toFixed(3)})`);
@@ -535,8 +542,8 @@ export function drawMoon(ctx, layout, game, settings) {
       // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
       const outerR = r * (1.6 + 2.2 * k) * (reducedMotion ? 1 : breathR);
       const outer = gCtx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
-      outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod).toFixed(3)})`);
-      outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod).toFixed(3)})`);
+      outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
+      outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
       outer.addColorStop(1,    'rgba(232, 183, 112, 0)');
       gCtx.fillStyle = outer;
       gCtx.beginPath();
@@ -548,7 +555,7 @@ export function drawMoon(ctx, layout, game, settings) {
       const haloBaseR = r * (1.1 + 1.1 * k + comboLift);
       const haloR = haloBaseR * (reducedMotion ? 1 : breathR);
       const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
-      const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA))));
+      const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA) * ENV_PARAMS.glowIntensity)));
       const rgbHalo = hexToRgb(PALETTE.moonHalo);
       const stop0Alpha = (haloAlpha / 255).toFixed(3);
       const stop1Alpha = ((haloAlpha * 0.13) / 255).toFixed(3);
@@ -566,7 +573,7 @@ export function drawMoon(ctx, layout, game, settings) {
       if (!reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life) {
         const tt = pulse.t / pulse.life;
         const pulseR = r * (2.4 + 1.6 * easeOut(tt));
-        const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod);
+        const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod * ENV_PARAMS.glowIntensity);
         const rgbMoon = hexToRgb(PALETTE.moon);
         const pHalo = gCtx.createRadialGradient(hx, cy, r * 0.8, hx, cy, pulseR);
         pHalo.addColorStop(0, `rgba(${rgbMoon}, ${(pulseAlpha / 255).toFixed(3)})`);
@@ -649,10 +656,10 @@ export function drawMoon(ctx, layout, game, settings) {
     // disc center toward warm cream, breathing with the same sinusoid as
     // the halo so disc and halo feel like one organism.
     ctx.globalCompositeOperation = 'screen';
-    const liftAlpha = (0.18 + (reducedMotion ? 0 : 0.06 * breath)) * phaseGlowMod;
+    const liftAlpha = (0.18 + (reducedMotion ? 0 : 0.06 * breath)) * phaseGlowMod * ENV_PARAMS.glowIntensity;
     const lift = ctx.createRadialGradient(hx, cy, 0, hx, cy, r);
     lift.addColorStop(0,    `rgba(255, 236, 198, ${liftAlpha.toFixed(3)})`);
-    lift.addColorStop(0.65, `rgba(255, 220, 170, ${(0.05 * phaseGlowMod).toFixed(3)})`);
+    lift.addColorStop(0.65, `rgba(255, 220, 170, ${(0.05 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
     lift.addColorStop(1,    'rgba(255, 220, 170, 0)');
     ctx.fillStyle = lift;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
@@ -662,7 +669,7 @@ export function drawMoon(ctx, layout, game, settings) {
     ctx.fillStyle = PALETTE.moon;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
     const lift = ctx.createRadialGradient(hx, cy, 0, hx, cy, r);
-    lift.addColorStop(0, `rgba(255, 240, 205, ${(0.40 * phaseGlowMod).toFixed(3)})`);
+    lift.addColorStop(0, `rgba(255, 240, 205, ${(0.40 * phaseGlowMod * ENV_PARAMS.glowIntensity).toFixed(3)})`);
     lift.addColorStop(1, 'rgba(255, 240, 205, 0)');
     ctx.fillStyle = lift;
     ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
@@ -675,7 +682,7 @@ export function drawMoon(ctx, layout, game, settings) {
   ctx.globalCompositeOperation = 'lighter';
   const rim = ctx.createRadialGradient(cx, cy, r * 0.78, cx, cy, r * 1.0);
   rim.addColorStop(0, 'rgba(255, 220, 170, 0)');
-  rim.addColorStop(1, 'rgba(255, 220, 170, 0.45)');
+  rim.addColorStop(1, `rgba(255, 220, 170, ${(0.45 * ENV_PARAMS.glowIntensity).toFixed(3)})`);
   ctx.fillStyle = rim;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -752,7 +759,7 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY, handedness) {
   bx.rect(0, 0, viewW, deadLineY);
   bx.clip();
   const washR = m.r * (2.2 + 3.3 * k);
-  const washAlpha = 0.11 * m.altitude * phaseGlowMod;
+  const washAlpha = 0.11 * m.altitude * phaseGlowMod * ENV_PARAMS.glowIntensity;
   const wash = bx.createRadialGradient(hx, m.cy, m.r * 0.4, hx, m.cy, washR);
   wash.addColorStop(0,    `rgba(255, 220, 170, ${washAlpha.toFixed(3)})`);
   wash.addColorStop(0.45, `rgba(255, 200, 140, ${(washAlpha * 0.45).toFixed(3)})`);
@@ -775,7 +782,7 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY, handedness) {
       bx.translate(-m.cx, -m.cy);
     }
 
-    bx.globalAlpha = 0.22 * m.altitude;
+    bx.globalAlpha = 0.22 * m.altitude * ENV_PARAMS.glowIntensity;
     const d = m.r * 2.12;
     bx.drawImage(tex, m.cx - d / 2, m.cy - d / 2, d, d);
     bx.restore();
@@ -810,7 +817,7 @@ export function drawMoonBleed(ctx, layout, settings) {
   // 1% steps for altitude. Bamboo identity is included so a profile or level
   // switch invalidates the cached cutout. Include handedness to invalidate
   // cache instantly when switching hemispheres.
-  const key = `${Math.round(m.cx)}|${Math.round(m.cy)}|${(m.altitude * 100) | 0}|${viewW}|${viewH}|${dpr}|${bambooCache.key || ''}|${layout.handedness || 'right'}`;
+  const key = `${Math.round(m.cx)}|${Math.round(m.cy)}|${(m.altitude * 100) | 0}|${viewW}|${viewH}|${dpr}|${bambooCache.key || ''}|${layout.handedness || 'right'}|${ENV_PARAMS.glowIntensity}|${m.phase01}`;
   if (cache.key !== key) {
     paintBleed(cache.canvas, m, viewW, viewH, layout.deadLineY, layout.handedness);
     cache.key = key;
@@ -1809,6 +1816,26 @@ const DESCENT_TOTAL_NY = Math.sqrt(3);   // one packed-row in normalized units
 // sway travel across the field like a connected system reacting to the push
 // from above, rather than every lantern dancing solo. The incommensurate
 // frequencies (3.1, 4.2, 5.3, 6.9) avoid the lockstep that read as mechanical.
+function ambientWindSway(l, layout, tSec) {
+  const windSpeed = ENV_PARAMS.windSpeed || 0;
+  if (windSpeed <= 0) return null;
+  const phase = phaseOf(l);
+  const nx = l.nx || 0;
+  const ny = l.ny || 0;
+  const freq = ENV_PARAMS.windFrequency || 1.0;
+
+  // Compound sines for natural organic swaying motion
+  const swayX = Math.sin(tSec * 2.1 * freq + phase + ny * 1.2) * 0.50
+              + Math.sin(tSec * 3.7 * freq + phase * 1.5 + nx * 0.5) * 0.30;
+  const swayY = Math.cos(tSec * 1.8 * freq + phase * 0.8 + nx * 0.4) * 0.25;
+
+  const r = layout.size;
+  return {
+    dx: swayX * r * 0.12 * windSpeed,
+    dy: swayY * r * 0.05 * windSpeed,
+  };
+}
+
 function descentJitter(l, layout, board, tSec) {
   const animY = board.descentAnimY || 0;
   if (animY === 0) return null;
@@ -1857,6 +1884,9 @@ export function drawBoard(ctx, layout, game, settings) {
     if (animY !== 0 && !reducedMotion && !l.drown) {
       const j = descentJitter(l, layout, board, tSec);
       if (j) { dx += j.dx; dy += j.dy; }
+    } else if (!reducedMotion && !l.drown && ENV_PARAMS.windSpeed > 0) {
+      const wSway = ambientWindSway(l, layout, tSec);
+      if (wSway) { dx += wSway.dx; dy += wSway.dy; }
     }
     const boost = reducedMotion ? 0 : rippleBoost(game, l.nx, l.ny);
     if (spin) {
