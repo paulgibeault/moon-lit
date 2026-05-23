@@ -301,6 +301,16 @@ function ensureGlowCanvas(w, h, dpr) {
 export function drawCelestialLayer(ctx, layout, game, settings) {
   const { viewW, viewH } = layout;
   const dpr = getEffectiveDpr();
+
+  if (PERF_MODE) {
+    // A. Draw Stars, Moon, Reflections, and Waterline directly onto the main canvas
+    drawStars(ctx, layout, settings);
+    drawMoon(ctx, layout, game, settings);
+    drawReflections(ctx, layout, game, settings);
+    drawWaterline(ctx, layout);
+    return;
+  }
+
   const cCanvas = ensureCelestialCanvas(viewW, viewH, dpr);
   const cCtx = cCanvas.getContext('2d');
   cCtx.clearRect(0, 0, viewW, viewH);
@@ -449,32 +459,27 @@ export function drawMoon(ctx, layout, game, settings) {
   // Shift the radial gradients toward the illuminated crescent limb
   const hx = cx + (phase01 < 0.5 ? 1 : -1) * r * (1 - k) * 0.95;
 
-  // Halos always paint — even in reduced motion the moon must read as
-  // "vivid and warm." Only the breath modulation is suppressed in that mode.
-  const dpr = getEffectiveDpr();
-  const gCanvas = ensureGlowCanvas(layout.viewW, layout.viewH, dpr);
-  const gCtx = gCanvas.getContext('2d');
-  gCtx.clearRect(0, 0, layout.viewW, layout.viewH);
+  if (PERF_MODE) {
+    // Halos always paint — even in reduced motion the moon must read as
+    // "vivid and warm." Only the breath modulation is suppressed in that mode.
+    ctx.save();
+    // Apply Southern Hemisphere 180-degree rotation around the moon's center for shifted halos
+    if (layout && layout.handedness === 'left') {
+      ctx.translate(cx, cy);
+      ctx.rotate(Math.PI);
+      ctx.translate(-cx, -cy);
+    }
 
-  gCtx.save();
-  // Apply Southern Hemisphere 180-degree rotation around the moon's center for shifted halos
-  if (layout && layout.handedness === 'left') {
-    gCtx.translate(cx, cy);
-    gCtx.rotate(Math.PI);
-    gCtx.translate(-cx, -cy);
-  }
-
-  {
     // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
     const outerR = r * (1.6 + 2.2 * k) * (reducedMotion ? 1 : breathR);
-    const outer = gCtx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
+    const outer = ctx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
     outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod).toFixed(3)})`);
     outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod).toFixed(3)})`);
     outer.addColorStop(1,    'rgba(232, 183, 112, 0)');
-    gCtx.fillStyle = outer;
-    gCtx.beginPath();
-    gCtx.arc(hx, cy, outerR, 0, Math.PI * 2);
-    gCtx.fill();
+    ctx.fillStyle = outer;
+    ctx.beginPath();
+    ctx.arc(hx, cy, outerR, 0, Math.PI * 2);
+    ctx.fill();
 
     // Inner halo — tighter, hotter ring riding on the combo lift + breath.
     const comboLift = Math.min(1, combo / 6) * 0.55;
@@ -485,14 +490,14 @@ export function drawMoon(ctx, layout, game, settings) {
     const rgbHalo = hexToRgb(PALETTE.moonHalo);
     const stop0Alpha = (haloAlpha / 255).toFixed(3);
     const stop1Alpha = ((haloAlpha * 0.13) / 255).toFixed(3);
-    const halo = gCtx.createRadialGradient(hx, cy, r * 0.7, hx, cy, haloR);
+    const halo = ctx.createRadialGradient(hx, cy, r * 0.7, hx, cy, haloR);
     halo.addColorStop(0,    `rgba(${rgbHalo}, ${stop0Alpha})`);
     halo.addColorStop(0.55, `rgba(${rgbHalo}, ${stop1Alpha})`);
     halo.addColorStop(1,    `rgba(${rgbHalo}, 0)`);
-    gCtx.fillStyle = halo;
-    gCtx.beginPath();
-    gCtx.arc(hx, cy, haloR, 0, Math.PI * 2);
-    gCtx.fill();
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(hx, cy, haloR, 0, Math.PI * 2);
+    ctx.fill();
 
     // Milestone pulse: a single one-shot halo riding outward over its life.
     const pulse = game.moonPulse;
@@ -501,36 +506,99 @@ export function drawMoon(ctx, layout, game, settings) {
       const pulseR = r * (2.4 + 1.6 * easeOut(tt));
       const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod);
       const rgbMoon = hexToRgb(PALETTE.moon);
-      const pHalo = gCtx.createRadialGradient(hx, cy, r * 0.8, hx, cy, pulseR);
+      const pHalo = ctx.createRadialGradient(hx, cy, r * 0.8, hx, cy, pulseR);
       pHalo.addColorStop(0, `rgba(${rgbMoon}, ${(pulseAlpha / 255).toFixed(3)})`);
       pHalo.addColorStop(1, `rgba(${rgbMoon}, 0)`);
-      gCtx.fillStyle = pHalo;
-      gCtx.beginPath();
-      gCtx.arc(hx, cy, pulseR, 0, Math.PI * 2);
-      gCtx.fill();
+      ctx.fillStyle = pHalo;
+      ctx.beginPath();
+      ctx.arc(hx, cy, pulseR, 0, Math.PI * 2);
+      ctx.fill();
     }
+    ctx.restore();
+  } else {
+    // Halos always paint — even in reduced motion the moon must read as
+    // "vivid and warm." Only the breath modulation is suppressed in that mode.
+    const dpr = getEffectiveDpr();
+    const gCanvas = ensureGlowCanvas(layout.viewW, layout.viewH, dpr);
+    const gCtx = gCanvas.getContext('2d');
+    gCtx.clearRect(0, 0, layout.viewW, layout.viewH);
+
+    gCtx.save();
+    // Apply Southern Hemisphere 180-degree rotation around the moon's center for shifted halos
+    if (layout && layout.handedness === 'left') {
+      gCtx.translate(cx, cy);
+      gCtx.rotate(Math.PI);
+      gCtx.translate(-cx, -cy);
+    }
+
+    {
+      // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
+      const outerR = r * (1.6 + 2.2 * k) * (reducedMotion ? 1 : breathR);
+      const outer = gCtx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
+      outer.addColorStop(0,    `rgba(248, 206, 140, ${(0.34 * phaseGlowMod).toFixed(3)})`);
+      outer.addColorStop(0.35, `rgba(232, 183, 112, ${(0.16 * phaseGlowMod).toFixed(3)})`);
+      outer.addColorStop(1,    'rgba(232, 183, 112, 0)');
+      gCtx.fillStyle = outer;
+      gCtx.beginPath();
+      gCtx.arc(hx, cy, outerR, 0, Math.PI * 2);
+      gCtx.fill();
+
+      // Inner halo — tighter, hotter ring riding on the combo lift + breath.
+      const comboLift = Math.min(1, combo / 6) * 0.55;
+      const haloBaseR = r * (1.1 + 1.1 * k + comboLift);
+      const haloR = haloBaseR * (reducedMotion ? 1 : breathR);
+      const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
+      const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA))));
+      const rgbHalo = hexToRgb(PALETTE.moonHalo);
+      const stop0Alpha = (haloAlpha / 255).toFixed(3);
+      const stop1Alpha = ((haloAlpha * 0.13) / 255).toFixed(3);
+      const halo = gCtx.createRadialGradient(hx, cy, r * 0.7, hx, cy, haloR);
+      halo.addColorStop(0,    `rgba(${rgbHalo}, ${stop0Alpha})`);
+      halo.addColorStop(0.55, `rgba(${rgbHalo}, ${stop1Alpha})`);
+      halo.addColorStop(1,    `rgba(${rgbHalo}, 0)`);
+      gCtx.fillStyle = halo;
+      gCtx.beginPath();
+      gCtx.arc(hx, cy, haloR, 0, Math.PI * 2);
+      gCtx.fill();
+
+      // Milestone pulse: a single one-shot halo riding outward over its life.
+      const pulse = game.moonPulse;
+      if (!reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life) {
+        const tt = pulse.t / pulse.life;
+        const pulseR = r * (2.4 + 1.6 * easeOut(tt));
+        const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod);
+        const rgbMoon = hexToRgb(PALETTE.moon);
+        const pHalo = gCtx.createRadialGradient(hx, cy, r * 0.8, hx, cy, pulseR);
+        pHalo.addColorStop(0, `rgba(${rgbMoon}, ${(pulseAlpha / 255).toFixed(3)})`);
+        pHalo.addColorStop(1, `rgba(${rgbMoon}, 0)`);
+        gCtx.fillStyle = pHalo;
+        gCtx.beginPath();
+        gCtx.arc(hx, cy, pulseR, 0, Math.PI * 2);
+        gCtx.fill();
+      }
+    }
+
+    // Now apply the linear gradient mask on gCtx to make the glow directional.
+    // The glow fades out towards the unlit (dark) limb.
+    gCtx.globalCompositeOperation = 'destination-in';
+    
+    const litSign = phase01 < 0.5 ? 1 : -1;
+    const x_dark = cx - litSign * r * 1.4;
+    const x_lit = cx + litSign * r * 0.7;
+    
+    const maskGrad = gCtx.createLinearGradient(x_dark, cy, x_lit, cy);
+    // At x_dark, the mask alpha is k (illuminated fraction) to ensure that a full moon remains
+    // uniformly backlit, whereas a crescent or new moon has zero backlight on its dark side.
+    maskGrad.addColorStop(0, `rgba(0, 0, 0, ${k.toFixed(3)})`);
+    maskGrad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
+    
+    gCtx.fillStyle = maskGrad;
+    gCtx.fillRect(cx - r * 6, cy - r * 6, r * 12, r * 12);
+    gCtx.restore();
+
+    // Composite the masked offscreen glow canvas onto the main context
+    ctx.drawImage(gCanvas, 0, 0, layout.viewW, layout.viewH);
   }
-
-  // Now apply the linear gradient mask on gCtx to make the glow directional.
-  // The glow fades out towards the unlit (dark) limb.
-  gCtx.globalCompositeOperation = 'destination-in';
-  
-  const litSign = phase01 < 0.5 ? 1 : -1;
-  const x_dark = cx - litSign * r * 1.4;
-  const x_lit = cx + litSign * r * 0.7;
-  
-  const maskGrad = gCtx.createLinearGradient(x_dark, cy, x_lit, cy);
-  // At x_dark, the mask alpha is k (illuminated fraction) to ensure that a full moon remains
-  // uniformly backlit, whereas a crescent or new moon has zero backlight on its dark side.
-  maskGrad.addColorStop(0, `rgba(0, 0, 0, ${k.toFixed(3)})`);
-  maskGrad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
-  
-  gCtx.fillStyle = maskGrad;
-  gCtx.fillRect(cx - r * 6, cy - r * 6, r * 12, r * 12);
-  gCtx.restore();
-
-  // Composite the masked offscreen glow canvas onto the main context
-  ctx.drawImage(gCanvas, 0, 0, layout.viewW, layout.viewH);
 
   // Disc surface. Texture if loaded; otherwise a flat warm cream circle.
   // Clipped to (above waterline) ∩ (disc circle) so a setting/rising moon
@@ -616,7 +684,7 @@ export function drawMoon(ctx, layout, game, settings) {
 
   // Phase shadow — covers the unlit portion of the disc. Drawn AFTER the
   // disc, lift, and rim so it cleanly masks all of them.
-  drawPhaseShadow(ctx, cx, cy, r, phase01, layout);
+  drawPhaseShadow(ctx, cx, cy, r, phase01, PERF_MODE ? null : layout);
 
   // Mark altitude unused-on-purpose for ESLint-style readers; it's consumed
   // by the background wash and the reflection pass.
