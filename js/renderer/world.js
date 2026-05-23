@@ -2401,16 +2401,26 @@ const FLAME_FRAME_MS = 230;
 // the same frame, so consecutive draws agree on what "the current frame" is
 // while still appearing random across the run. Constrains adjacent frames to
 // be non-equal so the cross-fade always has something to interpolate.
-function flameFrameForCycle(i, total) {
+function rawHash(i, total) {
   let h = (i + 0x9E3779B9) | 0;
   h = Math.imul(h ^ (h >>> 16), 0x85EBCA6B);
   h = Math.imul(h ^ (h >>> 13), 0xC2B2AE35);
   h ^= h >>> 16;
-  const f = (h >>> 0) % total;
-  if (i > 0 && f === flameFrameForCycle(i - 1, total)) {
-    return (f + 1) % total;
+  return (h >>> 0) % total;
+}
+
+function flameFrameForCycle(i, total) {
+  if (i <= 0) return rawHash(0, total);
+  let prevResolved = rawHash(0, total);
+  for (let k = 1; k <= i; k++) {
+    const f = rawHash(k, total);
+    if (f === prevResolved) {
+      prevResolved = (f + 1) % total;
+    } else {
+      prevResolved = f;
+    }
   }
-  return f;
+  return prevResolved;
 }
 
 function drawHubFlame(ctx, cx, cy, r, tSec) {
@@ -2420,9 +2430,10 @@ function drawHubFlame(ctx, cx, cy, r, tSec) {
     return;
   }
   const phase = (tSec * 1000) / FLAME_FRAME_MS;
-  const cycle = Math.floor(phase);
+  const cycle = Math.floor(phase) % 256;
+  const nextCycle = (cycle + 1) % 256;
   const frameA = flameFrameForCycle(cycle,     sheet.frames);
-  const frameB = flameFrameForCycle(cycle + 1, sheet.frames);
+  const frameB = flameFrameForCycle(nextCycle, sheet.frames);
   const blend  = phase - cycle;
   // Smoothstep keeps each held frame "stable" through its middle and pushes
   // the perceived motion into the transition — feels less linear, more like
