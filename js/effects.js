@@ -73,6 +73,16 @@ const RIPPLE_SPEED = 12;   // lantern diameters per second
 const RIPPLE_PASS  = 0.45; // seconds each lamp stays lit as the wavefront passes
 const RIPPLE_TAIL  = 0.4;  // extra time the trailing edge fades after reaching the rim
 
+// Safety bound on concurrent ripples. Normal play (big pops, drops, combos)
+// keeps only a handful alive at once, so this never clips the celebration —
+// it exists purely to cap the drowning cinematic, where every lantern bubbles
+// on its own short interval and can otherwise pile up into the hundreds. Since
+// rippleBoost() is O(lanterns × ripples) and runs per lantern every frame,
+// an unbounded pile turns the death animation into a CPU spike. When the cap
+// is hit we drop the oldest ripple (the faintest, already fading out), so the
+// freshest wavefronts always render.
+const RIPPLE_MAX = 64;
+
 export function spawnRipple(game, x, y, layout, { strength = 0.6, reach = 8 } = {}) {
   if (!game.ripples) game.ripples = [];
   const nx = (x - layout.originX) / layout.size;
@@ -81,6 +91,7 @@ export function spawnRipple(game, x, y, layout, { strength = 0.6, reach = 8 } = 
   const speed = RIPPLE_SPEED * speedScale;
   const pass = RIPPLE_PASS / speedScale;
   const life = reach / speed + pass + RIPPLE_TAIL;
+  if (game.ripples.length >= RIPPLE_MAX) game.ripples.shift();
   game.ripples.push({
     nx, ny, t: 0, life, strength, reach, speed, pass,
   });

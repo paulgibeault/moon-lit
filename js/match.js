@@ -9,30 +9,31 @@ function adjThresholdSq(layout) {
   return d * d;
 }
 
-function neighborsOf(board, lantern, layout) {
-  const out = [];
-  forEachLanternWithinSq(board, lantern.x, lantern.y, adjThresholdSq(layout),
-    (other) => out.push(other), lantern);
-  return out;
-}
-
 // BFS from `seed` over same-color touching lanterns. Returns the cluster
 // (always includes the seed). Pure read — does not mutate.
+//
+// The neighbor scan is inlined (rather than via a neighborsOf() helper that
+// returns an array) so the BFS allocates nothing per node: the threshold is
+// hoisted out of the loop and a single visitor closure pushes touching
+// same-color lanterns straight into the queue. On a board that grows with
+// descents this is the per-shot hot path, so the per-node array + closure +
+// repeated threshold multiply it used to do are exactly what we want gone.
 export function findCluster(board, seed, layout) {
   if (!seed) return [];
   const color = seed.color;
+  const thresholdSq = adjThresholdSq(layout);
   const seen = new Set([seed]);
   const out = [seed];
   const queue = [seed];
+  const visit = (n) => {
+    if (seen.has(n) || n.color !== color) return;
+    seen.add(n);
+    out.push(n);
+    queue.push(n);
+  };
   while (queue.length) {
     const cur = queue.shift();
-    for (const n of neighborsOf(board, cur, layout)) {
-      if (seen.has(n)) continue;
-      if (n.color !== color) continue;
-      seen.add(n);
-      out.push(n);
-      queue.push(n);
-    }
+    forEachLanternWithinSq(board, cur.x, cur.y, thresholdSq, visit, cur);
   }
   return out;
 }
@@ -53,6 +54,7 @@ export function popMatches(board, seed, layout) {
 export function dropFloating(board, layout) {
   const r = layout.size;
   const anchorY = layout.trellisY + anchorBandPx(layout);
+  const thresholdSq = adjThresholdSq(layout);
   const seen = new Set();
   const queue = [];
   for (const l of board.lanterns) {
@@ -61,13 +63,16 @@ export function dropFloating(board, layout) {
       queue.push(l);
     }
   }
+  // Same inlined, allocation-free neighbor scan as findCluster: one hoisted
+  // threshold, one visitor closure, no per-node array.
+  const visit = (n) => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    queue.push(n);
+  };
   while (queue.length) {
     const cur = queue.shift();
-    for (const n of neighborsOf(board, cur, layout)) {
-      if (seen.has(n)) continue;
-      seen.add(n);
-      queue.push(n);
-    }
+    forEachLanternWithinSq(board, cur.x, cur.y, thresholdSq, visit, cur);
   }
   const dropped = [];
   const kept = [];

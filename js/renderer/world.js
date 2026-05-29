@@ -182,13 +182,25 @@ function getStars(w, h) {
   return stars;
 }
 
+// The base indigo gradient depends only on viewport height and constant
+// palette colors, yet fills the whole screen every frame — cache it and
+// rebuild only on a resize. The warm amber band tracks the moon, so it caches
+// against a bucketed position/altitude key (the moon drifts ~0.27 px/sec, so
+// rounding to integer px rebuilds it only every few seconds). drawBackgroundSky
+// only ever paints on the main canvas, so a single slot per gradient is safe.
+let skyBaseGrad = { ctx: null, h: 0, grad: null };
+let skyBandGrad = { ctx: null, key: '', grad: null };
+
 export function drawBackgroundSky(ctx, layout, settings) {
   const { viewW: w, viewH: h } = layout;
-  // Base indigo gradient — unchanged.
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, PALETTE.bgTop);
-  grad.addColorStop(1, PALETTE.bgBottom);
-  ctx.fillStyle = grad;
+  // Base indigo gradient — unchanged look, now reused across frames.
+  if (skyBaseGrad.ctx !== ctx || skyBaseGrad.h !== h) {
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, PALETTE.bgTop);
+    grad.addColorStop(1, PALETTE.bgBottom);
+    skyBaseGrad = { ctx, h, grad };
+  }
+  ctx.fillStyle = skyBaseGrad.grad;
   ctx.fillRect(0, 0, w, h);
 
   // Warm amber wash radiating from the moon's CURRENT position. Tracks the
@@ -198,12 +210,18 @@ export function drawBackgroundSky(ctx, layout, settings) {
   const m = moonState(layout, settings, Date.now());
   const altGate = Math.max(0, m.altitude);
   if (altGate > 0.02) {
+    const a0 = (0.18 * altGate * ENV_PARAMS.glowIntensity).toFixed(3);
+    const a1 = (0.06 * altGate * ENV_PARAMS.glowIntensity).toFixed(3);
     const bandR = Math.max(w, h) * 0.55;
-    const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
-    band.addColorStop(0,   `rgba(232, 183, 112, ${(0.18 * altGate * ENV_PARAMS.glowIntensity).toFixed(3)})`);
-    band.addColorStop(0.5, `rgba(232, 183, 112, ${(0.06 * altGate * ENV_PARAMS.glowIntensity).toFixed(3)})`);
-    band.addColorStop(1,   'rgba(232, 183, 112, 0)');
-    ctx.fillStyle = band;
+    const key = `${Math.round(m.cx)}|${Math.round(m.cy)}|${Math.round(m.r)}|${a0}|${a1}|${w}|${h}`;
+    if (skyBandGrad.ctx !== ctx || skyBandGrad.key !== key) {
+      const band = ctx.createRadialGradient(m.cx, m.cy, m.r * 0.6, m.cx, m.cy, bandR);
+      band.addColorStop(0,   `rgba(232, 183, 112, ${a0})`);
+      band.addColorStop(0.5, `rgba(232, 183, 112, ${a1})`);
+      band.addColorStop(1,   'rgba(232, 183, 112, 0)');
+      skyBandGrad = { ctx, key, grad: band };
+    }
+    ctx.fillStyle = skyBandGrad.grad;
     ctx.fillRect(0, 0, w, h);
   }
 }
@@ -288,20 +306,26 @@ function ensureCelestialCanvas(w, h, dpr) {
   return c;
 }
 
+// Cache shape mirrors bleedCache: { canvas, key }. The painted glow is fully
+// determined by moon position/phase/combo, the breath + pulse animation, and
+// the viewport, so drawMoon hashes those into `key` and only repaints the
+// offscreen when it changes — otherwise the per-frame cost is a single
+// drawImage composite instead of an offscreen clear + 3-4 radial gradients +
+// a directional mask. `key` resets to '' whenever the canvas is reallocated.
 let glowCanvasCache = null;
 
 function ensureGlowCanvas(w, h, dpr) {
   const pw = Math.max(1, Math.floor(w * dpr));
   const ph = Math.max(1, Math.floor(h * dpr));
   if (glowCanvasCache && glowCanvasCache.canvas.width === pw && glowCanvasCache.canvas.height === ph) {
-    return glowCanvasCache.canvas;
+    return glowCanvasCache;
   }
   const c = document.createElement('canvas');
   c.width = pw;
   c.height = ph;
   c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-  glowCanvasCache = { canvas: c };
-  return c;
+  glowCanvasCache = { canvas: c, key: '' };
+  return glowCanvasCache;
 }
 
 
@@ -526,19 +550,35 @@ export function drawMoon(ctx, layout, game, settings) {
     // Halos always paint — even in reduced motion the moon must read as
     // "vivid and warm." Only the breath modulation is suppressed in that mode.
     const dpr = getEffectiveDpr();
-    const gCanvas = ensureGlowCanvas(layout.viewW, layout.viewH, dpr);
+    const cache = ensureGlowCanvas(layout.viewW, layout.viewH, dpr);
+    const gCanvas = cache.canvas;
     const gCtx = gCanvas.getContext('2d');
-    gCtx.clearRect(0, 0, layout.viewW, layout.viewH);
 
-    gCtx.save();
-    // Apply Southern Hemisphere 180-degree rotation around the moon's center for shifted halos
-    if (layout && layout.handedness === 'left') {
-      gCtx.translate(cx, cy);
-      gCtx.rotate(Math.PI);
-      gCtx.translate(-cx, -cy);
-    }
+    // Cache key over every input the painting reads. Position rounds to integer
+    // px (the moon drifts sub-pixel/sec); the continuously-animated breath and
+    // the rare milestone pulse are bucketed so the offscreen rebuild is skipped
+    // on most frames. The breath quantum (1/60 ≈ 0.017) matches the 1% fidelity
+    // bleedCache uses — it moves the halo radius by 0.1% and its alpha by 0.25%
+    // per step, imperceptible — while collapsing the steady-state cost to one
+    // blit on the frames the breath sits near its turning points.
+    const pulse = game.moonPulse;
+    const pulseActive = !reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life;
+    const breathBucket = Math.round(breath * 60);
+    const pulseBucket = pulseActive ? Math.round((pulse.t / pulse.life) * 90) : -1;
+    const handed = (layout && layout.handedness === 'left') ? 'L' : 'R';
+    const key = `${Math.round(cx)}|${Math.round(cy)}|${Math.round(r)}|${phase01.toFixed(4)}|${combo}|${breathBucket}|${pulseBucket}|${reducedMotion ? 1 : 0}|${ENV_PARAMS.glowIntensity}|${handed}|${layout.viewW}|${layout.viewH}|${dpr}`;
 
-    {
+    if (cache.key !== key) {
+      gCtx.clearRect(0, 0, layout.viewW, layout.viewH);
+
+      gCtx.save();
+      // Apply Southern Hemisphere 180-degree rotation around the moon's center for shifted halos
+      if (layout && layout.handedness === 'left') {
+        gCtx.translate(cx, cy);
+        gCtx.rotate(Math.PI);
+        gCtx.translate(-cx, -cy);
+      }
+
       // Outer warm wash — wide, low-alpha amber that bleeds into the sky.
       const outerR = r * (1.6 + 2.2 * k) * (reducedMotion ? 1 : breathR);
       const outer = gCtx.createRadialGradient(hx, cy, r * 0.5, hx, cy, outerR);
@@ -569,8 +609,7 @@ export function drawMoon(ctx, layout, game, settings) {
       gCtx.fill();
 
       // Milestone pulse: a single one-shot halo riding outward over its life.
-      const pulse = game.moonPulse;
-      if (!reducedMotion && pulse && pulse.life > 0 && pulse.t < pulse.life) {
+      if (pulseActive) {
         const tt = pulse.t / pulse.life;
         const pulseR = r * (2.4 + 1.6 * easeOut(tt));
         const pulseAlpha = Math.round(0x66 * (1 - tt) * phaseGlowMod * ENV_PARAMS.glowIntensity);
@@ -583,25 +622,27 @@ export function drawMoon(ctx, layout, game, settings) {
         gCtx.arc(hx, cy, pulseR, 0, Math.PI * 2);
         gCtx.fill();
       }
-    }
 
-    // Now apply the linear gradient mask on gCtx to make the glow directional.
-    // The glow fades out towards the unlit (dark) limb.
-    gCtx.globalCompositeOperation = 'destination-in';
-    
-    const litSign = phase01 < 0.5 ? 1 : -1;
-    const x_dark = cx - litSign * r * 1.4;
-    const x_lit = cx + litSign * r * 0.7;
-    
-    const maskGrad = gCtx.createLinearGradient(x_dark, cy, x_lit, cy);
-    // At x_dark, the mask alpha is k (illuminated fraction) to ensure that a full moon remains
-    // uniformly backlit, whereas a crescent or new moon has zero backlight on its dark side.
-    maskGrad.addColorStop(0, `rgba(0, 0, 0, ${k.toFixed(3)})`);
-    maskGrad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
-    
-    gCtx.fillStyle = maskGrad;
-    gCtx.fillRect(cx - r * 6, cy - r * 6, r * 12, r * 12);
-    gCtx.restore();
+      // Now apply the linear gradient mask on gCtx to make the glow directional.
+      // The glow fades out towards the unlit (dark) limb.
+      gCtx.globalCompositeOperation = 'destination-in';
+
+      const litSign = phase01 < 0.5 ? 1 : -1;
+      const x_dark = cx - litSign * r * 1.4;
+      const x_lit = cx + litSign * r * 0.7;
+
+      const maskGrad = gCtx.createLinearGradient(x_dark, cy, x_lit, cy);
+      // At x_dark, the mask alpha is k (illuminated fraction) to ensure that a full moon remains
+      // uniformly backlit, whereas a crescent or new moon has zero backlight on its dark side.
+      maskGrad.addColorStop(0, `rgba(0, 0, 0, ${k.toFixed(3)})`);
+      maskGrad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
+
+      gCtx.fillStyle = maskGrad;
+      gCtx.fillRect(cx - r * 6, cy - r * 6, r * 12, r * 12);
+      gCtx.restore();
+
+      cache.key = key;
+    }
 
     // Composite the masked offscreen glow canvas onto the main context
     ctx.drawImage(gCanvas, 0, 0, layout.viewW, layout.viewH);
@@ -1672,15 +1713,24 @@ function drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH, rotation, hFl
 // to invisible at the screen edges so the bamboo-flanked banks read as
 // natural shoreline rather than meeting a hard horizon. Subtle by design —
 // the reflections below carry most of the "this is water" cue.
+// The specular line's gradient depends only on viewport width, so it's fully
+// static between resizes — cache it instead of rebuilding 60×/sec for a 1px
+// line. Keyed by context too, since the celestial offscreen (non-PERF) and the
+// main canvas (PERF) are distinct; only one is used per session.
+let waterlineGrad = { ctx: null, w: 0, grad: null };
+
 export function drawWaterline(ctx, layout) {
   const { viewW, deadLineY } = layout;
   ctx.save();
-  const g = ctx.createLinearGradient(0, 0, viewW, 0);
-  g.addColorStop(0.00, 'rgba(230, 240, 255, 0)');
-  g.addColorStop(0.35, 'rgba(230, 240, 255, 0.28)');
-  g.addColorStop(0.65, 'rgba(230, 240, 255, 0.28)');
-  g.addColorStop(1.00, 'rgba(230, 240, 255, 0)');
-  ctx.fillStyle = g;
+  if (waterlineGrad.ctx !== ctx || waterlineGrad.w !== viewW) {
+    const g = ctx.createLinearGradient(0, 0, viewW, 0);
+    g.addColorStop(0.00, 'rgba(230, 240, 255, 0)');
+    g.addColorStop(0.35, 'rgba(230, 240, 255, 0.28)');
+    g.addColorStop(0.65, 'rgba(230, 240, 255, 0.28)');
+    g.addColorStop(1.00, 'rgba(230, 240, 255, 0)');
+    waterlineGrad = { ctx, w: viewW, grad: g };
+  }
+  ctx.fillStyle = waterlineGrad.grad;
   ctx.fillRect(0, deadLineY, viewW, 1);
   ctx.restore();
 }
@@ -2028,21 +2078,80 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   ctx.stroke();
 }
 
+// Per-lantern glow gradients (ember halo, ember core, flame body + core) are
+// built at a LOCAL origin and reused via ctx.translate, so a single gradient
+// object serves every lantern at a given brightness instead of allocating ~6
+// gradients per lantern per frame. On a full board, drawn across both the
+// board pass and the reflection pass, that was hundreds of allocations (and
+// color-stop string parses) every frame — the dominant steady-state GC load.
+//
+// A canvas gradient is painted in the coordinate space active when it's USED,
+// not when created, so an origin-built gradient lands wherever we translate to.
+// The only per-lantern variable is the ember `level`, which scales alpha
+// linearly and grows the radius slightly; we quantize it to LEVEL_STEPS buckets
+// so near-identical brightnesses share a cached gradient. At 240 steps across
+// emberLevel's [0.05, 1.3] range the alpha/size quantum is far below
+// perceptible — the flicker still reads as smooth and continuous.
+//
+// Gradients are bound to the context that paints them, and in the non-PERF
+// path lanterns draw on BOTH the celestial offscreen (reflections) and the
+// main canvas (board) within one frame, so the cache is keyed by context via a
+// WeakMap. Each entry rebuilds only when the lantern `size` changes (a resize);
+// otherwise it fills buckets on demand and stays warm for the session.
+const LEVEL_STEPS = 240;
+const LEVEL_MIN = 0.05;
+const LEVEL_MAX = 1.3;
+const lanternGradCaches = new WeakMap();
+
+function lanternGrads(ctx, size) {
+  let c = lanternGradCaches.get(ctx);
+  if (!c || c.size !== size) {
+    c = {
+      size,
+      halo: new Array(LEVEL_STEPS + 1),
+      core: new Array(LEVEL_STEPS + 1),
+      flameOuter: new Array(LEVEL_STEPS + 1),
+      flameInner: new Array(LEVEL_STEPS + 1),
+      fuelSide: null,
+      fuelTop: null,
+    };
+    lanternGradCaches.set(ctx, c);
+  }
+  return c;
+}
+
+function levelBucket(level) {
+  const clamped = level < LEVEL_MIN ? LEVEL_MIN : level > LEVEL_MAX ? LEVEL_MAX : level;
+  return Math.round(((clamped - LEVEL_MIN) / (LEVEL_MAX - LEVEL_MIN)) * LEVEL_STEPS);
+}
+
+function bucketLevel(bucket) {
+  return LEVEL_MIN + (bucket / LEVEL_STEPS) * (LEVEL_MAX - LEVEL_MIN);
+}
+
 // Ambient warm bloom around the lantern, anchored at the flame so the bloom
 // hangs from the mouth instead of haloing the lantern body uniformly. The
 // reach is slightly larger than the lamp itself so neighboring lanterns share
 // in the warmth — that's the visual "lift" of a lit field.
 function drawEmberHalo(ctx, gx, gy, size, level) {
-  const r = size * (2.0 + 0.3 * level);
+  const cache = lanternGrads(ctx, size);
+  const b = levelBucket(level);
+  const ql = bucketLevel(b);
+  const r = size * (2.0 + 0.3 * ql);
+  let grad = cache.halo[b];
+  if (!grad) {
+    grad = ctx.createRadialGradient(0, 0, size * 0.1, 0, 0, r);
+    grad.addColorStop(0,    `rgba(255, 220, 150, ${0.32 * ql})`);
+    grad.addColorStop(0.40, `rgba(255, 175, 95,  ${0.13 * ql})`);
+    grad.addColorStop(1,    'rgba(255, 140, 50, 0)');
+    cache.halo[b] = grad;
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const grad = ctx.createRadialGradient(gx, gy, size * 0.1, gx, gy, r);
-  grad.addColorStop(0,    `rgba(255, 220, 150, ${0.32 * level})`);
-  grad.addColorStop(0.40, `rgba(255, 175, 95,  ${0.13 * level})`);
-  grad.addColorStop(1,    'rgba(255, 140, 50, 0)');
+  ctx.translate(gx, gy);
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(gx, gy, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -2051,16 +2160,24 @@ function drawEmberHalo(ctx, gx, gy, size, level) {
 // where the flame burns. 'lighter' compositing brightens the paper face from
 // within without overpainting it.
 function drawEmberCore(ctx, gx, gy, size, level) {
-  const r = size * (1.0 + 0.18 * level);
+  const cache = lanternGrads(ctx, size);
+  const b = levelBucket(level);
+  const ql = bucketLevel(b);
+  const r = size * (1.0 + 0.18 * ql);
+  let grad = cache.core[b];
+  if (!grad) {
+    grad = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    grad.addColorStop(0,   `rgba(255, 245, 200, ${0.38 * ql})`);
+    grad.addColorStop(0.5, `rgba(255, 180, 90,  ${0.18 * ql})`);
+    grad.addColorStop(1,   'rgba(255, 140, 50, 0)');
+    cache.core[b] = grad;
+  }
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
-  grad.addColorStop(0,   `rgba(255, 245, 200, ${0.38 * level})`);
-  grad.addColorStop(0.5, `rgba(255, 180, 90,  ${0.18 * level})`);
-  grad.addColorStop(1,   'rgba(255, 140, 50, 0)');
+  ctx.translate(gx, gy);
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.arc(gx, gy, r, 0, Math.PI * 2);
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -2075,45 +2192,56 @@ function drawFuelCore(ctx, gx, gy, size) {
   const topRy = size * 0.065;
   const sideH = size * 0.08;
 
+  // The fuel puck has no flicker dependence — its two gradients are fully
+  // determined by `size`, so build them once at the local origin and reuse
+  // them for every lantern, lit or not (this runs for the whole board each
+  // frame). The lanternGrads cache already invalidates on a size change.
+  const cache = lanternGrads(ctx, size);
+  if (!cache.fuelSide) {
+    const sideGrad = ctx.createLinearGradient(0, 0, 0, sideH);
+    sideGrad.addColorStop(0, '#1d0e06');
+    sideGrad.addColorStop(1, '#070302');
+    cache.fuelSide = sideGrad;
+    const topGrad = ctx.createRadialGradient(
+      0, -topRy * 0.55, 0,
+      0,  topRy * 0.35, halfW * 1.35,
+    );
+    topGrad.addColorStop(0,    '#9c5128');
+    topGrad.addColorStop(0.45, '#552410');
+    topGrad.addColorStop(1,    '#180a04');
+    cache.fuelTop = topGrad;
+  }
+
   ctx.save();
+  ctx.translate(gx, gy);
 
   // Bottom rim. Drawn first; only its front-bottom arc remains visible after
   // the side wall is painted on top.
   ctx.fillStyle = '#070302';
   ctx.beginPath();
-  ctx.ellipse(gx, gy + sideH, halfW, topRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, sideH, halfW, topRy, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // Cylindrical side wall. The path runs:
   //   left edge ↓ → bottom-rim front arc → right edge ↑ → top-rim front arc.
   // A vertical gradient dims the wall toward its base so the cylinder reads
   // as receding from the light above.
-  const sideGrad = ctx.createLinearGradient(gx, gy, gx, gy + sideH);
-  sideGrad.addColorStop(0, '#1d0e06');
-  sideGrad.addColorStop(1, '#070302');
-  ctx.fillStyle = sideGrad;
+  ctx.fillStyle = cache.fuelSide;
   ctx.beginPath();
-  ctx.moveTo(gx - halfW, gy);
-  ctx.lineTo(gx - halfW, gy + sideH);
-  ctx.ellipse(gx, gy + sideH, halfW, topRy, 0, Math.PI, 0, true);
-  ctx.lineTo(gx + halfW, gy);
-  ctx.ellipse(gx, gy, halfW, topRy, 0, 0, Math.PI, false);
+  ctx.moveTo(-halfW, 0);
+  ctx.lineTo(-halfW, sideH);
+  ctx.ellipse(0, sideH, halfW, topRy, 0, Math.PI, 0, true);
+  ctx.lineTo(halfW, 0);
+  ctx.ellipse(0, 0, halfW, topRy, 0, 0, Math.PI, false);
   ctx.closePath();
   ctx.fill();
 
   // Top face — lit from above. A radial gradient anchored at the back-center
   // of the top ellipse gives a warm copper highlight that fades to deep char
   // toward the front edge, suggesting the lamp's interior glow falling on it.
-  const topGrad = ctx.createRadialGradient(
-    gx, gy - topRy * 0.55, 0,
-    gx, gy + topRy * 0.35, halfW * 1.35,
-  );
-  topGrad.addColorStop(0,    '#9c5128');
-  topGrad.addColorStop(0.45, '#552410');
-  topGrad.addColorStop(1,    '#180a04');
-  ctx.fillStyle = topGrad;
+  ctx.fillStyle = cache.fuelTop;
   ctx.beginPath();
-  ctx.ellipse(gx, gy, halfW, topRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, halfW, topRy, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -2127,36 +2255,53 @@ function drawFuelCore(ctx, gx, gy, size) {
 // lantern paper above (its upper body sits behind the paper) and the dark
 // mouth interior between the puck and the rim's back edge.
 function drawFlame(ctx, gx, gy, size, level) {
-  const outerW = size * (0.13 + 0.025 * level);
-  const outerLen = size * (0.65 + 0.20 * level);
+  const cache = lanternGrads(ctx, size);
+  const b = levelBucket(level);
+  const ql = bucketLevel(b);
+  const outerW = size * (0.13 + 0.025 * ql);
+  const outerLen = size * (0.65 + 0.20 * ql);
   const innerW = outerW * 0.55;
   const innerLen = outerLen * 0.62;
 
+  // Both flame layers are built at the local origin (rising from y=0 upward)
+  // and reused per brightness bucket. Their vertical extent is baked into the
+  // gradient, so the bucket also fixes outerLen/innerLen — consistent with the
+  // ellipse geometry below.
+  let outer = cache.flameOuter[b];
+  if (!outer) {
+    outer = ctx.createLinearGradient(0, 0, 0, -outerLen);
+    outer.addColorStop(0,    `rgba(255, 220, 140, ${0.45 * ql})`);
+    outer.addColorStop(0.35, `rgba(255, 185, 90,  ${0.32 * ql})`);
+    outer.addColorStop(0.75, `rgba(255, 135, 55,  ${0.14 * ql})`);
+    outer.addColorStop(1,    'rgba(255, 100, 30, 0)');
+    cache.flameOuter[b] = outer;
+  }
+  let inner = cache.flameInner[b];
+  if (!inner) {
+    inner = ctx.createLinearGradient(0, 0, 0, -innerLen);
+    inner.addColorStop(0,    `rgba(255, 235, 190, ${0.55 * ql})`);
+    inner.addColorStop(0.40, `rgba(255, 215, 150, ${0.40 * ql})`);
+    inner.addColorStop(0.80, `rgba(255, 185, 100, ${0.18 * ql})`);
+    inner.addColorStop(1,    'rgba(255, 165, 75, 0)');
+    cache.flameInner[b] = inner;
+  }
+
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(gx, gy);
 
   // Outer body
-  const outer = ctx.createLinearGradient(gx, gy, gx, gy - outerLen);
-  outer.addColorStop(0,    `rgba(255, 220, 140, ${0.45 * level})`);
-  outer.addColorStop(0.35, `rgba(255, 185, 90,  ${0.32 * level})`);
-  outer.addColorStop(0.75, `rgba(255, 135, 55,  ${0.14 * level})`);
-  outer.addColorStop(1,    'rgba(255, 100, 30, 0)');
   ctx.fillStyle = outer;
   ctx.beginPath();
-  ctx.ellipse(gx, gy - outerLen / 2, outerW, outerLen / 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -outerLen / 2, outerW, outerLen / 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
   // Inner hot core — warm cream, not white. The peak sits around 255,235,190
   // (a candle's hottest yellow-cream) so the flame harmonizes with the moon
   // (#F5E9C9) and reads as lit-by-fuel rather than lit-by-LED.
-  const inner = ctx.createLinearGradient(gx, gy, gx, gy - innerLen);
-  inner.addColorStop(0,    `rgba(255, 235, 190, ${0.55 * level})`);
-  inner.addColorStop(0.40, `rgba(255, 215, 150, ${0.40 * level})`);
-  inner.addColorStop(0.80, `rgba(255, 185, 100, ${0.18 * level})`);
-  inner.addColorStop(1,    'rgba(255, 165, 75, 0)');
   ctx.fillStyle = inner;
   ctx.beginPath();
-  ctx.ellipse(gx, gy - innerLen / 2, innerW, innerLen / 2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -innerLen / 2, innerW, innerLen / 2, 0, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.restore();
@@ -2629,8 +2774,36 @@ export function drawShotQueue(ctx, layout, game, settings) {
 }
 
 
+// The aim preview re-runs a ray-march (up to thousands of steps, allocating a
+// points array) every frame while aiming, even when nothing has changed. It's
+// a pure function of (aim angle, board, layout), and during AIMING the board
+// is static — lanterns only move when a shot resolves, which always replaces
+// board.lanterns with a fresh array (pop/drop filter) or changes its length
+// (placement/descent push). So we memoize the trace and recompute only when
+// the angle moves or that board signature changes: a steadily-held aim hits
+// the cache every frame, while dragging recomputes exactly as before. This is
+// a render-only cache; the live shot still uses traceFromShot, so the actual
+// landing is never affected.
+let aimTraceCache = { angle: NaN, lanterns: null, count: -1, size: 0, handed: '', trace: null };
+
 export function drawAimLine(ctx, layout, game) {
-  const trace = traceAimLine(layout, game.board, game.aimAngle, 1);
+  const handed = layout.handedness || 'right';
+  const lanterns = game.board.lanterns;
+  if (aimTraceCache.angle !== game.aimAngle ||
+      aimTraceCache.lanterns !== lanterns ||
+      aimTraceCache.count !== lanterns.length ||
+      aimTraceCache.size !== layout.size ||
+      aimTraceCache.handed !== handed) {
+    aimTraceCache = {
+      angle: game.aimAngle,
+      lanterns,
+      count: lanterns.length,
+      size: layout.size,
+      handed,
+      trace: traceAimLine(layout, game.board, game.aimAngle, 1),
+    };
+  }
+  const trace = aimTraceCache.trace;
   if (!trace || trace.points.length < 2) return;
 
   ctx.save();
