@@ -12,6 +12,8 @@ import { PALETTE, COLORS, COLOR_KEYS, LEVELS, levelConfig, PERF_CONFIG } from '.
 import {
   SERIF, SANS, HUD_OPACITY, hexToRgba, fontScaleOf, PERF_MODE,
 } from './style.js';
+import { STENCIL_PACKS } from '../stencil-packs.js';
+import { changeStencilPack } from '../assets.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -22,7 +24,7 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages'
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'stencils'
   stagesPage: 0,
   fade: 0,             // 0..1
   fadeTarget: 0,
@@ -98,6 +100,13 @@ export function hitTestMenu(x, y, actions) {
       case 'show-root':    menuState.panel = 'root'; return true;
       case 'show-stages':  menuState.panel = 'stages'; return true;
       case 'show-records': menuState.panel = 'records'; return true;
+      case 'show-stencils': menuState.panel = 'stencils'; return true;
+      case 'pick-stencil': {
+        changeStencilPack(h.value).then(() => {
+          actions?.onInteract?.(); // wakes up the draw loop
+        });
+        return true;
+      }
       case 'close':        closeMenu(); actions?.onResume?.(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
       case 'page-prev':    menuState.stagesPage = Math.max(0, menuState.stagesPage - 1); return true;
@@ -131,6 +140,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   if (menuState.panel === 'root')         drawRootPanel(ctx, layout, settings);
   else if (menuState.panel === 'records') drawRecordsPanel(ctx, layout, settings, stats, scores);
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
+  else if (menuState.panel === 'stencils') drawStencilsPanel(ctx, layout, settings);
   ctx.restore();
 }
 
@@ -291,16 +301,17 @@ function drawDashedRule(ctx, x, y, w) {
 
 function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 320 * fs, 320 * fs);
+  const rect = cardRect(layout, 320 * fs, 360 * fs);
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
   const padX = 24;
   const rowH = Math.round(48 * fs);
   const items = [
-    { label: 'Stages',    sub: 'pick or revisit a stage', action: 'show-stages',  glyph: 'stages' },
-    { label: 'Records',   sub: 'lanterns lit, best scores', action: 'show-records', glyph: 'records' },
-    { label: 'Continue',  sub: 'back to the river',         action: 'close',         glyph: 'moon' },
+    { label: 'Stages',      sub: 'pick or revisit a stage',   action: 'show-stages',   glyph: 'stages' },
+    { label: 'Lantern Art', sub: 'change painted designs',    action: 'show-stencils', glyph: 'stencils' },
+    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' },
+    { label: 'Continue',    sub: 'back to the river',         action: 'close',         glyph: 'moon' },
   ];
 
   let y = startY + 6;
@@ -364,6 +375,27 @@ function drawGlyph(ctx, kind, cx, cy) {
           ctx.stroke();
         }
       }
+      break;
+    }
+    case 'stencils': {
+      // Small painter palette/outline glyph for art selection
+      ctx.strokeStyle = hexToRgba(GOLD, 0.9);
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      // Handle / Brush
+      ctx.moveTo(cx - 5, cy + 5);
+      ctx.lineTo(cx + 1, cy - 1);
+      ctx.lineTo(cx + 4, cy - 4);
+      ctx.lineTo(cx + 6, cy - 3);
+      ctx.lineTo(cx + 3, cy + 0);
+      ctx.lineTo(cx - 5, cy + 5);
+      ctx.stroke();
+
+      ctx.fillStyle = hexToRgba(GOLD, 0.85);
+      ctx.beginPath();
+      ctx.arc(cx + 4, cy + 4, 1.6, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
     case 'records': {
@@ -721,4 +753,82 @@ function fmtTime(ms) {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// ─── Stencils panel ──────────────────────────────────────────────────────────
+
+function drawStencilsPanel(ctx, layout, settings) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 350 * fs, 400 * fs);
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Lantern Art', { showBack: true, fs });
+
+  const padX = 20;
+  const innerW = rect.w - padX * 2;
+  const activePackId = Arcade.state.get('stencilPack') || 'bugs';
+
+  let y = startY + 6;
+  const rowH = Math.round(56 * fs);
+
+  for (const pack of Object.values(STENCIL_PACKS)) {
+    const isSelected = pack.id === activePackId;
+    drawStencilRow(ctx, rect.x + padX, y, innerW, rowH, pack, isSelected, fs);
+    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    y += rowH + 8;
+  }
+}
+
+function drawStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {
+  ctx.save();
+  // Base tile
+  ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.04)';
+  roundedRectPath(ctx, x, y, w, h, 8);
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
+  ctx.lineWidth = isSelected ? 1.4 : 1;
+  ctx.stroke();
+
+  // Name and Description
+  const titlePx = Math.round(14 * fs);
+  const subPx = Math.round(11 * fs);
+
+  ctx.fillStyle = CREAM;
+  ctx.font = `500 ${titlePx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText(pack.name, x + 16, y + h * 0.18);
+
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `400 ${subPx}px ${SERIF}`;
+  ctx.fillText(pack.description, x + 16, y + h * 0.58);
+
+  // Selection Checkmark / Circle on the right
+  ctx.save();
+  const cx = x + w - 24;
+  const cy = y + h / 2;
+  
+  if (isSelected) {
+    // Draw gold checkmark
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, cy - 1);
+    ctx.lineTo(cx - 1, cy + 3);
+    ctx.lineTo(cx + 6, cy - 5);
+    ctx.stroke();
+  } else {
+    // Draw faint circle
+    ctx.strokeStyle = hexToRgba(CREAM, 0.35);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.restore();
 }

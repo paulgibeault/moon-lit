@@ -5,6 +5,7 @@
 
 import { COLOR_KEYS } from './constants.js';
 import { buildLanternSvg, LANTERN_SVG_VIEWBOX } from './lantern-svg.js';
+import { STENCIL_PACKS } from './stencil-packs.js';
 
 // Raster resolution. 2x oversample of the SVG viewBox so the lamp stays crisp
 // when scaled to most viewport sizes (lantern radius typically peaks around
@@ -23,6 +24,9 @@ let burstSheet = null;
 const FLAME_SRC = 'img/flame-sprite.png';
 const FLAME_FRAMES = 8;
 let flameSheet = null;
+
+const BUG_STENCIL_OPACITY = 0.55;
+
 
 // Bamboo silhouette sprite library. Source PNGs are black-on-white at modest
 // resolution; loadBambooSprites() bakes each to a tinted alpha silhouette and
@@ -168,8 +172,46 @@ async function rasterizeSvg(svg, width, height) {
 export async function loadLanterns() {
   const w = LANTERN_SVG_VIEWBOX.w * RASTER_SCALE;
   const h = LANTERN_SVG_VIEWBOX.h * RASTER_SCALE;
+
+  const activePackId = Arcade.state.get('stencilPack') || 'bugs';
+  const pack = STENCIL_PACKS[activePackId] || STENCIL_PACKS.bugs;
+  const stencilSources = pack.sources || {};
+
+  // Load stencil images
+  const stencilImages = {};
+  await Promise.all(
+    Object.entries(stencilSources).map(async ([color, src]) => {
+      try {
+        stencilImages[color] = await loadImage(src);
+      } catch (e) {
+        console.warn(`[moon-lit] failed to load stencil ${src} for ${color}`, e);
+      }
+    })
+  );
+
   const entries = await Promise.all(
-    COLOR_KEYS.map(async (key) => [key, await rasterizeSvg(buildLanternSvg(key), w, h)])
+    COLOR_KEYS.map(async (key) => {
+      const canvas = await rasterizeSvg(buildLanternSvg(key), w, h);
+      const stencilImg = stencilImages[key];
+      if (stencilImg) {
+        const stencil = makeBugStencil(stencilImg);
+        const ctx = canvas.getContext('2d');
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-atop';
+
+        // Dimensions to center on the lantern body
+        const cx = 50 * RASTER_SCALE;
+        const cy = 65 * RASTER_SCALE;
+        const d = 56 * RASTER_SCALE; // 112px at scale 2
+        const offsetY = 5 * RASTER_SCALE; // 10px at scale 2
+
+        const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+        ctx.globalAlpha = opacity;
+        ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
+        ctx.restore();
+      }
+      return [key, canvas];
+    })
   );
   for (const [key, canvas] of entries) {
     record(key, canvas, measureBbox(canvas));
@@ -240,6 +282,37 @@ export function getBurstSheet() {
 //   brightness would wrongly transparentize the interior white highlights
 //   and leave visible "splits" through the bamboo trunk.
 //
+// Converts a black-on-white bug drawing into a black stencil with transparent background,
+// where brightness determines transparency (white -> transparent, black -> opaque).
+function makeBugStencil(img) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const cx = c.getContext('2d');
+  cx.drawImage(img, 0, 0);
+  let imgData;
+  try {
+    imgData = cx.getImageData(0, 0, w, h);
+  } catch (_) {
+    return c;
+  }
+  const d = imgData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const brightness = (r + g + b) / 3;
+    // Derive alpha: white background (255) -> 0 alpha, dark lines (0) -> 255 alpha (boosted by 1.8x for visibility)
+    d[i+3] = Math.min(255, Math.round((255 - brightness) * 1.8));
+    // Make the stencil color completely black
+    d[i] = 0;
+    d[i+1] = 0;
+    d[i+2] = 0;
+  }
+  cx.putImageData(imgData, 0, 0);
+  return c;
+}
+
 // Detection: any near-corner pixel with alpha < 255 → RGBA. Otherwise RGB.
 function bakeSilhouette(img) {
   const w = img.naturalWidth  || img.width;
@@ -533,5 +606,10 @@ export async function loadHarnessSprite() {
 
 export function getLauncherWheelSprite() {
   return sprites['launcher_wheel'] || null;
+}
+
+export async function changeStencilPack(packId) {
+  Arcade.state.set('stencilPack', packId);
+  await loadLanterns();
 }
 
