@@ -5,9 +5,10 @@ import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
 import { getEffectiveDpr, PERF_MODE, setPerfModeOverride } from './renderer/style.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
+import { getRandomDesignForColor } from './stencil-packs.js';
 import {
   isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu,
 } from './renderer/menu.js';
@@ -227,27 +228,51 @@ function resize() {
 // after this point will restore the player to the new stage.
 function nextLevel() {
   recordOutcome(game, /*won=*/true);
-  startGame(createGame({ layout, level: game.level + 1 }));
-  saveProgress(game);
-  resetHudState(0, bestScore);
-  refreshMenuData();
+  const next = () => {
+    startGame(createGame({ layout, level: game.level + 1 }));
+    saveProgress(game);
+    resetHudState(0, bestScore);
+    refreshMenuData();
+  };
+  if (Arcade.state.get('stencilPack') === 'random') {
+    triggerNewRandomMapping();
+    loadLanterns().then(next);
+  } else {
+    next();
+  }
 }
 function restartLevel() {
   recordOutcome(game, /*won=*/false);
-  startGame(createGame({ layout, level: game.level }));
-  saveProgress(game);
-  resetHudState(0, bestScore);
-  refreshMenuData();
+  const next = () => {
+    startGame(createGame({ layout, level: game.level }));
+    saveProgress(game);
+    resetHudState(0, bestScore);
+    refreshMenuData();
+  };
+  if (Arcade.state.get('stencilPack') === 'random') {
+    triggerNewRandomMapping();
+    loadLanterns().then(next);
+  } else {
+    next();
+  }
 }
 // Menu-driven stage switch. Treated as a deliberate revisit rather than a
 // run abandonment, so we don't record an outcome against the current game —
 // the player isn't trying to win, they're choosing where to play.
 function startLevel(level) {
   const lv = Math.max(1, level | 0);
-  startGame(createGame({ layout, level: lv }));
-  saveProgress(game);
-  resetHudState(0, bestScore);
-  refreshMenuData();
+  const next = () => {
+    startGame(createGame({ layout, level: lv }));
+    saveProgress(game);
+    resetHudState(0, bestScore);
+    refreshMenuData();
+  };
+  if (Arcade.state.get('stencilPack') === 'random') {
+    triggerNewRandomMapping();
+    loadLanterns().then(next);
+  } else {
+    next();
+  }
 }
 
 // End-of-stage bookkeeping: leaderboard entry, stats update, best-score
@@ -467,7 +492,22 @@ attachInput(canvas, () => game, () => layout, {
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
   // body actually draw. Also refresh the cached leaderboard/stats on every
   // open so the panel reflects the latest run without a reload.
-  onMenuChange: () => { refreshMenuData(); requestFrame(); },
+  onMenuChange: () => {
+    refreshMenuData();
+    if (game && Arcade.state.get('stencilPack') === 'random') {
+      for (const l of game.board.lanterns) {
+        if (!l.designId) {
+          l.designId = getRandomDesignForColor(l.color, game.rng);
+        }
+      }
+      if (game.queue) {
+        if (!game.queue.currentDesign) game.queue.currentDesign = getRandomDesignForColor(game.queue.current, game.rng);
+        if (!game.queue.nextDesign) game.queue.nextDesign = getRandomDesignForColor(game.queue.next, game.rng);
+        if (!game.queue.afterNextDesign) game.queue.afterNextDesign = getRandomDesignForColor(game.queue.afterNext, game.rng);
+      }
+    }
+    requestFrame();
+  },
 });
 window.triggerAdminUpdate = () => {
   settings = readSettings();

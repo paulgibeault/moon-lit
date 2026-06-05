@@ -1,5 +1,13 @@
 import { GRID, COLOR_KEYS } from './constants.js';
 import { pick } from './prng.js';
+import { getRandomDesignForColor } from './stencil-packs.js';
+
+function getActivePackId() {
+  if (typeof Arcade !== 'undefined' && Arcade.state) {
+    return Arcade.state.get('stencilPack') || 'bugs';
+  }
+  return 'bugs';
+}
 
 const SQRT3 = Math.sqrt(3);
 
@@ -61,6 +69,7 @@ export function syncLanternPixels(board, layout) {
 export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS) {
   const r = layout.size;
   const rowH = SQRT3 * r;
+  const activePackId = getActivePackId();
   for (let row = 0; row < rows; row++) {
     const odd = row & 1;
     const count = layout.cols - odd;
@@ -69,7 +78,9 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows, col
       const ny = row * SQRT3;
       const x = layout.originX + nx * r;
       const y = layout.trellisY + r + row * rowH;
-      board.lanterns.push({ x, y, nx, ny, color: pick(rng, colors) });
+      const color = pick(rng, colors);
+      const designId = activePackId === 'random' ? getRandomDesignForColor(color, rng) : null;
+      board.lanterns.push({ x, y, nx, ny, color, designId });
     }
   }
 }
@@ -92,12 +103,15 @@ export function descend(board, layout, rng, colors = COLOR_KEYS) {
   // so the two interlock at exactly 2r center-distance instead of overlapping.
   const oddStagger = (board.descentCount & 1) === 0 ? 1 : 0;
   const count = layout.cols - oddStagger;
+  const activePackId = getActivePackId();
   for (let i = 0; i < count; i++) {
     const nx = i * 2 + oddStagger;
     const ny = 0;
     const x = layout.originX + nx * r;
     const y = layout.trellisY + r;
-    board.lanterns.push({ x, y, nx, ny, color: pick(rng, colors) });
+    const color = pick(rng, colors);
+    const designId = activePackId === 'random' ? getRandomDesignForColor(color, rng) : null;
+    board.lanterns.push({ x, y, nx, ny, color, designId });
   }
   board.descentCount++;
   return true;
@@ -107,8 +121,8 @@ export function isCleared(board) {
   return board.lanterns.length === 0;
 }
 
-export function addLantern(board, x, y, color, layout) {
-  const l = { x, y, color };
+export function addLantern(board, x, y, color, layout, designId = null) {
+  const l = { x, y, color, designId };
   normalizePos(l, layout);
   board.lanterns.push(l);
   return l;

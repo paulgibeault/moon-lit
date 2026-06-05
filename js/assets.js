@@ -175,47 +175,117 @@ export async function loadLanterns() {
 
   const activePackId = Arcade.state.get('stencilPack') || 'bugs';
   const pack = STENCIL_PACKS[activePackId] || STENCIL_PACKS.bugs;
-  const stencilSources = pack.sources || {};
+  
+  // Collect all designs from bugs, flowers, dragons packs
+  const allDesigns = [];
+  for (const [packId, p] of Object.entries(STENCIL_PACKS)) {
+    if (packId === 'random' || packId === 'plain') continue;
+    if (p.sources) {
+      for (const [colorKey, src] of Object.entries(p.sources)) {
+        if (src) {
+          allDesigns.push({
+            designId: `${packId}_${colorKey}`,
+            src,
+            packId
+          });
+        }
+      }
+    }
+  }
 
   // Load stencil images
   const stencilImages = {};
-  await Promise.all(
-    Object.entries(stencilSources).map(async ([color, src]) => {
-      try {
-        stencilImages[color] = await loadImage(src);
-      } catch (e) {
-        console.warn(`[moon-lit] failed to load stencil ${src} for ${color}`, e);
-      }
-    })
-  );
-
-  const entries = await Promise.all(
-    COLOR_KEYS.map(async (key) => {
-      const canvas = await rasterizeSvg(buildLanternSvg(key), w, h);
-      const stencilImg = stencilImages[key];
-      if (stencilImg) {
-        const stencil = makeBugStencil(stencilImg);
-        const ctx = canvas.getContext('2d');
-        ctx.save();
-        ctx.globalCompositeOperation = 'source-atop';
-
-        // Dimensions to center on the lantern body
-        const cx = 50 * RASTER_SCALE;
-        const cy = 65 * RASTER_SCALE;
-        const d = 56 * RASTER_SCALE; // 112px at scale 2
-        const offsetY = 5 * RASTER_SCALE; // 10px at scale 2
-
-        const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
-        ctx.globalAlpha = opacity;
-        ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
-        ctx.restore();
-      }
-      return [key, canvas];
-    })
-  );
-  for (const [key, canvas] of entries) {
-    record(key, canvas, measureBbox(canvas));
+  if (activePackId === 'random') {
+    await Promise.all(
+      allDesigns.map(async (d) => {
+        try {
+          stencilImages[d.designId] = await loadImage(d.src);
+        } catch (e) {
+          console.warn(`[moon-lit] failed to load stencil ${d.src} for ${d.designId}`, e);
+        }
+      })
+    );
+  } else {
+    const stencilSources = pack.sources || {};
+    await Promise.all(
+      Object.entries(stencilSources).map(async ([color, src]) => {
+        if (!src) return; // skip plain paper / no stencil
+        try {
+          stencilImages[color] = await loadImage(src);
+        } catch (e) {
+          console.warn(`[moon-lit] failed to load stencil ${src} for ${color}`, e);
+        }
+      })
+    );
   }
+
+  const promises = [];
+
+  if (activePackId === 'random') {
+    // 1. Rasterize plain paper versions (recorded as sprites[colorKey])
+    for (const colorKey of COLOR_KEYS) {
+      promises.push((async () => {
+        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+        record(colorKey, canvas, measureBbox(canvas));
+      })());
+    }
+
+    // 2. Rasterize every color with every loaded design (recorded as sprites[colorKey + '_' + designId])
+    for (const colorKey of COLOR_KEYS) {
+      for (const d of allDesigns) {
+        promises.push((async () => {
+          const stencilImg = stencilImages[d.designId];
+          if (!stencilImg) return;
+
+          const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+          const stencil = makeBugStencil(stencilImg);
+          const ctx = canvas.getContext('2d');
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+
+          // Dimensions to center on the lantern body
+          const cx = 50 * RASTER_SCALE;
+          const cy = 65 * RASTER_SCALE;
+          const dSize = 56 * RASTER_SCALE;
+          const offsetY = 5 * RASTER_SCALE;
+
+          const opacity = d.packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+          ctx.globalAlpha = opacity;
+          ctx.drawImage(stencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
+          ctx.restore();
+
+          record(`${colorKey}_${d.designId}`, canvas, measureBbox(canvas));
+        })());
+      }
+    }
+  } else {
+    // Standard pack logic (original flow)
+    for (const colorKey of COLOR_KEYS) {
+      promises.push((async () => {
+        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+        const stencilImg = stencilImages[colorKey];
+        if (stencilImg) {
+          const stencil = makeBugStencil(stencilImg);
+          const ctx = canvas.getContext('2d');
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+
+          const cx = 50 * RASTER_SCALE;
+          const cy = 65 * RASTER_SCALE;
+          const d = 56 * RASTER_SCALE;
+          const offsetY = 5 * RASTER_SCALE;
+
+          const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+          ctx.globalAlpha = opacity;
+          ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
+          ctx.restore();
+        }
+        record(colorKey, canvas, measureBbox(canvas));
+      })());
+    }
+  }
+
+  await Promise.all(promises);
   try {
     const img = await loadImage(BURST_SRC);
     const frameSize = img.naturalHeight || img.height;
@@ -260,7 +330,11 @@ export function getFlameSheet() {
   return flameSheet;
 }
 
-export function getLanternSprite(colorKey) {
+export function getLanternSprite(colorKey, designId = null) {
+  if (designId) {
+    const key = `${colorKey}_${designId}`;
+    if (sprites[key]) return sprites[key];
+  }
   return sprites[colorKey] || null;
 }
 
@@ -608,8 +682,41 @@ export function getLauncherWheelSprite() {
   return sprites['launcher_wheel'] || null;
 }
 
+export function generateRandomMapping() {
+  const allSources = [];
+  const packs = ['bugs', 'flowers', 'dragons'];
+  for (const packId of packs) {
+    const pack = STENCIL_PACKS[packId];
+    if (pack && pack.sources) {
+      allSources.push(...Object.values(pack.sources));
+    }
+  }
+
+  const mapping = {};
+  for (const color of COLOR_KEYS) {
+    // 40% chance of being plain paper (empty source)
+    if (Math.random() < 0.40) {
+      mapping[color] = '';
+    } else if (allSources.length > 0) {
+      const randomSrc = allSources[Math.floor(Math.random() * allSources.length)];
+      mapping[color] = randomSrc;
+    } else {
+      mapping[color] = '';
+    }
+  }
+  return mapping;
+}
+
+export function triggerNewRandomMapping() {
+  const newMapping = generateRandomMapping();
+  Arcade.state.set('randomMapping', JSON.stringify(newMapping));
+}
+
 export async function changeStencilPack(packId) {
   Arcade.state.set('stencilPack', packId);
+  if (packId === 'random') {
+    triggerNewRandomMapping();
+  }
   await loadLanterns();
 }
 

@@ -8,6 +8,14 @@ import {
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
+import { getRandomDesignForColor } from './stencil-packs.js';
+
+function getActivePackId() {
+  if (typeof Arcade !== 'undefined' && Arcade.state) {
+    return Arcade.state.get('stencilPack') || 'bugs';
+  }
+  return 'bugs';
+}
 import { popMatches, dropFloating } from './match.js';
 import { resolveShot, clearBonus, crossedMilestone } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
@@ -55,15 +63,26 @@ export function createGame({ seed, layout, level = 1 } = {}) {
   const rng = mulberry32(effectiveSeed);
   const board = createBoard();
   if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
+  const activePackId = getActivePackId();
+  const queueCurrent = pick(rng, colors);
+  const queueNext = pick(rng, colors);
+  const queueAfterNext = pick(rng, colors);
+  const currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
+  const nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
+  const afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+
   return {
     rng,
     board,
     phase: PHASE.AIMING,
     aimAngle: 0,
     queue: {
-      current:   pick(rng, colors),
-      next:      pick(rng, colors),
-      afterNext: pick(rng, colors),
+      current:   queueCurrent,
+      currentDesign,
+      next:      queueNext,
+      nextDesign,
+      afterNext: queueAfterNext,
+      afterNextDesign,
     },
     shot: null,
     score: 0,
@@ -106,6 +125,7 @@ export function fire(game, layout) {
     vx: Math.sin(angle),
     vy: -Math.cos(angle),
     color: game.queue.current,
+    designId: game.queue.currentDesign,
     flightT: 0,
     swayPhase: game.rng() * Math.PI * 2,
     swayFreq,
@@ -158,8 +178,8 @@ export function step(game, dtSec, layout) {
 
   const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * layout.size * dtSec, dtSec);
   if (trace.settled) {
-    const placed = { x: trace.x, y: trace.y, color: game.shot.color };
-    addLantern(game.board, placed.x, placed.y, placed.color, layout);
+    const placed = { x: trace.x, y: trace.y, color: game.shot.color, designId: game.shot.designId };
+    addLantern(game.board, placed.x, placed.y, placed.color, layout, placed.designId);
     game.shot = null;
     if (placed.y >= layout.deadLineY) {
       startDrowning(game);
@@ -364,13 +384,19 @@ function advanceQueue(game) {
   // animation), and a fresh lantern is loaded into the afterNext slot (hidden
   // beneath the wheel until the next shot rotates it up).
   game.queue.current = game.queue.next;
+  game.queue.currentDesign = game.queue.nextDesign;
   game.queue.next = game.queue.afterNext;
+  game.queue.nextDesign = game.queue.afterNextDesign;
   // The freshly-loaded lantern (the future on-deck) should never reintroduce
   // a color the board no longer contains. Already-visible lanterns keep
   // whatever color they were drawn with.
   const live = new Set(game.board.lanterns.map(l => l.color));
   const palette = game.colors.filter(c => live.has(c));
-  game.queue.afterNext = pick(game.rng, palette.length ? palette : game.colors);
+  const nextColor = pick(game.rng, palette.length ? palette : game.colors);
+  game.queue.afterNext = nextColor;
+  
+  const activePackId = getActivePackId();
+  game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }
 

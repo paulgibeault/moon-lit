@@ -46,6 +46,12 @@ export const STENCIL_PACKS = {
       blue:   'img/stencils/dragons/water_dragon.png',
       paper:  'img/stencils/dragons/dragon_head.png',
     }
+  },
+  random: {
+    id: 'random',
+    name: 'Random Mosaic',
+    description: 'Randomized designs grouped by color, favoring plain.',
+    sources: {}
   }
 };
 
@@ -100,3 +106,21 @@ export const STENCIL_PACKS = {
  * The asset loading pipeline in assets.js and the menu view in menu.js will
  * automatically load and list your new pack in the game menu!
  */
+
+export function getRandomDesignForColor(color, rng) {
+  if (!rng || typeof rng !== 'function') {
+    // Fallback if rng is not provided/valid
+    if (Math.random() < 0.40) return null;
+    const packs = ['bugs', 'flowers', 'dragons'];
+    const chosenPack = packs[Math.floor(Math.random() * packs.length)];
+    return `${chosenPack}_${color}`;
+  }
+  
+  if (rng() < 0.40) {
+    return null;
+  }
+  const packs = ['bugs', 'flowers', 'dragons'];
+  const chosenPack = packs[Math.floor(rng() * packs.length)];
+  return `${chosenPack}_${color}`;
+}
+

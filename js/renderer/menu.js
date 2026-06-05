@@ -759,7 +759,7 @@ function fmtTime(ms) {
 
 function drawStencilsPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 350 * fs, 400 * fs);
+  const rect = cardRect(layout, 350 * fs, 430 * fs);
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Lantern Art', { showBack: true, fs });
 

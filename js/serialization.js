@@ -8,13 +8,21 @@
 import { COLOR_KEYS, levelConfig } from './constants.js';
 import { mulberry32FromState } from './prng.js';
 import { createBoard } from './board.js';
+import { getRandomDesignForColor } from './stencil-packs.js';
+
+function getActivePackId() {
+  if (typeof Arcade !== 'undefined' && Arcade.state) {
+    return Arcade.state.get('stencilPack') || 'bugs';
+  }
+  return 'bugs';
+}
 
 // Bumped each time the lantern color-key set changes — old saves reference
 // keys that may no longer exist, so restoreGame rejects them and the player
 // starts fresh. v1: original (red, orange, yellow, green, blue, white).
 // v2: muted palette with plum. v3: traditional festival palette with pink.
 // v4: pink replaced by paper (natural undyed tissue paper).
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export function serializeGame(g) {
   return {
@@ -25,8 +33,11 @@ export function serializeGame(g) {
     phase: g.phase,
     queue: {
       current:   g.queue.current,
+      currentDesign: g.queue.currentDesign,
       next:      g.queue.next,
+      nextDesign: g.queue.nextDesign,
       afterNext: g.queue.afterNext,
+      afterNextDesign: g.queue.afterNextDesign,
     },
     breakdown: { ...g.breakdown },
     counts: { ...g.counts },
@@ -36,7 +47,7 @@ export function serializeGame(g) {
     pendingDescent: g.pendingDescent,
     board: {
       descentCount: g.board.descentCount,
-      lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color })),
+      lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId })),
     },
     rngState: g.rng.getState(),
   };
@@ -64,6 +75,9 @@ function migrateSaveState(saved) {
       // v3: traditional festival palette with pink
       // pink was replaced by paper in v4
       state = migrateV3ToV4(state);
+    } else if (state.version === 4) {
+      // v4: pink replaced by paper (natural undyed tissue paper)
+      state = migrateV4ToV5(state);
     } else {
       // Fallback to prevent infinite loop
       state.version = SAVE_VERSION;
@@ -71,6 +85,13 @@ function migrateSaveState(saved) {
   }
   
   return state;
+}
+
+function migrateV4ToV5(state) {
+  return {
+    ...state,
+    version: 5
+  };
 }
 
 function migrateV1ToV2(state) {
@@ -148,6 +169,8 @@ export function restoreGame(saved) {
   const rngState = migrated.rngState !== undefined ? migrated.rngState : 0x4D6F6F6E;
   const rng = mulberry32FromState(rngState >>> 0);
   
+  const activePackId = getActivePackId();
+
   const board = createBoard();
   if (migrated.board) {
     board.descentCount = (migrated.board.descentCount || 0) | 0;
@@ -158,10 +181,13 @@ export function restoreGame(saved) {
     
     if (migrated.board.lanterns) {
       for (const l of migrated.board.lanterns) {
+        const mappedColor = mapColor(l.color);
+        const designId = l.designId !== undefined ? l.designId : (activePackId === 'random' ? getRandomDesignForColor(mappedColor, rng) : null);
         board.lanterns.push({
           nx: l.nx ?? 0,
           ny: l.ny ?? 0,
-          color: mapColor(l.color),
+          color: mappedColor,
+          designId,
           x: 0,
           y: 0
         });
@@ -180,12 +206,32 @@ export function restoreGame(saved) {
     migrated.queue?.afterNext || COLOR_KEYS[2] || COLOR_KEYS[0]
   );
 
+  let currentDesign = migrated.queue?.currentDesign;
+  if (currentDesign === undefined) {
+    currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
+  }
+  let nextDesign = migrated.queue?.nextDesign;
+  if (nextDesign === undefined) {
+    nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
+  }
+  let afterNextDesign = migrated.queue?.afterNextDesign;
+  if (afterNextDesign === undefined) {
+    afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+  }
+
   return {
     rng,
     board,
     phase: migrated.phase || 'aiming',
     aimAngle: migrated.aimAngle || 0,
-    queue: { current: queueCurrent, next: queueNext, afterNext: queueAfterNext },
+    queue: { 
+      current: queueCurrent, 
+      currentDesign,
+      next: queueNext, 
+      nextDesign,
+      afterNext: queueAfterNext,
+      afterNextDesign
+    },
     shot: null,
     score: migrated.score | 0,
     effects: [],

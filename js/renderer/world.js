@@ -1819,7 +1819,7 @@ export function drawReflections(ctx, layout, game, settings) {
     ctx.translate(dx, reflectY);
     ctx.scale(1, -1);
     drawLantern(ctx, 0, 0, layout.size, l.color,
-      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true });
+      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true, designId: l.designId });
     ctx.restore();
   }
 
@@ -1843,7 +1843,7 @@ export function drawReflections(ctx, layout, game, settings) {
         ctx.translate(drawX, deadLineY + height);
         ctx.scale(1, -1);
         drawLantern(ctx, 0, 0, layout.size, shot.color,
-          { lit: true, intensity: ignite * 0.55, phase, isReflection: true });
+          { lit: true, intensity: ignite * 0.55, phase, isReflection: true, designId: shot.designId });
         ctx.restore();
       }
     }
@@ -1944,11 +1944,11 @@ export function drawBoard(ctx, layout, game, settings) {
       ctx.translate(dx, dy + animY);
       ctx.rotate(spin);
       drawLantern(ctx, 0, 0, size, l.color,
-        { lit, phase: phaseOf(l), boost });
+        { lit, phase: phaseOf(l), boost, designId: l.designId });
       ctx.restore();
     } else {
       drawLantern(ctx, dx, dy + animY, size, l.color,
-        { lit, phase: phaseOf(l), boost });
+        { lit, phase: phaseOf(l), boost, designId: l.designId });
     }
   }
 }
@@ -1992,8 +1992,9 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const boost = opts && opts.boost != null ? opts.boost : 0;
   const level = lit ? emberLevel(phase, intensity, boost) : 0;
   const isReflection = opts && opts.isReflection;
+  const designId = opts && opts.designId;
 
-  const sprite = getLanternSprite(colorKey);
+  const sprite = getLanternSprite(colorKey, designId);
   if (sprite) {
     // Fit the painted silhouette so its width fills 2*size (the cell width).
     // Height is proportional to the lamp's aspect ratio, so taller-than-wide
@@ -2349,7 +2350,7 @@ function drawProceduralLauncherFallback(ctx, layout, game) {
     ctx.save();
     ctx.translate(0, lanternY);
     ctx.rotate(-game.aimAngle);
-    drawLantern(ctx, 0, 0, r, game.queue.current, { lit: false });
+    drawLantern(ctx, 0, 0, r, game.queue.current, { lit: false, designId: game.queue.currentDesign });
     ctx.restore();
   }
 
@@ -2535,7 +2536,8 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
         drawLantern(ctx, 0, 0, r, game.queue.current, {
           lit: litVal,
           intensity: 0.40 + 0.12 * Math.sin(tSec * 4.0),
-          phase: 0
+          phase: 0,
+          designId: game.queue.currentDesign
         });
         ctx.restore();
 
@@ -2567,10 +2569,11 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
       const catchTau = (t_at_top - 0.32) / 0.16;
       const catchPulse = Math.exp(-catchTau * catchTau);
       drawLantern(ctx, 0, 0, r, game.queue.next, {
-        lit: !isReflection && igniteEase > 0,
-        intensity: igniteEase * seatedIntensity * (1 + 0.5 * catchPulse),
-        boost: 0.55 * catchPulse,
-        phase: 0
+          lit: !isReflection && igniteEase > 0,
+          intensity: igniteEase * seatedIntensity * (1 + 0.5 * catchPulse),
+          boost: 0.55 * catchPulse,
+          phase: 0,
+          designId: game.queue.nextDesign
       });
       ctx.restore();
     } else if (theta_mount === Math.PI / 2) {
@@ -2579,7 +2582,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
       // rotates up into the on-deck side position.
       ctx.save();
       ctx.translate(0, -d_hinge_lantern);
-      drawLantern(ctx, 0, 0, r, game.queue.afterNext, { lit: false });
+      drawLantern(ctx, 0, 0, r, game.queue.afterNext, { lit: false, designId: game.queue.afterNextDesign });
       ctx.restore();
     }
 
@@ -2823,7 +2826,7 @@ export function drawAimLine(ctx, layout, game) {
   if (trace.settle) {
     ctx.save();
     ctx.globalAlpha = HUD_OPACITY.faint;
-    drawLantern(ctx, trace.settle.x, trace.settle.y, layout.size, game.queue.current, { lit: false });
+    drawLantern(ctx, trace.settle.x, trace.settle.y, layout.size, game.queue.current, { lit: false, designId: game.queue.currentDesign });
     ctx.restore();
   }
 }
@@ -2843,5 +2846,5 @@ export function drawProjectile(ctx, shot, layout) {
   const drawY = shot.y + ( shot.vx) * wobble;
   const ignite = Math.min(1, t / IGNITE_SEC);
   drawLantern(ctx, drawX, drawY, layout.size, shot.color,
-    { lit: true, intensity: ignite, phase });
+    { lit: true, intensity: ignite, phase, designId: shot.designId });
 }
