@@ -41,23 +41,35 @@ const STATS_DEFAULTS = {
   levels: {},
 };
 
-function loadProgressLevel() {
-  const p = Arcade.state.getOrInit(PROGRESS_KEY, { level: 1 });
+function loadProgressLevel(mode) {
+  const m = mode || Arcade.state.get('gameMode') || 'campaign';
+  const key = `progress_${m}`;
+  const p = Arcade.state.getOrInit(key, { level: 1 });
   return (p && p.level) | 0 || 1;
 }
 function saveProgress(game) {
-  Arcade.state.set(PROGRESS_KEY, { level: game.level });
+  if (!game) return;
+  const m = game.gameMode || Arcade.state.get('gameMode') || 'campaign';
+  const key = `progress_${m}`;
+  const level = game.isPuzzleMode ? game.puzzleId : game.level;
+  Arcade.state.set(key, { level });
 }
 function loadBest() {
   return Arcade.state.get(BEST_KEY) | 0;
 }
-function loadGameState() {
-  return Arcade.state.get(GAME_STATE_KEY);
+function loadGameState(mode) {
+  const m = mode || Arcade.state.get('gameMode') || 'campaign';
+  const key = `gameState_${m}`;
+  return Arcade.state.get(key) || Arcade.state.get(GAME_STATE_KEY);
 }
 function saveGameState(g) {
   if (!g) return;
   try {
-    Arcade.state.set(GAME_STATE_KEY, serializeGame(g));
+    const m = g.gameMode || Arcade.state.get('gameMode') || 'campaign';
+    const key = `gameState_${m}`;
+    const serialized = serializeGame(g);
+    Arcade.state.set(key, serialized);
+    Arcade.state.set(GAME_STATE_KEY, serialized);
   } catch (e) {
     console.warn(`[${GAME_ID}] failed to persist game state`, e);
   }
@@ -71,6 +83,8 @@ function commitBestIfHigher(score) {
   return false;
 }
 function clearGameState() {
+  const m = Arcade.state.get('gameMode') || 'campaign';
+  Arcade.state.remove(`gameState_${m}`);
   Arcade.state.remove(GAME_STATE_KEY);
 }
 
@@ -79,15 +93,58 @@ function clearGameState() {
 // schema bumps slot in cleanly.
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
+// Initialize state keys and handle migrations
+const legacySaved = Arcade.state.get(GAME_STATE_KEY);
+if (!Arcade.state.get('gameMode')) {
+  if (legacySaved && legacySaved.isPuzzleMode) {
+    Arcade.state.set('gameMode', 'puzzle');
+  } else if (Arcade.state.get('speedMode')) {
+    Arcade.state.set('gameMode', 'speed');
+  } else {
+    Arcade.state.set('gameMode', 'campaign');
+  }
+}
+const gameMode = Arcade.state.get('gameMode') || 'campaign';
+
+// Migrate legacy progress to progress_campaign
+const legacyProgress = Arcade.state.get(PROGRESS_KEY);
+if (legacyProgress && !Arcade.state.get('progress_campaign')) {
+  Arcade.state.set('progress_campaign', legacyProgress);
+}
+
+// Migrate legacy gameState to the specific mode's gameState key if it matches
+if (legacySaved && !Arcade.state.get(`gameState_${gameMode}`)) {
+  const isPuzzle = legacySaved.isPuzzleMode;
+  const isSpeed = !!Arcade.state.get('speedMode');
+  const matchedMode = isPuzzle ? 'puzzle' : isSpeed ? 'speed' : 'campaign';
+  Arcade.state.set(`gameState_${matchedMode}`, legacySaved);
+}
+
+const saved = loadGameState(gameMode);
+
+if (!Arcade.state.get('customStencilPack')) {
+  Arcade.state.set('customStencilPack', Arcade.state.get('stencilPack') || 'bugs');
+}
+if (Arcade.state.get('fastLaunch') === undefined) {
+  Arcade.state.set('fastLaunch', false);
+}
+
 const initialLevel = (() => {
-  const saved = loadGameState();
   if (saved && saved.level) return saved.level | 0;
-  return loadProgressLevel();
+  return loadProgressLevel(gameMode);
 })();
 const initialConfig = levelConfig(initialLevel);
 if (initialConfig) {
-  Arcade.state.set('stencilPack', initialConfig.stencilPack);
-  Arcade.state.set('speedMode', initialConfig.isSpeedMode);
+  if (gameMode === 'campaign') {
+    Arcade.state.set('stencilPack', initialConfig.stencilPack);
+    Arcade.state.set('speedMode', initialConfig.isSpeedMode);
+  } else if (gameMode === 'zen') {
+    Arcade.state.set('stencilPack', Arcade.state.get('customStencilPack') || 'bugs');
+    Arcade.state.set('speedMode', false);
+  } else if (gameMode === 'speed') {
+    Arcade.state.set('stencilPack', Arcade.state.get('customStencilPack') || 'bugs');
+    Arcade.state.set('speedMode', true);
+  }
 }
 
 try {
@@ -184,6 +241,10 @@ function startGame(g) {
 
   saveGameState(game);
   lastPhase = game.phase;
+
+  if (typeof window !== 'undefined') {
+    window.game = game;
+  }
 }
 
 function readSettings() {
@@ -223,7 +284,8 @@ function remapShotToLayout(shot, prev, next) {
 // otherwise create a fresh game at the saved progress level. Pulled out of
 // resize() so the viewport path stays single-purpose.
 function bootstrapGame() {
-  const saved = loadGameState();
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  const saved = loadGameState(gameMode);
   let restored = null;
   if (saved) {
     try { restored = restoreGame(saved); }
@@ -235,7 +297,11 @@ function bootstrapGame() {
   if (restored) {
     startGame(restored);
   } else {
-    startGame(createGame({ layout, level: loadProgressLevel() }));
+    if (gameMode === 'puzzle') {
+      startGame(createGame({ layout, isPuzzleMode: true, puzzleId: loadProgressLevel('puzzle'), gameMode: 'puzzle' }));
+    } else {
+      startGame(createGame({ layout, level: loadProgressLevel(gameMode), gameMode }));
+    }
   }
   resetHudState(game.score, bestScore);
 }
@@ -271,13 +337,25 @@ function resize() {
 // after this point will restore the player to the new stage.
 async function loadAndStartLevel(level, keepCurrentSettings = false) {
   const cfg = levelConfig(level);
-  if (!keepCurrentSettings) {
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  
+  let activePack = 'bugs';
+  if (gameMode === 'campaign') {
+    activePack = cfg.stencilPack;
     Arcade.state.set('speedMode', cfg.isSpeedMode);
-    await changeStencilPack(cfg.stencilPack);
+  } else {
+    // zen or speed
+    activePack = Arcade.state.get('customStencilPack') || 'bugs';
+    Arcade.state.set('speedMode', gameMode === 'speed');
+  }
+
+  if (!keepCurrentSettings) {
+    await changeStencilPack(activePack);
   } else {
     await loadLanterns();
   }
-  startGame(createGame({ layout, level }));
+  
+  startGame(createGame({ layout, level, gameMode }));
   saveProgress(game);
   resetHudState(0, bestScore);
   refreshMenuData();
@@ -287,12 +365,17 @@ async function loadAndStartLevel(level, keepCurrentSettings = false) {
 async function loadAndStartPuzzle(puzzleId) {
   const id = Math.max(1, Math.min(50, puzzleId | 0));
   const cfg = puzzleConfig(id);
+  
+  // Automatically switch gameMode to puzzle
+  Arcade.state.set('gameMode', 'puzzle');
+  
   if (cfg.stencilPack) {
     await changeStencilPack(cfg.stencilPack);
   } else {
     await loadLanterns();
   }
-  startGame(createGame({ layout, isPuzzleMode: true, puzzleId: id }));
+  startGame(createGame({ layout, isPuzzleMode: true, puzzleId: id, gameMode: 'puzzle' }));
+  saveProgress(game);
   resetHudState(0, bestScore);
   refreshMenuData();
   forceRequestFrame();
@@ -318,6 +401,10 @@ function restartLevel() {
 // run abandonment, so we don't record an outcome against the current game —
 // the player isn't trying to win, they're choosing where to play.
 function startLevel(level) {
+  const currentMode = Arcade.state.get('gameMode') || 'campaign';
+  if (currentMode === 'puzzle') {
+    Arcade.state.set('gameMode', 'campaign');
+  }
   loadAndStartLevel(Math.max(1, level | 0));
 }
 
@@ -599,8 +686,24 @@ attachInput(canvas, () => game, () => layout, {
   onInteract: bumpInteraction,
   onStartLevel: startLevel,
   onStartPuzzle: loadAndStartPuzzle,
-  onToggleSpeed: (active) => {
-    Arcade.ui.toast(active ? 'speed mode active — lightning!' : 'speed mode disabled', { kind: 'info' });
+  onChangeGameMode: (mode) => {
+    let msg = 'Campaign mode active';
+    if (mode === 'zen') msg = 'Zen mode active — untimed';
+    else if (mode === 'speed') msg = 'Speed mode active — timed';
+    else if (mode === 'puzzle') msg = 'Puzzle mode active — teasers';
+    
+    Arcade.ui.toast(msg, { kind: 'info' });
+    
+    if (mode === 'puzzle') {
+      const puzzleId = loadProgressLevel('puzzle');
+      loadAndStartPuzzle(puzzleId);
+    } else {
+      const lvl = loadProgressLevel(mode);
+      loadAndStartLevel(lvl);
+    }
+  },
+  onToggleFastLaunch: (active) => {
+    Arcade.ui.toast(active ? 'Fast launch enabled' : 'Fast launch disabled', { kind: 'info' });
     restartLevel();
   },
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
@@ -613,7 +716,7 @@ attachInput(canvas, () => game, () => layout, {
     }
     wasMenuOpen = isMenuOpenNow;
 
-    if (game && Arcade.state.get('stencilPack') === 'random') {
+    if (game && game.stencilPack === 'random') {
       for (const l of game.board.lanterns) {
         if (!l.designId) {
           l.designId = getRandomDesignForColor(l.color, game.rng);

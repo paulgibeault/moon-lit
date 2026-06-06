@@ -44,6 +44,10 @@ const menuState = {
   viewportH: 0,
 };
 
+if (typeof window !== 'undefined') {
+  window.menuState = menuState;
+}
+
 export function isMenuOpen() {
   return menuState.panel !== 'hidden' || menuState.fade > 0;
 }
@@ -128,7 +132,7 @@ export function handleMenuPointerMove(x, y, clientY) {
   return false;
 }
 
-export function handleMenuPointerUp(x, y, actions) {
+export function handleMenuPointerUp(x, y, actions, game) {
   if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
 
   const btn = menuState.buttonRect;
@@ -143,6 +147,18 @@ export function handleMenuPointerUp(x, y, actions) {
     }
   }
 
+  const handleClose = () => {
+    closeMenu();
+    const targetMode = Arcade.state.get('gameMode') || 'campaign';
+    const currentIsPuzzle = !!game?.isPuzzleMode;
+    const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+    if (currentMode !== targetMode) {
+      actions?.onChangeGameMode?.(targetMode);
+    } else {
+      actions?.onResume?.();
+    }
+  };
+
   // Check buttons / hits
   for (const h of menuState.hits) {
     if (!pointIn(x, y, h)) continue;
@@ -153,20 +169,31 @@ export function handleMenuPointerUp(x, y, actions) {
       case 'show-options': setMenuPanel('options'); return true;
       case 'show-records': setMenuPanel('records'); return true;
       case 'pick-stencil': {
-        changeStencilPack(h.value);
-        actions?.onInteract?.(); // wakes up the draw loop instantly
-        return true;
-      }
-      case 'toggle-speed': {
-        const current = !!Arcade.state.get('speedMode');
-        const target = h.value !== undefined ? h.value : !current;
-        if (current !== target) {
-          Arcade.state.set('speedMode', target);
-          actions?.onToggleSpeed?.(target);
+        const gameMode = Arcade.state.get('gameMode') || 'campaign';
+        if (gameMode === 'zen' || gameMode === 'speed') {
+          Arcade.state.set('customStencilPack', h.value);
+          changeStencilPack(h.value);
+          actions?.onInteract?.(); // wakes up the draw loop instantly
         }
         return true;
       }
-      case 'close':        closeMenu(); actions?.onResume?.(); return true;
+      case 'change-gamemode': {
+        const targetMode = h.value;
+        const currentMode = Arcade.state.get('gameMode') || 'campaign';
+        if (currentMode !== targetMode) {
+          Arcade.state.set('gameMode', targetMode);
+          actions?.onInteract?.();
+        }
+        return true;
+      }
+      case 'toggle-fast-launch': {
+        const current = !!Arcade.state.get('fastLaunch');
+        const target = !current;
+        Arcade.state.set('fastLaunch', target);
+        actions?.onToggleFastLaunch?.(target);
+        return true;
+      }
+      case 'close':        handleClose(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
       case 'pick-puzzle':  closeMenu(); actions?.onStartPuzzle?.(h.value); return true;
     }
@@ -175,7 +202,7 @@ export function handleMenuPointerUp(x, y, actions) {
   // Tap fell inside the scrim but outside the card - dismiss
   const card = menuState.cardRect;
   if (card && !pointIn(x, y, card)) {
-    closeMenu();
+    handleClose();
     return true;
   }
 
@@ -366,22 +393,91 @@ function drawDashedRule(ctx, x, y, w) {
 
 function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 320 * fs, 360 * fs);
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  
+  const items = [];
+  items.push({ label: 'Play', sub: 'resume game from last level', action: 'close', glyph: 'play' });
+  if (gameMode === 'puzzle') {
+    items.push({ label: 'Puzzles', sub: '50 brain-teaser challenges', action: 'show-puzzles', glyph: 'puzzles' });
+  } else {
+    items.push({ label: 'Stages', sub: 'select or revisit a stage', action: 'show-stages', glyph: 'stages' });
+  }
+  
+  items.push(
+    { label: 'Options',     sub: 'configure art and launch',  action: 'show-options',  glyph: 'stencils' },
+    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' }
+  );
+
+  // Compute card height dynamically: title + mode selector + divider + items
+  const cardH = Math.round((210 + items.length * 48) * fs);
+  const rect = cardRect(layout, 320 * fs, cardH);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
-  const padX = 24;
-  const rowH = Math.round(44 * fs);
-  const items = [
-    { label: 'Stages',      sub: 'pick or revisit a stage',   action: 'show-stages',   glyph: 'stages' },
-    { label: 'Puzzles',     sub: '50 brain-teaser challenges', action: 'show-puzzles',  glyph: 'puzzles' },
-    { label: 'Options',     sub: 'configure art and mode',    action: 'show-options',  glyph: 'stencils' },
-    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' },
-    { label: 'Continue',    sub: 'back to the river',         action: 'close',         glyph: 'moon' },
+  const padX = 20;
+  const innerW = rect.w - padX * 2;
+  let y = startY + 6;
+
+  // ─── Game Mode Grid (2x2) ───
+  y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
+
+  const colW = Math.floor((innerW - 12) / 2);
+  const colH = Math.round(48 * fs);
+
+  const modeOpts = [
+    { id: 'campaign', label: 'Campaign', sub: 'Default levels', glyph: 'stages' },
+    { id: 'zen',      label: 'Zen',      sub: 'Classic play',   glyph: 'moon' },
+    { id: 'speed',    label: 'Speed',    sub: 'Rapid fire',     glyph: 'speed' },
+    { id: 'puzzle',   label: 'Puzzle',   sub: 'Teaser puzzles',  glyph: 'puzzles' }
   ];
 
-  let y = startY + 6;
+  const modeStartY = y;
+  for (let i = 0; i < 4; i++) {
+    const opt = modeOpts[i];
+    const isSelected = (opt.id === gameMode);
+    const rowIndex = Math.floor(i / 2);
+    const colIndex = i % 2;
+    const tx = rect.x + padX + colIndex * (colW + 12);
+    const ty = modeStartY + rowIndex * (colH + 8);
+
+    ctx.save();
+    ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+    roundedRectPath(ctx, tx, ty, colW, colH, 6);
+    ctx.fill();
+
+    ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
+    ctx.lineWidth = isSelected ? 1.4 : 1;
+    ctx.stroke();
+
+    const cx = tx + 14 * fs;
+    const cy = ty + colH / 2;
+    drawGlyph(ctx, opt.glyph, cx, cy);
+
+    const titlePx = Math.round(11.5 * fs);
+    const subPx = Math.round(8.5 * fs);
+
+    ctx.fillStyle = CREAM;
+    ctx.font = `600 ${titlePx}px ${SERIF}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText(opt.label, tx + 26 * fs, ty + colH * 0.22);
+
+    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+    ctx.font = `400 ${subPx}px ${SERIF}`;
+    ctx.fillText(opt.sub, tx + 26 * fs, ty + colH * 0.58);
+
+    ctx.restore();
+
+    menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'change-gamemode', value: opt.id });
+  }
+
+  y += 2 * colH + 8 + 10;
+  drawDashedRule(ctx, rect.x + padX, y, innerW);
+  y += 10;
+
+  // ─── Menu Items ───
+  const rowH = Math.round(44 * fs);
   for (const it of items) {
     drawMenuRow(ctx, rect.x + padX, y, rect.w - padX * 2, rowH, it, settings);
     menuState.hits.push({ x: rect.x + padX, y, w: rect.w - padX * 2, h: rowH, action: it.action });
@@ -502,6 +598,17 @@ function drawGlyph(ctx, kind, cx, cy) {
       ctx.lineTo(cx - 2, cy + 7);
       ctx.lineTo(cx + 3, cy - 0);
       ctx.lineTo(cx + 1, cy - 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'play': {
+      // Draw a right-pointing play triangle
+      ctx.fillStyle = hexToRgba(GOLD, 0.95);
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, cy - 6);
+      ctx.lineTo(cx + 5, cy);
+      ctx.lineTo(cx - 3, cy + 6);
       ctx.closePath();
       ctx.fill();
       break;
@@ -1042,7 +1149,14 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
 
 function drawOptionsPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 350 * fs, 400 * fs);
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  
+  // Compute card height dynamically: title + stencils disabled notice/packs + fast launch
+  const isZen = gameMode === 'zen';
+  const stencilsDisabled = (gameMode === 'campaign' || gameMode === 'puzzle');
+  const cardH = Math.round((200 + (isZen ? 50 : 0) + (stencilsDisabled ? 34 : 0) + 5 * 44) * fs);
+  
+  const rect = cardRect(layout, 350 * fs, cardH);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Options', { showBack: true, fs });
@@ -1051,60 +1165,57 @@ function drawOptionsPanel(ctx, layout, settings) {
   const innerW = rect.w - padX * 2;
   let y = startY + 10;
 
-  // Game Mode Section
-  y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
-
-  const colW = Math.floor((innerW - 12) / 2);
-  const colH = Math.round(52 * fs);
-  const speedMode = !!Arcade.state.get('speedMode');
-
-  const modeOpts = [
-    { id: 'classic', label: 'Classic', sub: 'Standard play', value: false },
-    { id: 'speed', label: 'Speed', sub: 'Rapid fire', value: true }
-  ];
-
-  for (let i = 0; i < 2; i++) {
-    const opt = modeOpts[i];
-    const isSelected = (opt.value === speedMode);
-    const tx = rect.x + padX + i * (colW + 12);
-    const ty = y;
-
+  // Fast Launch Option (Zen mode only)
+  if (isZen) {
+    const fastLaunch = !!Arcade.state.get('fastLaunch');
+    const rowH = Math.round(38 * fs);
     ctx.save();
-    ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
-    roundedRectPath(ctx, tx, ty, colW, colH, 8);
+    ctx.fillStyle = fastLaunch ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+    roundedRectPath(ctx, rect.x + padX, y, innerW, rowH, 6);
     ctx.fill();
 
-    ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
-    ctx.lineWidth = isSelected ? 1.4 : 1;
+    ctx.strokeStyle = fastLaunch ? GOLD : hexToRgba(CREAM, 0.12);
+    ctx.lineWidth = fastLaunch ? 1.4 : 1;
     ctx.stroke();
-
-    const cx = tx + 18 * fs;
-    const cy = ty + colH / 2;
-    if (opt.id === 'classic') {
-      drawGlyph(ctx, 'moon', cx, cy);
-    } else {
-      drawGlyph(ctx, 'speed', cx, cy);
-    }
 
     const titlePx = Math.round(13 * fs);
     const subPx = Math.round(9 * fs);
 
     ctx.fillStyle = CREAM;
-    ctx.font = `600 ${titlePx}px ${SERIF}`;
+    ctx.font = `500 ${titlePx}px ${SERIF}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(opt.label, tx + 32 * fs, ty + colH * 0.22);
+    ctx.fillText('Fast Launch', rect.x + padX + 12 * fs, y + rowH * 0.18);
 
     ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
     ctx.font = `400 ${subPx}px ${SERIF}`;
-    ctx.fillText(opt.sub, tx + 32 * fs, ty + colH * 0.58);
+    ctx.fillText('Rapid fire launching mechanics', rect.x + padX + 12 * fs, y + rowH * 0.58);
 
+    // Toggle switch checkbox indicator
+    const cx = rect.x + padX + innerW - 16 * fs;
+    const cy = y + rowH / 2;
+    if (fastLaunch) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, cy - 1);
+      ctx.lineTo(cx - 1, cy + 2);
+      ctx.lineTo(cx + 4, cy - 4);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.3);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
 
-    menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'toggle-speed', value: opt.value });
+    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'toggle-fast-launch' });
+    y += rowH + 16;
   }
-
-  y += colH + 16;
 
   // Lantern Art Section
   y = drawSectionHeader(ctx, rect.x + padX, y, 'Lantern Art', fs);
@@ -1112,12 +1223,44 @@ function drawOptionsPanel(ctx, layout, settings) {
   const activePackId = Arcade.state.get('stencilPack') || 'bugs';
   const rowH = Math.round(38 * fs);
 
+  if (stencilsDisabled) {
+    ctx.save();
+    const noticeH = Math.round(34 * fs);
+    ctx.fillStyle = 'rgba(232, 183, 112, 0.04)';
+    ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    roundedRectPath(ctx, rect.x + padX, y, innerW, noticeH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = hexToRgba(GOLD, 0.85);
+    ctx.font = `italic 400 ${Math.round(10 * fs)}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      'Art is determined by level config in Campaign and Puzzle modes.',
+      rect.x + rect.w / 2,
+      y + noticeH / 2
+    );
+    ctx.restore();
+    y += noticeH + 10;
+  }
+
+  ctx.save();
+  if (stencilsDisabled) {
+    ctx.globalAlpha = 0.35;
+  }
+
   for (const pack of Object.values(STENCIL_PACKS)) {
     const isSelected = pack.id === activePackId;
     drawCompactStencilRow(ctx, rect.x + padX, y, innerW, rowH, pack, isSelected, fs);
-    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    if (!stencilsDisabled) {
+      menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    }
     y += rowH + 6;
   }
+  ctx.restore();
 }
 
 function drawCompactStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {

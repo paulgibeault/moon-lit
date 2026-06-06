@@ -20,6 +20,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const {
     onWinClick, onLossClick, onInteract, onStartLevel, onStartPuzzle, onMenuChange, onToggleSpeed,
     onPrevClick, onRestartClick, onNextClick,
+    onChangeGameMode, onToggleFastLaunch,
   } = callbacks;
   
   // Notify main.js when the menu opens/closes so the rAF loop can wake up.
@@ -35,6 +36,8 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     onResume:     () => {},
     onToggleSpeed: (active) => onToggleSpeed?.(active),
     onInteract:   () => { bump(); fireMenuChange(); },
+    onChangeGameMode: (mode) => onChangeGameMode?.(mode),
+    onToggleFastLaunch: (active) => onToggleFastLaunch?.(active),
   };
 
   let rect = canvas.getBoundingClientRect();
@@ -138,7 +141,8 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
         canvas.releasePointerCapture?.(e.pointerId);
         aimingPointerId = null;
       }
-      if (handleMenuPointerUp(localX, localY, menuActions)) {
+      const game = getGame();
+      if (handleMenuPointerUp(localX, localY, menuActions, game)) {
         fireMenuChange();
       }
       e.preventDefault();
@@ -168,6 +172,13 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     bump();
     if (isMenuPanelOpen()) {
       closeMenu();
+      const game = getGame();
+      const targetMode = Arcade.state.get('gameMode') || 'campaign';
+      const currentIsPuzzle = !!game?.isPuzzleMode;
+      const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+      if (currentMode !== targetMode) {
+        onChangeGameMode?.(targetMode);
+      }
     } else {
       openMenu();
     }

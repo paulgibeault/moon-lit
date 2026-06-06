@@ -55,7 +55,20 @@ const DROWN_BUBBLE_MAX_INT  = 0.5;
 const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
 const DROWN_END_PAUSE_SEC   = 0.3;
 
-export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1 } = {}) {
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
+  // Determine gameMode
+  if (!gameMode) {
+    if (typeof Arcade !== 'undefined' && Arcade.state) {
+      gameMode = Arcade.state.get('gameMode') || (isPuzzleMode ? 'puzzle' : 'campaign');
+    } else {
+      gameMode = isPuzzleMode ? 'puzzle' : 'campaign';
+    }
+  }
+  if (isPuzzleMode) {
+    gameMode = 'puzzle';
+  }
+  const isPuzzle = gameMode === 'puzzle';
+
   let config = null;
   let colors = null;
   let effectiveSeed = 0;
@@ -72,7 +85,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   let descentTimeLimit = 0;
   let descentShots = 0;
 
-  if (isPuzzleMode) {
+  if (isPuzzle) {
     const pz = puzzleConfig(puzzleId);
     colors = pz.colors;
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + puzzleId * 997)) >>> 0;
@@ -89,18 +102,6 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     isSpeedMode = puzzleDescentType === 'time';
     descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
     descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
-
-    // Apply look & feel parameters (env and moon overrides)
-    if (pz.env) {
-      if (pz.env.windSpeed !== undefined) ENV_PARAMS.windSpeed = pz.env.windSpeed;
-      if (pz.env.windFrequency !== undefined) ENV_PARAMS.windFrequency = pz.env.windFrequency;
-      if (pz.env.glowIntensity !== undefined) ENV_PARAMS.glowIntensity = pz.env.glowIntensity;
-      if (pz.env.rippleSpeedScale !== undefined) ENV_PARAMS.rippleSpeedScale = pz.env.rippleSpeedScale;
-    }
-    if (pz.moon) {
-      if (pz.moon.phase !== undefined) MOON_OVERRIDE.phase = pz.moon.phase;
-      if (pz.moon.position !== undefined) MOON_OVERRIDE.position = pz.moon.position;
-    }
   } else {
     config = levelConfig(level);
     colors = COLOR_KEYS.slice(0, config.colors);
@@ -112,12 +113,34 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     queueNext = pick(rng, colors);
     queueAfterNext = pick(rng, colors);
     
-    isSpeedMode = !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('speedMode'));
+    if (gameMode === 'zen') {
+      isSpeedMode = false;
+    } else if (gameMode === 'speed') {
+      isSpeedMode = true;
+    } else {
+      // campaign
+      isSpeedMode = config.isSpeedMode;
+    }
     descentShots = config.descentShots;
     descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
   }
 
-  const activePackId = getActivePackId();
+  // Fast launch: true if Speed mode or if Zen mode has it enabled in state
+  const isFastLaunch = isSpeedMode || (gameMode === 'zen' && !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('fastLaunch')));
+
+  let activePackId = 'bugs';
+  if (isPuzzle) {
+    const pz = puzzleConfig(puzzleId);
+    activePackId = pz.stencilPack || 'bugs';
+  } else if (gameMode === 'campaign') {
+    activePackId = config.stencilPack || 'bugs';
+  } else {
+    // Zen or Speed
+    activePackId = (typeof Arcade !== 'undefined' && Arcade.state)
+      ? (Arcade.state.get('stencilPack') || 'bugs')
+      : 'bugs';
+  }
+
   const currentDesign = (activePackId === 'random' && queueCurrent) ? getRandomDesignForColor(queueCurrent, rng) : null;
   const nextDesign = (activePackId === 'random' && queueNext) ? getRandomDesignForColor(queueNext, rng) : null;
   const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? getRandomDesignForColor(queueAfterNext, rng) : null;
@@ -165,16 +188,19 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     recoilTime: 0,
     lastQueueAdvanceTime: 0,
     isSpeedMode,
-    projectileSpeed: isSpeedMode ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
+    isFastLaunch,
+    projectileSpeed: isFastLaunch ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
     descentDriftSpeed: isSpeedMode ? SPEED_MODE_DESCENT_DRIFT_SPEED : DESCENT_DRIFT_SPEED,
-    settleAnimSec: isSpeedMode ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
+    settleAnimSec: isFastLaunch ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (!isPuzzleMode && level === 10) || (isPuzzleMode && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
+    showModeIntroCard: (!isPuzzle && level === 10) || (isPuzzle && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
     
     // Puzzle properties
-    isPuzzleMode,
+    isPuzzleMode: isPuzzle,
+    gameMode,
+    stencilPack: activePackId,
     puzzleId,
     puzzleQueueIndex,
     puzzleGoalType,
@@ -188,18 +214,18 @@ export function setAim(game, angleRad) {
 }
 
 export function fire(game, layout) {
-  const allowed = game.isSpeedMode
+  const allowed = game.isFastLaunch
     ? (game.phase === PHASE.AIMING || game.phase === PHASE.SETTLING)
     : (game.phase === PHASE.AIMING);
   if (!allowed) return;
-  if (game.isSpeedMode && game.fireCooldown > 0) return;
+  if (game.isFastLaunch && game.fireCooldown > 0) return;
   if (!game.queue.current) return;
 
   const origin = launcherTip(layout);
   const angle = game.aimAngle;
   const swayFreq = SHOT_SWAY_FREQ_MIN +
     game.rng() * (SHOT_SWAY_FREQ_MAX - SHOT_SWAY_FREQ_MIN);
-  const swayAmp = game.isSpeedMode ? 0 : (SHOT_SWAY_AMP_MIN +
+  const swayAmp = game.isFastLaunch ? 0 : (SHOT_SWAY_AMP_MIN +
     game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN));
 
   const newShot = {
@@ -215,7 +241,7 @@ export function fire(game, layout) {
     swayAmp,
   };
 
-  if (game.isSpeedMode) {
+  if (game.isFastLaunch) {
     game.shots.push(newShot);
     game.fireCooldown = SPEED_MODE_FIRE_COOLDOWN;
     advanceQueue(game);
@@ -259,7 +285,7 @@ export function step(game, dtSec, layout) {
     }
   }
 
-  if (game.isSpeedMode && game.fireCooldown > 0) {
+  if (game.isFastLaunch && game.fireCooldown > 0) {
     game.fireCooldown = Math.max(0, game.fireCooldown - dtSec);
   }
 
@@ -270,16 +296,10 @@ export function step(game, dtSec, layout) {
       game.board.descentAnimY = 0;
       const postDrop = dropFloating(game.board, layout);
       if (postDrop.length) {
-        // A descent that knocks lanterns past the trellis edge is a quiet
-        // gift, not a player-driven combo: score it as a drop without
-        // touching the combo counter or chain multiplier.
         const gain = postDrop.length * postDrop.length * 20;
         game.score += gain;
         game.breakdown.drop += gain;
         for (const l of postDrop) spawnBurst(game, l.x, l.y);
-        // Treat the gift drop as a "big" event for the ripple — the player
-        // didn't earn it with a placement, but seeing the field shimmer in
-        // response sells the cascade.
         emitRipple(game, [], postDrop, { combo: 0 }, layout);
       }
       game.phase = PHASE.AIMING;
@@ -293,7 +313,7 @@ export function step(game, dtSec, layout) {
   if (game.phase === PHASE.SETTLING) {
     const stillActive = tickAnims(game.board, dtSec, game.settleAnimSec ?? SETTLE_ANIM_SEC);
     if (!stillActive) finishSettle(game, layout);
-    if (!game.isSpeedMode) {
+    if (!game.isFastLaunch) {
       return true;
     }
   }
@@ -321,7 +341,7 @@ export function step(game, dtSec, layout) {
 
         resolvePlacement(game, layout);
 
-        if (!game.isSpeedMode) {
+        if (!game.isFastLaunch) {
           advanceQueue(game);
         }
 
@@ -589,7 +609,7 @@ function advanceQueue(game) {
   const nextColor = pick(game.rng, palette.length ? palette : game.colors);
   game.queue.afterNext = nextColor;
   
-  const activePackId = getActivePackId();
+  const activePackId = game.stencilPack || 'bugs';
   game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }
