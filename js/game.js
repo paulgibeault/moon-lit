@@ -82,7 +82,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     colors = pz.colors;
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + puzzleId * 997)) >>> 0;
     rng = mulberry32(effectiveSeed);
-    if (layout) populatePuzzle(board, layout, pz.board);
+    if (layout) populatePuzzle(board, layout, pz.board, pz);
     
     queueCurrent = pz.queue[0] || null;
     queueNext = pz.queue[1] || null;

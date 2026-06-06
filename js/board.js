@@ -128,7 +128,7 @@ export function addLantern(board, x, y, color, layout, designId = null) {
   return l;
 }
 
-export function populatePuzzle(board, layout, pattern) {
+export function populatePuzzle(board, layout, pattern, pz = null) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   
@@ -157,9 +157,9 @@ export function populatePuzzle(board, layout, pattern) {
       let designId = null;
 
       if (char === 'T') {
-        color = 'yellow';
+        color = (pz && pz.targetColor) ? pz.targetColor : 'red';
         isTarget = true;
-        designId = 'dragons_dragon_head';
+        designId = null;
       } else if (char === 'X') {
         color = 'paper';
         isBlocker = true;

@@ -15,7 +15,7 @@ export const DEFAULT_CHAR_MAP = Object.freeze({
   'X': { color: 'paper', isBlocker: true, designId: 'flowers_bamboo' },
   
   // Target / Spirit lanterns (must be cleared to win)
-  'T': { color: 'red', isTarget: true, designId: 'dragons_dragon_head' }
+  'T': { color: 'red', isTarget: true, designId: null }
 });
 
 const HAND_CRAFTED_PUZZLES = [
@@ -98,15 +98,16 @@ const HAND_CRAFTED_PUZZLES = [
     id: 6,
     name: "Lotus Target",
     description: "Pop or drop the target lanterns in the center.",
-    colors: ['red', 'yellow', 'paper'],
-    queue: ['red', 'yellow'],
+    colors: ['yellow', 'red', 'paper'],
+    queue: ['yellow', 'red'],
     stencilPack: 'flowers',
     descentType: 'none',
     goalType: 'clear-targets',
+    targetColor: 'red',
     board: [
       "P P T T T T P P",
-      " P R R R R P ",
-      "Y Y Y . . Y Y Y"
+      " P Y Y Y Y P ",
+      "R R R . . R R R"
     ]
   },
   {
@@ -145,18 +146,19 @@ const HAND_CRAFTED_PUZZLES = [
     id: 9,
     name: "Heart of Gold",
     description: "Free the target cluster locked inside the heart.",
-    colors: ['red', 'yellow', 'paper'],
-    queue: ['red', 'yellow', 'paper'],
+    colors: ['yellow', 'red', 'paper'],
+    queue: ['yellow', 'red', 'paper'],
     stencilPack: 'flowers',
     descentType: 'none',
     goalType: 'clear-targets',
+    targetColor: 'red',
     board: [
       ". P P . . P P .",
       " P T T . T T P ",
       "P P T T T T P P",
-      " P R R T T R P ",
-      "  . R T T R .  ",
-      "   . R R . .   "
+      " P Y Y T T Y P ",
+      "  . Y T T Y .  ",
+      "   . Y Y . .   "
     ]
   },
   {
@@ -199,6 +201,7 @@ const HAND_CRAFTED_PUZZLES = [
     stencilPack: 'bugs',
     descentType: 'none',
     goalType: 'clear-targets',
+    targetColor: 'red',
     moon: { phase: 0.15, position: 0.7 },
     board: [
       "G G . . . . O O",
@@ -210,14 +213,15 @@ const HAND_CRAFTED_PUZZLES = [
     id: 13,
     name: "Lotus Pond",
     description: "Supercharged firelight under the canopy. Target the center.",
-    colors: ['red', 'blue', 'paper'],
-    queue: ['blue', 'red'],
+    colors: ['yellow', 'blue', 'paper'],
+    queue: ['blue', 'yellow'],
     stencilPack: 'flowers',
     descentType: 'none',
     goalType: 'clear-targets',
+    targetColor: 'red',
     env: { glowIntensity: 3.0 },
     board: [
-      ". . R R R R . .",
+      ". . Y Y Y Y . .",
       " . T T T T . ",
       "B B B B B B B B"
     ]
@@ -293,6 +297,9 @@ function generatePuzzle(id) {
   // Determine active colors
   const colorCount = rng() < 0.35 ? 3 : rng() < 0.75 ? 4 : 5;
   const colors = COLOR_KEYS.slice(0, colorCount);
+
+  // Decide target color if goal is clear-targets
+  const targetColor = goalType === 'clear-targets' ? colors[Math.floor(rng() * colors.length)] : null;
 
   // Generate board pattern
   const rowCount = 4 + Math.floor(rng() * 3); // 4 to 6 rows
@@ -373,7 +380,7 @@ function generatePuzzle(id) {
   
   // Find which colors are actually on the board
   const boardColorsSet = new Set();
-  const charToColor = { 'R': 'red', 'O': 'orange', 'Y': 'yellow', 'G': 'green', 'B': 'blue', 'P': 'paper', 'T': 'yellow' };
+  const charToColor = { 'R': 'red', 'O': 'orange', 'Y': 'yellow', 'G': 'green', 'B': 'blue', 'P': 'paper', 'T': targetColor || 'red' };
   for (const row of board) {
     for (const char of row.split(' ')) {
       if (charToColor[char]) {
@@ -407,6 +414,7 @@ function generatePuzzle(id) {
     stencilPack,
     descentType,
     goalType,
+    targetColor,
     env,
     moon,
     board

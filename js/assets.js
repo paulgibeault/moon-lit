@@ -318,8 +318,18 @@ export async function loadLanterns() {
           const d = 56 * RASTER_SCALE;
           const offsetY = 5 * RASTER_SCALE;
 
-          const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
-          ctx.globalAlpha = opacity;
+          // Golden stencils (target lanterns) need high opacity so the gold ink
+          // shines prominently against any paper color — especially yellow, where
+          // the normal 0.55 makes gold-on-gold nearly invisible.
+          ctx.globalAlpha = 0.95;
+
+          // Drop shadow behind golden stencils — a soft dark halo that gives the
+          // gold ink depth and makes the stencil design legible.
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+          ctx.shadowBlur = 4 * RASTER_SCALE;
+          ctx.shadowOffsetX = 1 * RASTER_SCALE;
+          ctx.shadowOffsetY = 1 * RASTER_SCALE;
+
           ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
           ctx.restore();
         }
