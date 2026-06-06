@@ -131,7 +131,8 @@ function centroidOf(items) {
 
 function pushFloat(game, kind, text, x, y, r) {
   const s = FLOAT_STYLES[kind];
-  game.floats.push({ kind, text, x, y: y - r * s.offsetR, t: 0, life: s.life });
+  const life = game.isSpeedMode ? 0.3 : s.life;
+  game.floats.push({ kind, text, x, y: y - r * s.offsetR, t: 0, life });
 }
 
 // Stamp positions, kinds, and lifetimes for one shot's bonus callouts.
@@ -167,6 +168,7 @@ export function emitFloats(game, popped, dropped, breakdown, layout) {
 // drop, or a building combo. Smaller pops are intentionally skipped so the
 // effect stays a celebration rather than constant ambient noise.
 export function emitRipple(game, popped, dropped, breakdown, layout) {
+  if (game.isSpeedMode) return;
   const popN = popped.length;
   const dropN = dropped.length;
   const combo = (breakdown && breakdown.combo) || 0;

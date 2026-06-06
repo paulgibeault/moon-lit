@@ -1823,28 +1823,29 @@ export function drawReflections(ctx, layout, game, settings) {
     ctx.restore();
   }
 
-  // Reflect the in-flight shot too, with the same ignite ramp as the real one.
-  const shot = game.shot;
-  if (shot) {
-    const t = shot.flightT || 0;
-    const amp = shot.swayAmp || 0;
-    const freq = shot.swayFreq || 0;
-    const phase = shot.swayPhase || 0;
-    const wobble = amp * (Math.sin(2 * Math.PI * freq * t + phase) - Math.sin(phase));
-    const drawX = shot.x + (-shot.vy) * wobble;
-    const drawY = shot.y + ( shot.vx) * wobble;
-    const height = deadLineY - drawY;
-    if (height > 0) {
-      const fade = Math.max(0, 1 - height / fadeDepth);
-      if (fade > 0.05) {
-        const ignite = Math.min(1, t / IGNITE_SEC);
-        ctx.save();
-        ctx.globalAlpha = 0.32 * fade;
-        ctx.translate(drawX, deadLineY + height);
-        ctx.scale(1, -1);
-        drawLantern(ctx, 0, 0, layout.size, shot.color,
-          { lit: true, intensity: ignite * 0.55, phase, isReflection: true, designId: shot.designId });
-        ctx.restore();
+  // Reflect the in-flight shots too, with the same ignite ramp as the real one.
+  if (game.shots && game.shots.length > 0) {
+    for (const shot of game.shots) {
+      const t = shot.flightT || 0;
+      const amp = shot.swayAmp || 0;
+      const freq = shot.swayFreq || 0;
+      const phase = shot.swayPhase || 0;
+      const wobble = amp * (Math.sin(2 * Math.PI * freq * t + phase) - Math.sin(phase));
+      const drawX = shot.x + (-shot.vy) * wobble;
+      const drawY = shot.y + ( shot.vx) * wobble;
+      const height = deadLineY - drawY;
+      if (height > 0) {
+        const fade = Math.max(0, 1 - height / fadeDepth);
+        if (fade > 0.05) {
+          const ignite = Math.min(1, t / IGNITE_SEC);
+          ctx.save();
+          ctx.globalAlpha = 0.32 * fade;
+          ctx.translate(drawX, deadLineY + height);
+          ctx.scale(1, -1);
+          drawLantern(ctx, 0, 0, layout.size, shot.color,
+            { lit: true, intensity: ignite * 0.55, phase, isReflection: true, designId: shot.designId });
+          ctx.restore();
+        }
       }
     }
   }

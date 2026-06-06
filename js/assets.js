@@ -102,6 +102,10 @@ let moonTexture = null;
 const ALPHA_THRESHOLD = 8;
 
 const sprites = {};
+let plainCanvases = {};
+let plainBboxes = {};
+let stencilImages = {};
+let stencilCache = {};
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -176,6 +180,17 @@ export async function loadLanterns() {
   const activePackId = Arcade.state.get('stencilPack') || 'bugs';
   const pack = STENCIL_PACKS[activePackId] || STENCIL_PACKS.bugs;
   
+  // Clear old cached sprites and stencil/canvas caches
+  for (const key of Object.keys(sprites)) {
+    if (key !== 'launcher_wheel') {
+      delete sprites[key];
+    }
+  }
+  stencilImages = {};
+  plainCanvases = {};
+  plainBboxes = {};
+  stencilCache = {};
+  
   // Collect all designs from bugs, flowers, dragons packs
   const allDesigns = [];
   for (const [packId, p] of Object.entries(STENCIL_PACKS)) {
@@ -194,7 +209,6 @@ export async function loadLanterns() {
   }
 
   // Load stencil images
-  const stencilImages = {};
   if (activePackId === 'random') {
     await Promise.all(
       allDesigns.map(async (d) => {
@@ -219,53 +233,46 @@ export async function loadLanterns() {
     );
   }
 
-  const promises = [];
+  await Promise.all(
+    COLOR_KEYS.map(async (colorKey) => {
+      plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+      plainBboxes[colorKey] = measureBbox(plainCanvases[colorKey]);
+    })
+  );
+
+  function copyCanvas(srcCanvas) {
+    const dst = document.createElement('canvas');
+    dst.width = srcCanvas.width;
+    dst.height = srcCanvas.height;
+    dst.getContext('2d').drawImage(srcCanvas, 0, 0);
+    return dst;
+  }
 
   if (activePackId === 'random') {
-    // 1. Rasterize plain paper versions (recorded as sprites[colorKey])
+    // 1. Record plain paper versions (recorded as sprites[colorKey])
     for (const colorKey of COLOR_KEYS) {
-      promises.push((async () => {
-        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-        record(colorKey, canvas, measureBbox(canvas));
-      })());
+      record(colorKey, plainCanvases[colorKey], plainBboxes[colorKey]);
     }
-
-    // 2. Rasterize every color with every loaded design (recorded as sprites[colorKey + '_' + designId])
+    // 2. Pre-rasterize all color + stencil combinations (normal and golden) to avoid runtime stutters
+    const packs = ['bugs', 'flowers', 'dragons'];
     for (const colorKey of COLOR_KEYS) {
-      for (const d of allDesigns) {
-        promises.push((async () => {
-          const stencilImg = stencilImages[d.designId];
-          if (!stencilImg) return;
-
-          const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-          const stencil = makeBugStencil(stencilImg);
-          const ctx = canvas.getContext('2d');
-          ctx.save();
-          ctx.globalCompositeOperation = 'source-atop';
-
-          // Dimensions to center on the lantern body
-          const cx = 50 * RASTER_SCALE;
-          const cy = 65 * RASTER_SCALE;
-          const dSize = 56 * RASTER_SCALE;
-          const offsetY = 5 * RASTER_SCALE;
-
-          const opacity = d.packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
-          ctx.globalAlpha = opacity;
-          ctx.drawImage(stencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
-          ctx.restore();
-
-          record(`${colorKey}_${d.designId}`, canvas, measureBbox(canvas));
-        })());
+      for (const packId of packs) {
+        const designId = `${packId}_${colorKey}`;
+        rasterizeSingleLantern(colorKey, designId, false);
+        rasterizeSingleLantern(colorKey, designId, true);
       }
     }
   } else {
-    // Standard pack logic (original flow)
+    // Standard pack logic (original flow, but optimized with stencil caching and bbox reuse)
     for (const colorKey of COLOR_KEYS) {
-      promises.push((async () => {
-        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-        const stencilImg = stencilImages[colorKey];
+      const plainCanvas = plainCanvases[colorKey];
+      const stencilImg = stencilImages[colorKey];
+
+      // Normal version
+      {
+        const canvas = copyCanvas(plainCanvas);
         if (stencilImg) {
-          const stencil = makeBugStencil(stencilImg);
+          const stencil = getStencil(colorKey, stencilImg, false);
           const ctx = canvas.getContext('2d');
           ctx.save();
           ctx.globalCompositeOperation = 'source-atop';
@@ -280,12 +287,32 @@ export async function loadLanterns() {
           ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
           ctx.restore();
         }
-        record(colorKey, canvas, measureBbox(canvas));
-      })());
+        record(colorKey, canvas, plainBboxes[colorKey]);
+      }
+
+      // Golden version
+      {
+        const canvas = copyCanvas(plainCanvas);
+        if (stencilImg) {
+          const stencil = getStencil(colorKey, stencilImg, true);
+          const ctx = canvas.getContext('2d');
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+
+          const cx = 50 * RASTER_SCALE;
+          const cy = 65 * RASTER_SCALE;
+          const d = 56 * RASTER_SCALE;
+          const offsetY = 5 * RASTER_SCALE;
+
+          const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+          ctx.globalAlpha = opacity;
+          ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
+          ctx.restore();
+        }
+        record(`${colorKey}_golden`, canvas, plainBboxes[colorKey]);
+      }
     }
   }
-
-  await Promise.all(promises);
   try {
     const img = await loadImage(BURST_SRC);
     const frameSize = img.naturalHeight || img.height;
@@ -330,10 +357,57 @@ export function getFlameSheet() {
   return flameSheet;
 }
 
-export function getLanternSprite(colorKey, designId = null) {
-  if (designId) {
-    const key = `${colorKey}_${designId}`;
+function rasterizeSingleLantern(colorKey, designId, isGolden) {
+  const plainCanvas = plainCanvases[colorKey];
+  if (!plainCanvas) return null;
+
+  const stencilImg = stencilImages[designId];
+  if (!stencilImg) return sprites[colorKey] || null;
+
+  const key = isGolden ? `${colorKey}_${designId}_golden` : `${colorKey}_${designId}`;
+
+  const dst = document.createElement('canvas');
+  dst.width = plainCanvas.width;
+  dst.height = plainCanvas.height;
+  const ctx = dst.getContext('2d');
+  ctx.drawImage(plainCanvas, 0, 0);
+
+  const stencil = getStencil(designId, stencilImg, isGolden);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-atop';
+
+  const cx = 50 * RASTER_SCALE;
+  const cy = 65 * RASTER_SCALE;
+  const dSize = 56 * RASTER_SCALE;
+  const offsetY = 5 * RASTER_SCALE;
+
+  const packId = designId.split('_')[0];
+  const opacity = packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(stencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
+  ctx.restore();
+
+  record(key, dst, plainBboxes[colorKey] || measureBbox(dst));
+  return sprites[key];
+}
+
+export function getLanternSprite(colorKey, designId = null, isSpecial = false) {
+  if (isSpecial) {
+    if (designId) {
+      const key = `${colorKey}_${designId}_golden`;
+      if (sprites[key]) return sprites[key];
+      const sprite = rasterizeSingleLantern(colorKey, designId, true);
+      if (sprite) return sprite;
+    }
+    const key = `${colorKey}_golden`;
     if (sprites[key]) return sprites[key];
+  } else {
+    if (designId) {
+      const key = `${colorKey}_${designId}`;
+      if (sprites[key]) return sprites[key];
+      const sprite = rasterizeSingleLantern(colorKey, designId, false);
+      if (sprite) return sprite;
+    }
   }
   return sprites[colorKey] || null;
 }
@@ -356,9 +430,17 @@ export function getBurstSheet() {
 //   brightness would wrongly transparentize the interior white highlights
 //   and leave visible "splits" through the bamboo trunk.
 //
+function getStencil(stencilKey, img, isGolden = false) {
+  const key = `${stencilKey}_${isGolden}`;
+  if (!stencilCache[key]) {
+    stencilCache[key] = makeBugStencil(img, isGolden);
+  }
+  return stencilCache[key];
+}
+
 // Converts a black-on-white bug drawing into a black stencil with transparent background,
 // where brightness determines transparency (white -> transparent, black -> opaque).
-function makeBugStencil(img) {
+function makeBugStencil(img, isGolden = false) {
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
@@ -378,10 +460,16 @@ function makeBugStencil(img) {
     const brightness = (r + g + b) / 3;
     // Derive alpha: white background (255) -> 0 alpha, dark lines (0) -> 255 alpha (boosted by 1.8x for visibility)
     d[i+3] = Math.min(255, Math.round((255 - brightness) * 1.8));
-    // Make the stencil color completely black
-    d[i] = 0;
-    d[i+1] = 0;
-    d[i+2] = 0;
+    if (isGolden) {
+      d[i] = 255;
+      d[i+1] = 195;
+      d[i+2] = 45;
+    } else {
+      // Make the stencil color completely black
+      d[i] = 0;
+      d[i+1] = 0;
+      d[i+2] = 0;
+    }
   }
   cx.putImageData(imgData, 0, 0);
   return c;

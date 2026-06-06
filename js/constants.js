@@ -148,6 +148,13 @@ export function levelConfig(level) {
   return LEVELS[idx];
 }
 
+// Speed Mode Tuning parameters
+export const SPEED_MODE_PROJECTILE_SPEED = 65;
+export const SPEED_MODE_DESCENT_DRIFT_SPEED = 35;
+export const SPEED_MODE_SETTLE_ANIM_SEC = 0.03;
+export const SPEED_MODE_DESCENT_TIME_FACTOR = 1.5;
+export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
+
 // Performance and rendering optimizations configuration.
 export const PERF_CONFIG = {
   // Controls whether hardware canvas shadowBlur is disabled on mobile/touch screens (pointer: coarse).

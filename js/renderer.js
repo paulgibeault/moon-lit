@@ -34,7 +34,11 @@ export function render(ctx, layout, game, settings, stats, scores) {
   }
   drawLauncher(ctx, layout, game);
   drawShotQueue(ctx, layout, game, settings);
-  if (game.shot) drawProjectile(ctx, game.shot, layout);
+  if (game.shots && game.shots.length > 0) {
+    for (const shot of game.shots) {
+      drawProjectile(ctx, shot, layout);
+    }
+  }
   drawBursts(ctx, layout, game, settings);
   drawFloats(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);

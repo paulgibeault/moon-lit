@@ -67,12 +67,18 @@ const DESCENT_LINE_Y = 44;
 const DESCENT_BAR_W = 24;
 
 export function drawDescentMeter(ctx, layout, game, settings) {
-  if (game.shotsUntilDescent == null) return;
-  const n = game.shotsUntilDescent | 0;
-  const cap = (game.descentShots | 0) || 8;
-  // 0 at a fresh descent, 1 right before it triggers. Used for both the bar
-  // drop and the cream → ember color blend.
-  const progress = Math.max(0, Math.min(1, (cap - n) / cap));
+  const isSpeed = !!game.isSpeedMode;
+  
+  if (isSpeed) {
+    if (game.timeUntilDescent == null) return;
+  } else {
+    if (game.shotsUntilDescent == null) return;
+  }
+
+  const n = isSpeed ? Math.ceil(game.timeUntilDescent) : (game.shotsUntilDescent | 0);
+  const cap = isSpeed ? game.descentTimeLimit : ((game.descentShots | 0) || 8);
+  const progress = Math.max(0, Math.min(1, (cap - (isSpeed ? game.timeUntilDescent : n)) / cap));
+
   const iconLeft = layout.viewW - 12 - DESCENT_ICON_W;
   const cx = iconLeft + DESCENT_ICON_W / 2;
   const lineSpan = DESCENT_LINE_Y - DESCENT_BAR_TOP - 14;  // bar travel range
@@ -125,7 +131,7 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   ctx.font = `400 ${subPx}px ${SANS}`;
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
   ctx.textBaseline = 'top';
-  ctx.fillText('descent', cx, DESCENT_LINE_Y + 3);
+  ctx.fillText(isSpeed ? 'time drop' : 'descent', cx, DESCENT_LINE_Y + 3);
   ctx.restore();
 }
 

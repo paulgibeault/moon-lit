@@ -100,6 +100,7 @@ let rafId = 0;
 let bestScore = loadBest();
 let playerName = Arcade.player.name() || '';
 let lastPhase = null;
+let wasMenuOpen = false;
 // Last pointer activity timestamp. While this is recent, the rAF loop keeps
 // running so ambient animations (star twinkle, moon halo breath, slow moon
 // traverse) play under the player's fingers. After INTERACTION_TAIL_MS of
@@ -218,10 +219,14 @@ function resize() {
     return;
   }
   // Live game: re-derive pixel positions under the new layout. Lanterns own
-  // their normalized (nx, ny); the in-flight shot uses prev→next remapping
-  // since it's transient and isn't normalized.
+  // their normalized (nx, ny); the in-flight shots use prev→next remapping
+  // since they are transient and aren't normalized.
   syncLanternPixels(game.board, layout);
-  remapShotToLayout(game.shot, prevLayout, layout);
+  if (game.shots && game.shots.length > 0) {
+    for (const shot of game.shots) {
+      remapShotToLayout(shot, prevLayout, layout);
+    }
+  }
 }
 
 // On stage transition we save the new resume point — eviction or a refresh
@@ -325,6 +330,12 @@ function recordOutcome(g, won) {
 // changes view-state has to call it to wake the loop back up.
 function isQuiescent() {
   if (!game || !layout) return false;
+  if (isMenuPanelOpen()) {
+    if (!isMenuSettled()) return false;
+    return true;
+  }
+  if (game.isSpeedMode && game.phase === PHASE.AIMING) return false;
+  if (game.shots && game.shots.length > 0) return false;
   if (performance.now() - lastInteractionMs < INTERACTION_TAIL_MS) return false;
   if (game.phase !== PHASE.AIMING) return false;
   if (hasActiveEffects(game)) return false;
@@ -345,12 +356,15 @@ function frame(now) {
   lastFrameMs = now;
   const dt = lastTime === 0 ? 0 : Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
+  const menuOpen = isMenuPanelOpen();
   const phaseAnimating =
     game.phase === PHASE.FLYING ||
     game.phase === PHASE.DESCENDING ||
     game.phase === PHASE.SETTLING ||
     game.phase === PHASE.DROWNING;
-  if (phaseAnimating || hasActiveEffects(game)) {
+  const shotsInFlight = game.shots && game.shots.length > 0;
+  const needsStep = phaseAnimating || shotsInFlight || hasActiveEffects(game) || (game.isSpeedMode && game.phase === PHASE.AIMING);
+  if (!menuOpen && needsStep) {
     step(game, dt, layout);
   }
   maybePersistOnPhaseChange();
@@ -489,11 +503,20 @@ attachInput(canvas, () => game, () => layout, {
   onLossClick: restartLevel,
   onInteract: bumpInteraction,
   onStartLevel: startLevel,
+  onToggleSpeed: (active) => {
+    Arcade.ui.toast(active ? 'speed mode active — lightning!' : 'speed mode disabled', { kind: 'info' });
+    restartLevel();
+  },
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
   // body actually draw. Also refresh the cached leaderboard/stats on every
   // open so the panel reflects the latest run without a reload.
   onMenuChange: () => {
-    refreshMenuData();
+    const isMenuOpenNow = isMenuPanelOpen();
+    if (isMenuOpenNow && !wasMenuOpen) {
+      refreshMenuData();
+    }
+    wasMenuOpen = isMenuOpenNow;
+
     if (game && Arcade.state.get('stencilPack') === 'random') {
       for (const l of game.board.lanterns) {
         if (!l.designId) {

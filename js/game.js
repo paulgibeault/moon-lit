@@ -5,6 +5,9 @@ import {
   SHOT_SWAY_FREQ_MIN, SHOT_SWAY_FREQ_MAX,
   SHOT_SWAY_AMP_MIN, SHOT_SWAY_AMP_MAX,
   levelConfig,
+  SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
+  SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR,
+  SPEED_MODE_FIRE_COOLDOWN,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
@@ -71,6 +74,9 @@ export function createGame({ seed, layout, level = 1 } = {}) {
   const nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
   const afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
 
+  const isSpeedMode = !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('speedMode'));
+  const descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+
   return {
     rng,
     board,
@@ -84,7 +90,15 @@ export function createGame({ seed, layout, level = 1 } = {}) {
       afterNext: queueAfterNext,
       afterNextDesign,
     },
-    shot: null,
+    shots: [],
+    get shot() { return this.shots[0] || null; },
+    set shot(val) {
+      if (val === null) {
+        this.shots.shift();
+      } else {
+        this.shots[0] = val;
+      }
+    },
     score: 0,
     effects: [],
     floats: [],
@@ -103,6 +117,13 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     lastLaunchTime: 0,
     recoilTime: 0,
     lastQueueAdvanceTime: 0,
+    isSpeedMode,
+    projectileSpeed: isSpeedMode ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
+    descentDriftSpeed: isSpeedMode ? SPEED_MODE_DESCENT_DRIFT_SPEED : DESCENT_DRIFT_SPEED,
+    settleAnimSec: isSpeedMode ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
+    descentTimeLimit,
+    timeUntilDescent: descentTimeLimit,
+    fireCooldown: 0,
   };
 }
 
@@ -112,14 +133,20 @@ export function setAim(game, angleRad) {
 }
 
 export function fire(game, layout) {
-  if (game.phase !== PHASE.AIMING) return;
+  const allowed = game.isSpeedMode
+    ? (game.phase === PHASE.AIMING || game.phase === PHASE.SETTLING)
+    : (game.phase === PHASE.AIMING);
+  if (!allowed) return;
+  if (game.isSpeedMode && game.fireCooldown > 0) return;
+
   const origin = launcherTip(layout);
   const angle = game.aimAngle;
   const swayFreq = SHOT_SWAY_FREQ_MIN +
     game.rng() * (SHOT_SWAY_FREQ_MAX - SHOT_SWAY_FREQ_MIN);
-  const swayAmp = SHOT_SWAY_AMP_MIN +
-    game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN);
-  game.shot = {
+  const swayAmp = game.isSpeedMode ? 0 : (SHOT_SWAY_AMP_MIN +
+    game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN));
+
+  const newShot = {
     x: origin.x,
     y: origin.y,
     vx: Math.sin(angle),
@@ -131,7 +158,16 @@ export function fire(game, layout) {
     swayFreq,
     swayAmp,
   };
-  game.phase = PHASE.FLYING;
+
+  if (game.isSpeedMode) {
+    game.shots.push(newShot);
+    game.fireCooldown = SPEED_MODE_FIRE_COOLDOWN;
+    advanceQueue(game);
+  } else {
+    game.shots = [newShot];
+    game.phase = PHASE.FLYING;
+  }
+
   const tSec = performance.now() / 1000;
   game.lastLaunchTime = tSec;
   game.recoilTime = tSec;
@@ -140,8 +176,24 @@ export function fire(game, layout) {
 export function step(game, dtSec, layout) {
   tickEffects(game, dtSec);
 
+  // If Speed Mode is active, tick down the time-based descent timer.
+  if (game.isSpeedMode && (game.phase === PHASE.AIMING || game.phase === PHASE.FLYING || game.phase === PHASE.SETTLING)) {
+    game.timeUntilDescent = Math.max(0, game.timeUntilDescent - dtSec);
+    // Only trigger descent if no shots are in flight to avoid collision bugs!
+    if (game.timeUntilDescent <= 0 && game.shots.length === 0) {
+      game.pendingDescent = true;
+      if (game.phase === PHASE.AIMING) {
+        finishSettle(game, layout);
+      }
+    }
+  }
+
+  if (game.isSpeedMode && game.fireCooldown > 0) {
+    game.fireCooldown = Math.max(0, game.fireCooldown - dtSec);
+  }
+
   if (game.phase === PHASE.DESCENDING) {
-    const stepPx = DESCENT_DRIFT_SPEED * layout.size * dtSec;
+    const stepPx = (game.descentDriftSpeed ?? DESCENT_DRIFT_SPEED) * layout.size * dtSec;
     game.board.descentAnimY = Math.min(0, game.board.descentAnimY + stepPx);
     if (game.board.descentAnimY >= 0) {
       game.board.descentAnimY = 0;
@@ -160,56 +212,78 @@ export function step(game, dtSec, layout) {
         emitRipple(game, [], postDrop, { combo: 0 }, layout);
       }
       game.phase = PHASE.AIMING;
+      if (game.isSpeedMode) {
+        game.timeUntilDescent = game.descentTimeLimit;
+      }
     }
     return true;
   }
 
   if (game.phase === PHASE.SETTLING) {
-    const stillActive = tickAnims(game.board, dtSec, SETTLE_ANIM_SEC);
+    const stillActive = tickAnims(game.board, dtSec, game.settleAnimSec ?? SETTLE_ANIM_SEC);
     if (!stillActive) finishSettle(game, layout);
-    return true;
+    if (!game.isSpeedMode) {
+      return true;
+    }
   }
 
   if (game.phase === PHASE.DROWNING) {
     return stepDrowning(game, dtSec, layout);
   }
 
-  if (game.phase !== PHASE.FLYING || !game.shot) return false;
+  // Handle multi-shot traversal and landing
+  if (game.shots && game.shots.length > 0) {
+    for (let i = game.shots.length - 1; i >= 0; i--) {
+      const shot = game.shots[i];
+      const trace = traceFromShot(layout, game.board, shot, (game.projectileSpeed ?? PROJECTILE_SPEED) * layout.size * dtSec, dtSec);
+      if (trace.settled) {
+        const placed = { x: trace.x, y: trace.y, color: shot.color, designId: shot.designId };
+        addLantern(game.board, placed.x, placed.y, placed.color, layout, placed.designId);
+        
+        // Remove shot from the active list
+        game.shots.splice(i, 1);
 
-  const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * layout.size * dtSec, dtSec);
-  if (trace.settled) {
-    const placed = { x: trace.x, y: trace.y, color: game.shot.color, designId: game.shot.designId };
-    addLantern(game.board, placed.x, placed.y, placed.color, layout, placed.designId);
-    game.shot = null;
-    if (placed.y >= layout.deadLineY) {
-      startDrowning(game);
-      return true;
+        if (placed.y >= layout.deadLineY) {
+          startDrowning(game);
+          return true;
+        }
+
+        resolvePlacement(game, layout);
+
+        if (!game.isSpeedMode) {
+          advanceQueue(game);
+        }
+
+        if (isCleared(game.board)) {
+          const bonus = clearBonus(game.isSpeedMode ? Math.ceil(game.timeUntilDescent) : game.shotsUntilDescent);
+          game.score += bonus;
+          game.breakdown.clear += bonus;
+          game.phase = PHASE.WIN;
+          return true;
+        }
+
+        if (!game.isSpeedMode) {
+          game.shotsUntilDescent--;
+          game.pendingDescent = game.shotsUntilDescent <= 0;
+        }
+        const anyAnim = game.board.lanterns.some(l => l.anim);
+        if (anyAnim) {
+          game.phase = PHASE.SETTLING;
+        } else {
+          finishSettle(game, layout);
+        }
+      } else {
+        shot.x = trace.x;
+        shot.y = trace.y;
+        shot.vx = trace.vx;
+        shot.vy = trace.vy;
+        shot.flightT = trace.flightT;
+      }
     }
-    resolvePlacement(game, layout);
-    advanceQueue(game);
-    if (isCleared(game.board)) {
-      const bonus = clearBonus(game.shotsUntilDescent);
-      game.score += bonus;
-      game.breakdown.clear += bonus;
-      game.phase = PHASE.WIN;
-      return true;
-    }
-    game.shotsUntilDescent--;
-    game.pendingDescent = game.shotsUntilDescent <= 0;
-    const anyAnim = game.board.lanterns.some(l => l.anim);
-    if (anyAnim) {
-      game.phase = PHASE.SETTLING;
-    } else {
-      finishSettle(game, layout);
-    }
-  } else {
-    game.shot.x = trace.x;
-    game.shot.y = trace.y;
-    game.shot.vx = trace.vx;
-    game.shot.vy = trace.vy;
-    game.shot.flightT = trace.flightT;
+    return true;
   }
-  return true;
+
+  return false;
 }
 
 // End-of-game cinematic: every lantern gets a per-lamp drop state so the
@@ -337,6 +411,9 @@ function finishSettle(game, layout) {
     game.board.descentAnimY = -(SQRT3 * r);
     game.phase = PHASE.DESCENDING;
     game.shotsUntilDescent = game.descentShots;
+    if (game.isSpeedMode) {
+      game.timeUntilDescent = game.descentTimeLimit;
+    }
   } else {
     game.phase = PHASE.AIMING;
   }
@@ -391,6 +468,11 @@ function advanceQueue(game) {
   // a color the board no longer contains. Already-visible lanterns keep
   // whatever color they were drawn with.
   const live = new Set(game.board.lanterns.map(l => l.color));
+  if (game.shots) {
+    for (const s of game.shots) {
+      live.add(s.color);
+    }
+  }
   const palette = game.colors.filter(c => live.has(c));
   const nextColor = pick(game.rng, palette.length ? palette : game.colors);
   game.queue.afterNext = nextColor;
