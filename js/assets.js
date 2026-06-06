@@ -3,7 +3,7 @@
 // alpha-bbox measured so the renderer can crop transparent margin and draw the
 // lamp at a size driven by its painted silhouette, not the rasterizer canvas.
 
-import { COLOR_KEYS } from './constants.js';
+import { COLOR_KEYS, getActivePackId } from './constants.js';
 import { buildLanternSvg, LANTERN_SVG_VIEWBOX } from './lantern-svg.js';
 import { STENCIL_PACKS } from './stencil-packs.js';
 
@@ -177,7 +177,7 @@ export async function loadLanterns() {
   const w = LANTERN_SVG_VIEWBOX.w * RASTER_SCALE;
   const h = LANTERN_SVG_VIEWBOX.h * RASTER_SCALE;
 
-  const activePackId = Arcade.state.get('stencilPack') || 'bugs';
+  const activePackId = getActivePackId();
   const pack = STENCIL_PACKS[activePackId] || STENCIL_PACKS.bugs;
   
   // Clear old cached sprites and stencil/canvas caches

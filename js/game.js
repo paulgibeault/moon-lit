@@ -9,18 +9,13 @@ import {
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR,
   SPEED_MODE_FIRE_COOLDOWN,
   ENV_PARAMS, MOON_OVERRIDE,
+  getActivePackId,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
-function getActivePackId() {
-  if (typeof Arcade !== 'undefined' && Arcade.state) {
-    return Arcade.state.get('stencilPack') || 'bugs';
-  }
-  return 'bugs';
-}
 import { popMatches, dropFloating } from './match.js';
 import { resolveShot, clearBonus, crossedMilestone } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';

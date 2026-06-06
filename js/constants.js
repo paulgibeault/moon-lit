@@ -258,3 +258,11 @@ export function updateTuningParam(key, value) {
   else if (key === 'COLLISION_TOLERANCE') COLLISION_TOLERANCE = value;
   else if (key === 'DESCENT_SHOTS') DESCENT_SHOTS = value;
 }
+
+export function getActivePackId() {
+  if (typeof Arcade !== 'undefined' && Arcade.state) {
+    return Arcade.state.get('stencilPack') || 'bugs';
+  }
+  return 'bugs';
+}
+

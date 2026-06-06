@@ -1,13 +1,6 @@
-import { GRID, COLOR_KEYS } from './constants.js';
+import { GRID, COLOR_KEYS, getActivePackId } from './constants.js';
 import { pick } from './prng.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
-
-function getActivePackId() {
-  if (typeof Arcade !== 'undefined' && Arcade.state) {
-    return Arcade.state.get('stencilPack') || 'bugs';
-  }
-  return 'bugs';
-}
 
 const SQRT3 = Math.sqrt(3);
 
