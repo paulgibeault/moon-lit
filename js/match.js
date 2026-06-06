@@ -19,14 +19,14 @@ function adjThresholdSq(layout) {
 // descents this is the per-shot hot path, so the per-node array + closure +
 // repeated threshold multiply it used to do are exactly what we want gone.
 export function findCluster(board, seed, layout) {
-  if (!seed) return [];
+  if (!seed || seed.isBlocker) return [];
   const color = seed.color;
   const thresholdSq = adjThresholdSq(layout);
   const seen = new Set([seed]);
   const out = [seed];
   const queue = [seed];
   const visit = (n) => {
-    if (seen.has(n) || n.color !== color) return;
+    if (seen.has(n) || n.color !== color || n.isBlocker) return;
     seen.add(n);
     out.push(n);
     queue.push(n);

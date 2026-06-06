@@ -1819,7 +1819,7 @@ export function drawReflections(ctx, layout, game, settings) {
     ctx.translate(dx, reflectY);
     ctx.scale(1, -1);
     drawLantern(ctx, 0, 0, layout.size, l.color,
-      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true, designId: l.designId });
+      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker });
     ctx.restore();
   }
 
@@ -1945,11 +1945,11 @@ export function drawBoard(ctx, layout, game, settings) {
       ctx.translate(dx, dy + animY);
       ctx.rotate(spin);
       drawLantern(ctx, 0, 0, size, l.color,
-        { lit, phase: phaseOf(l), boost, designId: l.designId });
+        { lit, phase: phaseOf(l), boost, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker });
       ctx.restore();
     } else {
       drawLantern(ctx, dx, dy + animY, size, l.color,
-        { lit, phase: phaseOf(l), boost, designId: l.designId });
+        { lit, phase: phaseOf(l), boost, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker });
     }
   }
 }
@@ -1987,15 +1987,21 @@ function emberLevel(phase, intensity, boost) {
 }
 
 export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
-  const lit = opts ? !!opts.lit : false;
+  if (!colorKey) return;
+  const isBlocker = opts && opts.isBlocker;
+  const lit = isBlocker ? false : (opts ? !!opts.lit : false);
   const intensity = opts && opts.intensity != null ? opts.intensity : 1;
   const phase = opts && opts.phase != null ? opts.phase : 0;
   const boost = opts && opts.boost != null ? opts.boost : 0;
-  const level = lit ? emberLevel(phase, intensity, boost) : 0;
+  // Target lanterns burn permanently hotter — a spirit-fire intensity bump
+  // so they read as "alive with something different" next to normal lamps.
+  const targetBoost = (opts && opts.isTarget && !isBlocker) ? 0.35 : 0;
+  const level = lit ? emberLevel(phase, intensity, boost + targetBoost) : 0;
   const isReflection = opts && opts.isReflection;
   const designId = opts && opts.designId;
 
-  const sprite = getLanternSprite(colorKey, designId);
+  const isTarget = opts && opts.isTarget;
+  const sprite = getLanternSprite(isBlocker ? 'stone_blocker' : colorKey, designId, isTarget);
   if (sprite) {
     // Fit the painted silhouette so its width fills 2*size (the cell width).
     // Height is proportional to the lamp's aspect ratio, so taller-than-wide
@@ -2034,14 +2040,15 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     // sky behind most effectively; the bottom is where the flame's own warm
     // glow takes over and the paper reads as backlit/translucent. The
     // gradient sells "lit from outside above, lit from within below."
-    if (LANTERN_PARAMS.backing > 0) {
+    if (LANTERN_PARAMS.backing > 0 && !isBlocker) {
       ctx.save();
       ctx.globalCompositeOperation = 'source-atop';
-      const baseAlpha = prevAlpha * LANTERN_PARAMS.backing;
+      const useBacking = LANTERN_PARAMS.backing;
+      const baseAlpha = prevAlpha * useBacking;
       const color = COLORS[colorKey] || PALETTE.ember;
       const top = cy - dh / 2;
-      const bot = cy + dh / 2;
-      const grad = ctx.createLinearGradient(0, top, 0, bot);
+      const bottom = cy + dh / 2;
+      const grad = ctx.createLinearGradient(0, top, 0, bottom);
       grad.addColorStop(0.0, hexToRgba(color, baseAlpha));
       grad.addColorStop(0.6, hexToRgba(color, baseAlpha * 0.55));
       grad.addColorStop(1.0, hexToRgba(color, baseAlpha * 0.20));
@@ -2061,7 +2068,30 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     }
     // Hockey-puck of burning tar — drawn last so it sits in front of the
     // flame's base. Always visible, lit or not.
-    drawFuelCore(ctx, cx, rimY, size);
+    if (!isBlocker) {
+      drawFuelCore(ctx, cx, rimY, size);
+    }
+    
+    // Spirit glow for target lanterns — a soft, ethereal cream-white
+    // radiance that makes them burn visibly hotter than normal lanterns.
+    // Uses 'lighter' compositing so the glow brightens the paper and
+    // surrounding air without any hard geometric outline. Combined with
+    // the boosted ember level and golden stencil, targets read as
+    // "spirit lanterns" — unmistakably different from normal warm amber.
+    if (isTarget && lit) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const spiritR = size * 1.6;
+      const spiritGrad = ctx.createRadialGradient(cx, cy, size * 0.1, cx, cy, spiritR);
+      spiritGrad.addColorStop(0,   `rgba(255, 248, 230, ${(0.18 * level).toFixed(3)})`);
+      spiritGrad.addColorStop(0.4, `rgba(255, 235, 200, ${(0.10 * level).toFixed(3)})`);
+      spiritGrad.addColorStop(1,    'rgba(255, 220, 180, 0)');
+      ctx.fillStyle = spiritGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, spiritR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     return;
   }
   // Fallback: procedural circle if the sprite failed to load.

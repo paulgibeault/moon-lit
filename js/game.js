@@ -8,17 +8,14 @@ import {
   SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR,
   SPEED_MODE_FIRE_COOLDOWN,
+  ENV_PARAMS, MOON_OVERRIDE,
+  getActivePackId,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
-import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
+import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
+import { puzzleConfig } from './puzzles.js';
 
-function getActivePackId() {
-  if (typeof Arcade !== 'undefined' && Arcade.state) {
-    return Arcade.state.get('stencilPack') || 'bugs';
-  }
-  return 'bugs';
-}
 import { popMatches, dropFloating } from './match.js';
 import { resolveShot, clearBonus, crossedMilestone } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
@@ -58,28 +55,101 @@ const DROWN_BUBBLE_MAX_INT  = 0.5;
 const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
 const DROWN_END_PAUSE_SEC   = 0.3;
 
-export function createGame({ seed, layout, level = 1 } = {}) {
-  const config = levelConfig(level);
-  const colors = COLOR_KEYS.slice(0, config.colors);
-  // Each level gets a distinct deterministic seed unless one is passed in.
-  const effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
-  const rng = mulberry32(effectiveSeed);
-  const board = createBoard();
-  if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
-  const activePackId = getActivePackId();
-  const queueCurrent = pick(rng, colors);
-  const queueNext = pick(rng, colors);
-  const queueAfterNext = pick(rng, colors);
-  const currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
-  const nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
-  const afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
+  // Determine gameMode
+  if (!gameMode) {
+    if (typeof Arcade !== 'undefined' && Arcade.state) {
+      gameMode = Arcade.state.get('gameMode') || (isPuzzleMode ? 'puzzle' : 'campaign');
+    } else {
+      gameMode = isPuzzleMode ? 'puzzle' : 'campaign';
+    }
+  }
+  if (isPuzzleMode) {
+    gameMode = 'puzzle';
+  }
+  const isPuzzle = gameMode === 'puzzle';
 
-  const isSpeedMode = !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('speedMode'));
-  const descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  let config = null;
+  let colors = null;
+  let effectiveSeed = 0;
+  let rng = null;
+  let board = createBoard();
+  
+  let queueCurrent = null;
+  let queueNext = null;
+  let queueAfterNext = null;
+  let puzzleQueueIndex = 3;
+  let puzzleGoalType = 'clear-all';
+  let puzzleDescentType = 'none';
+  let isSpeedMode = false;
+  let descentTimeLimit = 0;
+  let descentShots = 0;
+
+  if (isPuzzle) {
+    const pz = puzzleConfig(puzzleId);
+    colors = pz.colors;
+    effectiveSeed = (seed ?? (M3_DEFAULT_SEED + puzzleId * 997)) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    if (layout) populatePuzzle(board, layout, pz.board, pz);
+    
+    queueCurrent = pz.queue[0] || null;
+    queueNext = pz.queue[1] || null;
+    queueAfterNext = pz.queue[2] || null;
+    puzzleQueueIndex = Math.min(3, pz.queue.length);
+    puzzleGoalType = pz.goalType || 'clear-all';
+    puzzleDescentType = pz.descentType || 'none';
+    
+    isSpeedMode = puzzleDescentType === 'time';
+    descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
+    descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
+  } else {
+    config = levelConfig(level);
+    colors = COLOR_KEYS.slice(0, config.colors);
+    effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
+    
+    queueCurrent = pick(rng, colors);
+    queueNext = pick(rng, colors);
+    queueAfterNext = pick(rng, colors);
+    
+    if (gameMode === 'zen') {
+      isSpeedMode = false;
+    } else if (gameMode === 'speed') {
+      isSpeedMode = true;
+    } else {
+      // campaign
+      isSpeedMode = config.isSpeedMode;
+    }
+    descentShots = config.descentShots;
+    descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  }
+
+  // Fast launch: true if Speed mode or if Zen mode has it enabled in state
+  const isFastLaunch = isSpeedMode || (gameMode === 'zen' && !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('fastLaunch')));
+
+  let activePackId = 'bugs';
+  if (isPuzzle) {
+    const pz = puzzleConfig(puzzleId);
+    activePackId = pz.stencilPack || 'bugs';
+  } else if (gameMode === 'campaign') {
+    activePackId = config.stencilPack || 'bugs';
+  } else {
+    // Zen or Speed
+    activePackId = (typeof Arcade !== 'undefined' && Arcade.state)
+      ? (Arcade.state.get('stencilPack') || 'bugs')
+      : 'bugs';
+  }
+
+  const currentDesign = (activePackId === 'random' && queueCurrent) ? getRandomDesignForColor(queueCurrent, rng) : null;
+  const nextDesign = (activePackId === 'random' && queueNext) ? getRandomDesignForColor(queueNext, rng) : null;
+  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? getRandomDesignForColor(queueAfterNext, rng) : null;
 
   return {
     rng,
     board,
+    quickRestartArmed: false,
+    quickRestartArmedTime: 0,
     phase: PHASE.AIMING,
     aimAngle: 0,
     queue: {
@@ -109,22 +179,32 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     combo: 0,
     bestCombo: 0,
     moonPulse: { t: 0, life: 0 },
-    shotsUntilDescent: config.descentShots,
+    shotsUntilDescent: descentShots,
     pendingDescent: false,
     level,
     colors,
-    descentShots: config.descentShots,
+    descentShots,
     lastLaunchTime: 0,
     recoilTime: 0,
     lastQueueAdvanceTime: 0,
     isSpeedMode,
-    projectileSpeed: isSpeedMode ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
+    isFastLaunch,
+    projectileSpeed: isFastLaunch ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
     descentDriftSpeed: isSpeedMode ? SPEED_MODE_DESCENT_DRIFT_SPEED : DESCENT_DRIFT_SPEED,
-    settleAnimSec: isSpeedMode ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
+    settleAnimSec: isFastLaunch ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (level === 10),
+    showModeIntroCard: (!isPuzzle && level === 10) || (isPuzzle && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
+    
+    // Puzzle properties
+    isPuzzleMode: isPuzzle,
+    gameMode,
+    stencilPack: activePackId,
+    puzzleId,
+    puzzleQueueIndex,
+    puzzleGoalType,
+    puzzleDescentType,
   };
 }
 
@@ -134,17 +214,18 @@ export function setAim(game, angleRad) {
 }
 
 export function fire(game, layout) {
-  const allowed = game.isSpeedMode
+  const allowed = game.isFastLaunch
     ? (game.phase === PHASE.AIMING || game.phase === PHASE.SETTLING)
     : (game.phase === PHASE.AIMING);
   if (!allowed) return;
-  if (game.isSpeedMode && game.fireCooldown > 0) return;
+  if (game.isFastLaunch && game.fireCooldown > 0) return;
+  if (!game.queue.current) return;
 
   const origin = launcherTip(layout);
   const angle = game.aimAngle;
   const swayFreq = SHOT_SWAY_FREQ_MIN +
     game.rng() * (SHOT_SWAY_FREQ_MAX - SHOT_SWAY_FREQ_MIN);
-  const swayAmp = game.isSpeedMode ? 0 : (SHOT_SWAY_AMP_MIN +
+  const swayAmp = game.isFastLaunch ? 0 : (SHOT_SWAY_AMP_MIN +
     game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN));
 
   const newShot = {
@@ -160,7 +241,7 @@ export function fire(game, layout) {
     swayAmp,
   };
 
-  if (game.isSpeedMode) {
+  if (game.isFastLaunch) {
     game.shots.push(newShot);
     game.fireCooldown = SPEED_MODE_FIRE_COOLDOWN;
     advanceQueue(game);
@@ -177,6 +258,19 @@ export function fire(game, layout) {
 export function step(game, dtSec, layout) {
   if (game.showModeIntroCard) return false;
 
+  if (game.phase === PHASE.AIMING && game.isPuzzleMode && game.queue.current === null) {
+    let pzWon = false;
+    if (game.puzzleGoalType === 'clear-targets') {
+      pzWon = !game.board.lanterns.some(l => l.isTarget);
+    } else {
+      pzWon = isCleared(game.board);
+    }
+    if (!pzWon && game.shots.length === 0) {
+      startDrowning(game);
+      return true;
+    }
+  }
+
   tickEffects(game, dtSec);
 
   // If Speed Mode is active, tick down the time-based descent timer.
@@ -191,7 +285,7 @@ export function step(game, dtSec, layout) {
     }
   }
 
-  if (game.isSpeedMode && game.fireCooldown > 0) {
+  if (game.isFastLaunch && game.fireCooldown > 0) {
     game.fireCooldown = Math.max(0, game.fireCooldown - dtSec);
   }
 
@@ -202,16 +296,10 @@ export function step(game, dtSec, layout) {
       game.board.descentAnimY = 0;
       const postDrop = dropFloating(game.board, layout);
       if (postDrop.length) {
-        // A descent that knocks lanterns past the trellis edge is a quiet
-        // gift, not a player-driven combo: score it as a drop without
-        // touching the combo counter or chain multiplier.
         const gain = postDrop.length * postDrop.length * 20;
         game.score += gain;
         game.breakdown.drop += gain;
         for (const l of postDrop) spawnBurst(game, l.x, l.y);
-        // Treat the gift drop as a "big" event for the ripple — the player
-        // didn't earn it with a placement, but seeing the field shimmer in
-        // response sells the cascade.
         emitRipple(game, [], postDrop, { combo: 0 }, layout);
       }
       game.phase = PHASE.AIMING;
@@ -225,7 +313,7 @@ export function step(game, dtSec, layout) {
   if (game.phase === PHASE.SETTLING) {
     const stillActive = tickAnims(game.board, dtSec, game.settleAnimSec ?? SETTLE_ANIM_SEC);
     if (!stillActive) finishSettle(game, layout);
-    if (!game.isSpeedMode) {
+    if (!game.isFastLaunch) {
       return true;
     }
   }
@@ -253,11 +341,22 @@ export function step(game, dtSec, layout) {
 
         resolvePlacement(game, layout);
 
-        if (!game.isSpeedMode) {
+        if (!game.isFastLaunch) {
           advanceQueue(game);
         }
 
-        if (isCleared(game.board)) {
+        let puzzleWon = false;
+        if (game.isPuzzleMode) {
+          if (game.puzzleGoalType === 'clear-targets') {
+            puzzleWon = !game.board.lanterns.some(l => l.isTarget);
+          } else {
+            puzzleWon = isCleared(game.board);
+          }
+        } else {
+          puzzleWon = isCleared(game.board);
+        }
+
+        if (puzzleWon) {
           const bonus = clearBonus(game.isSpeedMode ? Math.ceil(game.timeUntilDescent) : game.shotsUntilDescent);
           game.score += bonus;
           game.breakdown.clear += bonus;
@@ -265,7 +364,7 @@ export function step(game, dtSec, layout) {
           return true;
         }
 
-        if (!game.isSpeedMode) {
+        if (!game.isSpeedMode && (!game.isPuzzleMode || game.puzzleDescentType !== 'none')) {
           game.shotsUntilDescent--;
           game.pendingDescent = game.shotsUntilDescent <= 0;
         }
@@ -419,6 +518,17 @@ function finishSettle(game, layout) {
     }
   } else {
     game.phase = PHASE.AIMING;
+    if (game.isPuzzleMode && game.queue.current === null) {
+      let pzWon = false;
+      if (game.puzzleGoalType === 'clear-targets') {
+        pzWon = !game.board.lanterns.some(l => l.isTarget);
+      } else {
+        pzWon = isCleared(game.board);
+      }
+      if (!pzWon && game.shots.length === 0) {
+        startDrowning(game);
+      }
+    }
   }
 }
 
@@ -459,6 +569,25 @@ function resolvePlacement(game, layout) {
 }
 
 function advanceQueue(game) {
+  if (game.isPuzzleMode) {
+    game.queue.current = game.queue.next;
+    game.queue.currentDesign = game.queue.nextDesign;
+    game.queue.next = game.queue.afterNext;
+    game.queue.nextDesign = game.queue.afterNextDesign;
+    
+    const pz = puzzleConfig(game.puzzleId);
+    if (game.puzzleQueueIndex < pz.queue.length) {
+      const nextColor = pz.queue[game.puzzleQueueIndex++];
+      game.queue.afterNext = nextColor;
+      game.queue.afterNextDesign = null;
+    } else {
+      game.queue.afterNext = null;
+      game.queue.afterNextDesign = null;
+    }
+    game.lastQueueAdvanceTime = performance.now() / 1000;
+    return;
+  }
+
   // Three-stage magazine: current fires, next promotes to current, afterNext
   // promotes to next (it rotated into the on-deck position during the firing
   // animation), and a fresh lantern is loaded into the afterNext slot (hidden
@@ -480,7 +609,7 @@ function advanceQueue(game) {
   const nextColor = pick(game.rng, palette.length ? palette : game.colors);
   game.queue.afterNext = nextColor;
   
-  const activePackId = getActivePackId();
+  const activePackId = game.stencilPack || 'bugs';
   game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }

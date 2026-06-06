@@ -11,7 +11,7 @@ import {
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
-  isHudSettled, drawModeIntroCard,
+  isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -29,7 +29,7 @@ export function render(ctx, layout, game, settings, stats, scores) {
   // The bleed masks bamboo out of itself before compositing, so bamboo stays
   // fully opaque and never overdraws lanterns. See drawMoonBleed for details.
   drawMoonBleed(ctx, layout, settings);
-  if (game.phase === PHASE.AIMING) {
+  if (game.phase === PHASE.AIMING && game.queue.current) {
     drawAimLine(ctx, layout, game);
   }
   drawLauncher(ctx, layout, game);
@@ -43,6 +43,8 @@ export function render(ctx, layout, game, settings, stats, scores) {
   drawFloats(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
+  drawLanternInventory(ctx, layout, game, settings);
+  drawQuickRestartButton(ctx, layout, game, settings);
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
     drawEndOverlay(ctx, layout, game, settings, stats);
   }

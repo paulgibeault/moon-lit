@@ -16,12 +16,8 @@ export const HUD_OPACITY = Object.freeze({
   hairline:  0.12,
 });
 
-// Cubic ease-out — every animation in the renderer uses it for the same
-// "no bounce, no overshoot" feel.
-export function easeOut(t) {
-  const c = t < 0 ? 0 : t > 1 ? 1 : t;
-  return 1 - (1 - c) ** 3;
-}
+export { easeOut } from '../geometry.js';
+
 
 export function mixWithWhite(hex, t) { return mixHex(hex, '#FFFFFF', t); }
 export function mixWithBlack(hex, t) { return mixHex(hex, '#000000', t); }

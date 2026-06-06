@@ -1,11 +1,12 @@
 import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS } from '../constants.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
 import { PHASE } from '../game.js';
+import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
 } from './style.js';
-import { getMoonState, drawPhaseShadow } from './world.js';
+import { getMoonState, drawPhaseShadow, drawLantern } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
 
 // View-only state that lives outside the game model: the HUD score counter
@@ -28,6 +29,12 @@ export function resetHudState(score = 0, best = 0) {
 // uses this as part of the "is anything still animating?" check before
 // suspending the rAF loop.
 export function isHudSettled(game) {
+  if (game && game.quickRestartArmed) {
+    const elapsed = performance.now() - game.quickRestartArmedTime;
+    if (elapsed < 3050) {
+      return false;
+    }
+  }
   return (hudState.displayScore | 0) === (game.score | 0)
       && hudState.bestFlash === 0;
 }
@@ -68,6 +75,9 @@ const DESCENT_LINE_Y = 44;
 const DESCENT_BAR_W = 24;
 
 export function drawDescentMeter(ctx, layout, game, settings) {
+  if (game.isPuzzleMode && game.puzzleDescentType === 'none') {
+    return;
+  }
   const isSpeed = !!game.isSpeedMode;
   
   if (isSpeed) {
@@ -175,9 +185,15 @@ export function drawScoreHud(ctx, layout, game, settings) {
   const scoreTextX = edge + moonR * 2 + glyphPad;
   ctx.fillText(scoreText, scoreTextX, 8);
 
-  // Subtext: "stage N · best M"
+  // Subtext: "stage N · best M" or "puzzle N · name · goal"
   let sub = `stage ${game.level}`;
-  if (settings.bestScore) sub += ` · best ${formatScore(settings.bestScore)}`;
+  if (game.isPuzzleMode) {
+    const pz = puzzleConfig(game.puzzleId);
+    const goalName = pz.goalType === 'clear-targets' ? 'target' : 'clear all';
+    sub = `puzzle ${game.puzzleId} · ${pz.name} · ${goalName}`;
+  } else if (settings.bestScore) {
+    sub += ` · best ${formatScore(settings.bestScore)}`;
+  }
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
   ctx.font = `400 ${subPx}px Georgia, ${SANS}`;
   const subX = edge;
@@ -354,7 +370,13 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   const titlePx = Math.max(16, Math.round(18 * fs));
   ctx.fillStyle = won ? '#E8B770' : '#E8843E'; // Gold for win, warm orange for game over
   ctx.font = `600 ${titlePx}px ${SERIF}`;
-  ctx.fillText(won ? `Stage ${game.level} Cleared` : 'Trellis Touched the Water', cx, y);
+  let titleText = "";
+  if (game.isPuzzleMode) {
+    titleText = won ? `Puzzle ${game.puzzleId} Cleared` : "Puzzle Failed";
+  } else {
+    titleText = won ? `Stage ${game.level} Cleared` : "Trellis Touched the Water";
+  }
+  ctx.fillText(titleText, cx, y);
   y += titlePx + 10 * fs;
 
   // Player Name (if set)
@@ -370,7 +392,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.fillStyle = '#F5E9C9'; // Cream
   ctx.font = `300 ${scorePx}px Georgia, serif`;
   ctx.fillText(String(hudState.displayScore | 0), cx, y);
-  y += scorePx * 0.75;
+  y += scorePx + 8 * fs;
 
   // Personal Best line
   const isNewBest = settings.bestScore != null && game.score >= settings.bestScore && game.score > 0;
@@ -445,7 +467,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   // Next Level Preview Box
   const boxX = cardX + 20 * fs;
   const boxW = cardW - 40 * fs;
-  const boxH = 72 * fs;
+  const boxH = 88 * fs; // Increased from 72 for better elegance and size
   const boxY = y;
 
   ctx.save();
@@ -458,63 +480,71 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.stroke();
   ctx.restore();
 
-  const nextLevelNum = game.level + 1;
-  const nextCfg = levelConfig(nextLevelNum);
+  const isPuzzle = game.isPuzzleMode;
+  const nextNum = isPuzzle ? game.puzzleId + 1 : game.level + 1;
+  let nextCfg = null;
+  if (isPuzzle) {
+    nextCfg = nextNum <= 50 ? puzzleConfig(nextNum) : null;
+  } else {
+    nextCfg = nextNum <= 1000 ? levelConfig(nextNum) : null;
+  }
 
   ctx.save();
   ctx.fillStyle = 'rgba(232, 183, 112, 0.85)';
-  ctx.font = `600 ${Math.max(9, Math.round(9 * fs))}px ${SANS}`;
+  ctx.font = `600 ${Math.round(10 * fs)}px ${SANS}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
-  if (nextLevelNum <= 1000 && nextCfg) {
-    ctx.fillText(`STAGE ${nextLevelNum} PREVIEW`, boxX + 10 * fs, boxY + 8 * fs);
+  if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= 50 && nextCfg)) {
+    ctx.fillText(isPuzzle ? `PUZZLE ${nextNum} PREVIEW` : `STAGE ${nextNum} PREVIEW`, boxX + 12 * fs, boxY + 10 * fs);
 
     const innerW = boxW - 20 * fs;
     const colCenter1 = boxX + 10 * fs + innerW / 6;
     const colCenter2 = boxX + 10 * fs + innerW / 2;
     const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
-    const contentCenterY = boxY + 42 * fs;
+    const contentCenterY = boxY + 50 * fs;
 
     // Col 1: Mode
-    drawMiniModeIcon(ctx, nextCfg.isSpeedMode, colCenter1, contentCenterY - 8 * fs, fs, '#F5E9C9', cardBg);
+    const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time') : nextCfg.isSpeedMode;
+    drawMiniModeIcon(ctx, isNextSpeed, colCenter1, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9', cardBg);
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(nextCfg.isSpeedMode ? 'Timed' : 'Classic', colCenter1, contentCenterY + 12 * fs);
+    ctx.fillText(isNextSpeed ? 'Timed' : 'Classic', colCenter1, contentCenterY + 16 * fs);
 
     // Col 2: Stencil Pack
-    drawMiniStencilIcon(ctx, nextCfg.stencilPack, colCenter2, contentCenterY - 8 * fs, fs, '#F5E9C9');
+    drawMiniStencilIcon(ctx, nextCfg.stencilPack, colCenter2, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9');
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const shortNames = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
-    ctx.fillText(shortNames[nextCfg.stencilPack] || nextCfg.stencilPack, colCenter2, contentCenterY + 12 * fs);
+    ctx.fillText(shortNames[nextCfg.stencilPack] || nextCfg.stencilPack, colCenter2, contentCenterY + 16 * fs);
 
     // Col 3: Palette Colors
-    const dotR = 2.4 * fs;
+    const dotR = 4.5 * fs;
     const dotGap = dotR * 2.5;
-    const startDotX = colCenter3 - ((nextCfg.colors - 1) * dotGap) / 2;
-    for (let c = 0; c < nextCfg.colors; c++) {
-      const key = COLOR_KEYS[c];
+    const nextColorsArray = isPuzzle ? nextCfg.colors : COLOR_KEYS.slice(0, nextCfg.colors);
+    const startDotX = colCenter3 - ((nextColorsArray.length - 1) * dotGap) / 2;
+    for (let c = 0; c < nextColorsArray.length; c++) {
+      const key = nextColorsArray[c];
       ctx.fillStyle = COLORS[key];
       ctx.beginPath();
-      ctx.arc(startDotX + c * dotGap, contentCenterY - 8 * fs, dotR, 0, Math.PI * 2);
+      ctx.arc(startDotX + c * dotGap, contentCenterY - 10 * fs, dotR, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${nextCfg.colors} Colors`, colCenter3, contentCenterY + 12 * fs);
+    ctx.fillText(`${nextColorsArray.length} Colors`, colCenter3, contentCenterY + 16 * fs);
   } else {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `italic 600 ${Math.round(13 * fs)}px ${SERIF}`;
     ctx.fillStyle = '#E8B770';
-    ctx.fillText('All stages completed! ✦', boxX + boxW / 2, boxY + boxH / 2);
+    ctx.fillText(isPuzzle ? 'All puzzles completed! ✦' : 'All stages completed! ✦', boxX + boxW / 2, boxY + boxH / 2);
   }
   ctx.restore();
 
@@ -527,7 +557,20 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   const btnPadX = 20 * fs;
   const btnW = (cardW - btnPadX * 2 - btnGap * 2) / 3;
 
-  const reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0) + (won ? 1 : 0);
+  let reached = 1;
+  if (isPuzzle) {
+    let maxCleared = 0;
+    if (stats && stats.puzzles) {
+      for (let i = 1; i <= 50; i++) {
+        if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
+          maxCleared = Math.max(maxCleared, i);
+        }
+      }
+    }
+    reached = 50; // temporarily unlocked for testing
+  } else {
+    reached = 1000; // temporarily unlocked for testing
+  }
 
   const prevBtn = {
     x: cardX + btnPadX,
@@ -536,7 +579,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     h: btnH,
     label: 'Previous',
     action: 'prev',
-    enabled: game.level > 1,
+    enabled: isPuzzle ? game.puzzleId > 1 : game.level > 1,
   };
 
   const restartBtn = {
@@ -556,7 +599,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     h: btnH,
     label: 'Next',
     action: 'next',
-    enabled: nextLevelNum <= 1000 && nextLevelNum <= reached,
+    enabled: isPuzzle ? (nextNum <= 50 && nextNum <= reached) : (nextNum <= 1000 && nextNum <= reached),
   };
 
   // Push all to hit list so coordinates are checked on click
@@ -598,43 +641,8 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
   const cx = viewW / 2;
   let y = cardY + 28 * fs;
 
-  // Title: "TIMED MODE"
-  const titlePx = Math.max(18, Math.round(18 * fs));
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#F5E9C9'; // Cream
-  ctx.font = `600 ${titlePx}px ${SERIF}`;
-  ctx.fillText('Timed Mode Introduced', cx, y);
-  y += titlePx + 16 * fs;
-
-  // Large glowing lightning bolt icon!
-  const iconSize = 32 * fs;
-  ctx.save();
-  ctx.translate(cx, y + iconSize / 2);
-  // Add a soft glow behind lightning bolt
-  if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
-    ctx.shadowColor = '#E8B770';
-    ctx.shadowBlur = 15;
-  }
-  ctx.fillStyle = '#E8B770';
-  ctx.beginPath();
-  ctx.moveTo(1 * fs, -15 * fs);
-  ctx.lineTo(-7 * fs, 0 * fs);
-  ctx.lineTo(-2 * fs, 0 * fs);
-  ctx.lineTo(-4 * fs, 15 * fs);
-  ctx.lineTo(6 * fs, 0 * fs);
-  ctx.lineTo(1 * fs, 0 * fs);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  y += iconSize + 22 * fs;
-
-  // Explanation text
-  const linePx = Math.max(12, Math.round(12.5 * fs));
-  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
-  ctx.font = `400 ${linePx}px ${SERIF}`;
-  
-  const lines = [
+  let title = 'Timed Mode Introduced';
+  let lines = [
     "The river flows faster now.",
     "Under the speed of the rising moon, the trellis",
     "descends automatically over time instead",
@@ -643,6 +651,122 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
     "Aim quickly and clear the lanterns",
     "before they touch the water!"
   ];
+  let drawIcon = (ctx) => {
+    ctx.save();
+    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = '#E8B770';
+      ctx.shadowBlur = 15;
+    }
+    ctx.fillStyle = '#E8B770';
+    ctx.beginPath();
+    ctx.moveTo(1 * fs, -15 * fs);
+    ctx.lineTo(-7 * fs, 0 * fs);
+    ctx.lineTo(-2 * fs, 0 * fs);
+    ctx.lineTo(-4 * fs, 15 * fs);
+    ctx.lineTo(6 * fs, 0 * fs);
+    ctx.lineTo(1 * fs, 0 * fs);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  if (game.isPuzzleMode) {
+    if (game.puzzleId === 6) {
+      title = 'Target Mode Introduced';
+      lines = [
+        "Your goal is to clear the golden target lanterns.",
+        "",
+        "You can pop them directly or drop them.",
+        "Unlike classic stages, you do NOT need",
+        "to clear other lanterns on the board to win!",
+        "",
+        "Look for the glowing gold circles around targets."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        ctx.strokeStyle = '#E8B770'; // Gold border
+        ctx.lineWidth = 4 * fs;
+        ctx.beginPath();
+        ctx.arc(0, 0, 18 * fs, 0, Math.PI * 2);
+        ctx.stroke();
+        // Inner glowing core
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 18 * fs);
+        grad.addColorStop(0, 'rgba(255, 220, 150, 0.6)');
+        grad.addColorStop(1, 'rgba(255, 140, 50, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, 18 * fs, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      };
+    } else if (game.puzzleId === 7) {
+      title = 'Stone Blockers Introduced';
+      lines = [
+        "Stone lanterns cannot be matched.",
+        "",
+        "To clear them, you must pop the normal lanterns",
+        "holding them up so they drop into the water!",
+        "",
+        "Plan your shots to break their anchors."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        drawLantern(ctx, 0, 0, 14 * fs, 'paper', { isBlocker: true });
+        ctx.restore();
+      };
+    } else if (game.puzzleId === 14) {
+      title = 'Timed Descent Introduced';
+      lines = [
+        "The river flows faster now.",
+        "Under the speed of the rising moon, the trellis",
+        "descends automatically over time instead",
+        "of counting your shots.",
+        "",
+        "Aim quickly and clear the lanterns",
+        "before they touch the water!"
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+          ctx.shadowColor = '#E8B770';
+          ctx.shadowBlur = 15;
+        }
+        ctx.fillStyle = '#E8B770';
+        ctx.beginPath();
+        ctx.moveTo(1 * fs, -15 * fs);
+        ctx.lineTo(-7 * fs, 0 * fs);
+        ctx.lineTo(-2 * fs, 0 * fs);
+        ctx.lineTo(-4 * fs, 15 * fs);
+        ctx.lineTo(6 * fs, 0 * fs);
+        ctx.lineTo(1 * fs, 0 * fs);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      };
+    }
+  }
+
+  // Title text
+  const titlePx = Math.max(18, Math.round(18 * fs));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#F5E9C9'; // Cream
+  ctx.font = `600 ${titlePx}px ${SERIF}`;
+  ctx.fillText(title, cx, y);
+  y += titlePx + 16 * fs;
+
+  // Icon drawing
+  const iconSize = 32 * fs;
+  ctx.save();
+  ctx.translate(cx, y + iconSize / 2);
+  drawIcon(ctx);
+  ctx.restore();
+  y += iconSize + 22 * fs;
+
+  // Explanation text
+  const linePx = Math.max(12, Math.round(12.5 * fs));
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
+  ctx.font = `400 ${linePx}px ${SERIF}`;
 
   for (const line of lines) {
     if (line === "") {
@@ -654,7 +778,7 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
   }
 
   y = cardY + cardH - 32 * fs;
-  
+
   // CTA
   const ctaPx = Math.max(11, Math.round(11 * fs));
   ctx.fillStyle = '#E8B770'; // Gold
@@ -819,5 +943,213 @@ function drawMiniStencilIcon(ctx, stencilPack, cx, cy, fs, color) {
     ctx.fillRect(cx - 2.2 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
     ctx.fillRect(cx + 0.4 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
   }
+  ctx.restore();
+}
+
+export function drawLanternInventory(ctx, layout, game, settings) {
+  if (!game.isPuzzleMode) return;
+
+  const pz = puzzleConfig(game.puzzleId);
+  if (!pz || !pz.queue) return;
+
+  // Gather all remaining lanterns (including current shot, next, after-next, and the rest of the queue)
+  const list = [];
+  if (game.queue.current) list.push(game.queue.current);
+  if (game.queue.next) list.push(game.queue.next);
+  if (game.queue.afterNext) list.push(game.queue.afterNext);
+  for (let i = game.puzzleQueueIndex; i < pz.queue.length; i++) {
+    list.push(pz.queue[i]);
+  }
+
+  if (list.length === 0) return;
+
+  ctx.save();
+
+  // Position in the top right, below the descent meter if one is active
+  const hasDescentMeter = !game.isSpeedMode && game.puzzleDescentType !== 'none';
+  const hasSpeedMeter = game.isSpeedMode;
+  const topY = (hasDescentMeter || hasSpeedMeter) ? 68 : 12;
+  const rightX = layout.viewW - 12;
+
+  const lanternR = hudPx(layout, 0.44, 8, settings);
+  const gap = lanternR * 2.8;
+  const maxDisplay = 5;
+  const displayCount = Math.min(maxDisplay, list.length);
+
+  // Draw "Supply" label
+  const labelPx = hudPx(layout, 0.42, 9, settings);
+  ctx.font = `italic 500 ${labelPx}px Georgia, ${SANS}`;
+  ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'top';
+  ctx.fillText('supply', rightX, topY);
+
+  const dotsY = topY + labelPx + 6;
+
+  // Draw dots from right to left
+  const totalDotsW = (displayCount - 1) * gap + lanternR * 2;
+  const startX = rightX - totalDotsW;
+
+  for (let i = 0; i < displayCount; i++) {
+    const colorKey = list[i];
+    const cx = startX + i * gap + lanternR;
+    const cy = dotsY + lanternR;
+    const isActive = i === 0;
+
+    // Trailing lanterns recede — reduced alpha so they read as
+    // "waiting in line" rather than competing for attention.
+    if (!isActive) { ctx.save(); ctx.globalAlpha *= 0.4; }
+
+    drawLantern(ctx, cx, cy, lanternR, colorKey, {
+      lit: isActive,
+      intensity: isActive ? 1.0 : 0.0,
+      designId: null
+    });
+
+    if (!isActive) { ctx.restore(); }
+
+    // Subtle warmth bleed for the active lantern — the same ember-halo
+    // language used by board lanterns, just at HUD scale. The warm glow
+    // bleeds slightly into its neighbors, selling "this one is alive."
+    if (isActive) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const glowR = lanternR * 2.2;
+      const grad = ctx.createRadialGradient(cx, cy, lanternR * 0.2, cx, cy, glowR);
+      grad.addColorStop(0,   'rgba(255, 220, 150, 0.18)');
+      grad.addColorStop(0.5, 'rgba(255, 175, 95, 0.06)');
+      grad.addColorStop(1,   'rgba(255, 140, 50, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Draw "+" if there are more
+  if (list.length > maxDisplay) {
+    const plusText = `+${list.length - maxDisplay}`;
+    const plusPx = hudPx(layout, 0.46, 10, settings);
+    ctx.font = `600 ${plusPx}px ${SANS}`;
+    ctx.fillStyle = PALETTE.moon;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(plusText, rightX - totalDotsW + (displayCount * gap) + 2, dotsY + lanternR);
+  }
+
+  ctx.restore();
+}
+
+export function getQuickRestartButtonRect(layout) {
+  const size = layout.size;
+  const btnSize = size * 1.2;
+  const handedness = layout.handedness || 'right';
+
+  if (handedness === 'left') {
+    // Bottom-right corner (opposite of left handedness)
+    return {
+      x: layout.viewW - size * 1.8,
+      y: layout.viewH - size * 1.8,
+      w: btnSize,
+      h: btnSize
+    };
+  } else {
+    // Bottom-left corner (opposite of right handedness)
+    return {
+      x: size * 0.6,
+      y: layout.viewH - size * 1.8,
+      w: btnSize,
+      h: btnSize
+    };
+  }
+}
+
+export function drawQuickRestartButton(ctx, layout, game, settings) {
+  if (!game || !layout) return;
+  // Don't draw if game is over or intro card is active
+  if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER || game.showModeIntroCard) return;
+
+  const btn = getQuickRestartButtonRect(layout);
+  const now = performance.now();
+  
+  // Auto-disarm check
+  if (game.quickRestartArmed && (now - game.quickRestartArmedTime > 3000)) {
+    game.quickRestartArmed = false;
+  }
+
+  const armed = game.quickRestartArmed;
+  const fs = fontScaleOf(settings);
+  
+  ctx.save();
+  
+  // Coordinates
+  const cx = btn.x + btn.w / 2;
+  const cy = btn.y + btn.h / 2;
+  const r = btn.w / 2;
+
+  // Draw background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (armed) {
+    ctx.fillStyle = 'rgba(232, 183, 112, 0.08)'; // Subtle gold background
+  } else {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.02)'; // Extremely faint cream background
+  }
+  ctx.fill();
+
+  // Draw border
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (armed) {
+    ctx.strokeStyle = '#E8B770'; // Gold border
+    ctx.lineWidth = 1.5;
+    
+    // Add gold glow
+    if (typeof PERF_CONFIG !== 'undefined' && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = '#E8B770';
+      ctx.shadowBlur = 8;
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(245, 233, 201, 0.2)'; // Faint border
+    ctx.lineWidth = 1.0;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0; // reset shadow
+
+  // Draw reload/restart circular arrow icon
+  ctx.beginPath();
+  ctx.strokeStyle = armed ? '#E8B770' : 'rgba(245, 233, 201, 0.4)';
+  ctx.lineWidth = armed ? 2.0 : 1.5;
+  ctx.lineCap = 'round';
+  
+  // Circular arc (3/4 of a circle)
+  const startAngle = -Math.PI / 2;
+  const endAngle = Math.PI;
+  const iconR = r * 0.45;
+  ctx.arc(cx, cy, iconR, startAngle, endAngle, false);
+  ctx.stroke();
+
+  // Arrow head at start of arc (facing down/left)
+  ctx.beginPath();
+  ctx.fillStyle = armed ? '#E8B770' : 'rgba(245, 233, 201, 0.4)';
+  const arrowSize = r * 0.18;
+  
+  // Arrow head triangle at (cx, cy - iconR) pointing right (clockwise)
+  ctx.moveTo(cx, cy - iconR);
+  ctx.lineTo(cx - arrowSize, cy - iconR - arrowSize * 0.5);
+  ctx.lineTo(cx - arrowSize * 0.3, cy - iconR + arrowSize * 0.8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw "tap again" confirmation text (positioned above the button at the bottom of the screen)
+  if (armed) {
+    ctx.font = `italic 500 ${Math.round(9.5 * fs)}px Georgia, serif`;
+    ctx.fillStyle = '#E8B770';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('tap again', cx, btn.y - 4);
+  }
+
   ctx.restore();
 }

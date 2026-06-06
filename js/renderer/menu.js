@@ -14,6 +14,7 @@ import {
 } from './style.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
 import { changeStencilPack } from '../assets.js';
+import { puzzleConfig } from '../puzzles.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -24,7 +25,7 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'options'
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options'
   fade: 0,             // 0..1
   fadeTarget: 0,
   hits: [],            // [{x, y, w, h, action, value}]
@@ -42,6 +43,10 @@ const menuState = {
   viewportY: 0,
   viewportH: 0,
 };
+
+if (typeof window !== 'undefined') {
+  window.menuState = menuState;
+}
 
 export function isMenuOpen() {
   return menuState.panel !== 'hidden' || menuState.fade > 0;
@@ -127,7 +132,7 @@ export function handleMenuPointerMove(x, y, clientY) {
   return false;
 }
 
-export function handleMenuPointerUp(x, y, actions) {
+export function handleMenuPointerUp(x, y, actions, game) {
   if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
 
   const btn = menuState.buttonRect;
@@ -142,37 +147,62 @@ export function handleMenuPointerUp(x, y, actions) {
     }
   }
 
+  const handleClose = () => {
+    closeMenu();
+    const targetMode = Arcade.state.get('gameMode') || 'campaign';
+    const currentIsPuzzle = !!game?.isPuzzleMode;
+    const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+    if (currentMode !== targetMode) {
+      actions?.onChangeGameMode?.(targetMode);
+    } else {
+      actions?.onResume?.();
+    }
+  };
+
   // Check buttons / hits
   for (const h of menuState.hits) {
     if (!pointIn(x, y, h)) continue;
     switch (h.action) {
       case 'show-root':    setMenuPanel('root'); return true;
       case 'show-stages':  setMenuPanel('stages'); return true;
+      case 'show-puzzles': setMenuPanel('puzzles'); return true;
       case 'show-options': setMenuPanel('options'); return true;
       case 'show-records': setMenuPanel('records'); return true;
       case 'pick-stencil': {
-        changeStencilPack(h.value);
-        actions?.onInteract?.(); // wakes up the draw loop instantly
-        return true;
-      }
-      case 'toggle-speed': {
-        const current = !!Arcade.state.get('speedMode');
-        const target = h.value !== undefined ? h.value : !current;
-        if (current !== target) {
-          Arcade.state.set('speedMode', target);
-          actions?.onToggleSpeed?.(target);
+        const gameMode = Arcade.state.get('gameMode') || 'campaign';
+        if (gameMode === 'zen' || gameMode === 'speed') {
+          Arcade.state.set('customStencilPack', h.value);
+          changeStencilPack(h.value);
+          actions?.onInteract?.(); // wakes up the draw loop instantly
         }
         return true;
       }
-      case 'close':        closeMenu(); actions?.onResume?.(); return true;
+      case 'change-gamemode': {
+        const targetMode = h.value;
+        const currentMode = Arcade.state.get('gameMode') || 'campaign';
+        if (currentMode !== targetMode) {
+          Arcade.state.set('gameMode', targetMode);
+          actions?.onInteract?.();
+        }
+        return true;
+      }
+      case 'toggle-fast-launch': {
+        const current = !!Arcade.state.get('fastLaunch');
+        const target = !current;
+        Arcade.state.set('fastLaunch', target);
+        actions?.onToggleFastLaunch?.(target);
+        return true;
+      }
+      case 'close':        handleClose(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
+      case 'pick-puzzle':  closeMenu(); actions?.onStartPuzzle?.(h.value); return true;
     }
   }
 
   // Tap fell inside the scrim but outside the card - dismiss
   const card = menuState.cardRect;
   if (card && !pointIn(x, y, card)) {
-    closeMenu();
+    handleClose();
     return true;
   }
 
@@ -201,6 +231,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   if (menuState.panel === 'root')         drawRootPanel(ctx, layout, settings);
   else if (menuState.panel === 'records') drawRecordsPanel(ctx, layout, settings, stats, scores);
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
+  else if (menuState.panel === 'puzzles') drawPuzzlesPanel(ctx, layout, game, settings, stats);
   else if (menuState.panel === 'options') drawOptionsPanel(ctx, layout, settings);
   ctx.restore();
 }
@@ -362,21 +393,91 @@ function drawDashedRule(ctx, x, y, w) {
 
 function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 320 * fs, 315 * fs);
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  
+  const items = [];
+  items.push({ label: 'Play', sub: 'resume game from last level', action: 'close', glyph: 'play' });
+  if (gameMode === 'puzzle') {
+    items.push({ label: 'Puzzles', sub: '50 brain-teaser challenges', action: 'show-puzzles', glyph: 'puzzles' });
+  } else {
+    items.push({ label: 'Stages', sub: 'select or revisit a stage', action: 'show-stages', glyph: 'stages' });
+  }
+  
+  items.push(
+    { label: 'Options',     sub: 'configure art and launch',  action: 'show-options',  glyph: 'stencils' },
+    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' }
+  );
+
+  // Compute card height dynamically: title + mode selector + divider + items
+  const cardH = Math.round((210 + items.length * 48) * fs);
+  const rect = cardRect(layout, 320 * fs, cardH);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
-  const padX = 24;
-  const rowH = Math.round(48 * fs);
-  const items = [
-    { label: 'Stages',      sub: 'pick or revisit a stage',   action: 'show-stages',   glyph: 'stages' },
-    { label: 'Options',     sub: 'configure art and mode',    action: 'show-options',  glyph: 'stencils' },
-    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' },
-    { label: 'Continue',    sub: 'back to the river',         action: 'close',         glyph: 'moon' },
+  const padX = 20;
+  const innerW = rect.w - padX * 2;
+  let y = startY + 6;
+
+  // ─── Game Mode Grid (2x2) ───
+  y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
+
+  const colW = Math.floor((innerW - 12) / 2);
+  const colH = Math.round(48 * fs);
+
+  const modeOpts = [
+    { id: 'campaign', label: 'Campaign', sub: 'Default levels', glyph: 'stages' },
+    { id: 'zen',      label: 'Zen',      sub: 'Classic play',   glyph: 'moon' },
+    { id: 'speed',    label: 'Speed',    sub: 'Rapid fire',     glyph: 'speed' },
+    { id: 'puzzle',   label: 'Puzzle',   sub: 'Teaser puzzles',  glyph: 'puzzles' }
   ];
 
-  let y = startY + 6;
+  const modeStartY = y;
+  for (let i = 0; i < 4; i++) {
+    const opt = modeOpts[i];
+    const isSelected = (opt.id === gameMode);
+    const rowIndex = Math.floor(i / 2);
+    const colIndex = i % 2;
+    const tx = rect.x + padX + colIndex * (colW + 12);
+    const ty = modeStartY + rowIndex * (colH + 8);
+
+    ctx.save();
+    ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+    roundedRectPath(ctx, tx, ty, colW, colH, 6);
+    ctx.fill();
+
+    ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
+    ctx.lineWidth = isSelected ? 1.4 : 1;
+    ctx.stroke();
+
+    const cx = tx + 14 * fs;
+    const cy = ty + colH / 2;
+    drawGlyph(ctx, opt.glyph, cx, cy);
+
+    const titlePx = Math.round(11.5 * fs);
+    const subPx = Math.round(8.5 * fs);
+
+    ctx.fillStyle = CREAM;
+    ctx.font = `600 ${titlePx}px ${SERIF}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText(opt.label, tx + 26 * fs, ty + colH * 0.22);
+
+    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+    ctx.font = `400 ${subPx}px ${SERIF}`;
+    ctx.fillText(opt.sub, tx + 26 * fs, ty + colH * 0.58);
+
+    ctx.restore();
+
+    menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'change-gamemode', value: opt.id });
+  }
+
+  y += 2 * colH + 8 + 10;
+  drawDashedRule(ctx, rect.x + padX, y, innerW);
+  y += 10;
+
+  // ─── Menu Items ───
+  const rowH = Math.round(44 * fs);
   for (const it of items) {
     drawMenuRow(ctx, rect.x + padX, y, rect.w - padX * 2, rowH, it, settings);
     menuState.hits.push({ x: rect.x + padX, y, w: rect.w - padX * 2, h: rowH, action: it.action });
@@ -439,6 +540,21 @@ function drawGlyph(ctx, kind, cx, cy) {
       }
       break;
     }
+    case 'puzzles': {
+      // Draw a cute puzzle grid representation
+      ctx.strokeStyle = hexToRgba(GOLD, 0.9);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.rect(cx - 5, cy - 5, 10, 10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, cy);
+      ctx.lineTo(cx + 5, cy);
+      ctx.moveTo(cx, cy - 5);
+      ctx.lineTo(cx, cy + 5);
+      ctx.stroke();
+      break;
+    }
     case 'stencils': {
       // Small painter palette/outline glyph for art selection
       ctx.strokeStyle = hexToRgba(GOLD, 0.9);
@@ -482,6 +598,17 @@ function drawGlyph(ctx, kind, cx, cy) {
       ctx.lineTo(cx - 2, cy + 7);
       ctx.lineTo(cx + 3, cy - 0);
       ctx.lineTo(cx + 1, cy - 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
+    case 'play': {
+      // Draw a right-pointing play triangle
+      ctx.fillStyle = hexToRgba(GOLD, 0.95);
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, cy - 6);
+      ctx.lineTo(cx + 5, cy);
+      ctx.lineTo(cx - 3, cy + 6);
       ctx.closePath();
       ctx.fill();
       break;
@@ -632,8 +759,8 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   const startY = drawTitleBar(ctx, rect, 'Choose a stage', { showBack: true, fs });
 
   const padX = 20;
-  const reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0);
   const totalStages = LEVELS.length;
+  const reached = totalStages; // temporarily unlocked for testing
 
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();
@@ -817,11 +944,219 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   }
 }
 
+function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Choose a puzzle', { showBack: true, fs });
+
+  const padX = 20;
+  
+  // Determine how many puzzles are unlocked
+  let maxCleared = 0;
+  if (stats && stats.puzzles) {
+    for (let i = 1; i <= 50; i++) {
+      if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
+        maxCleared = Math.max(maxCleared, i);
+      }
+    }
+  }
+  const unlockedCount = 50; // temporarily unlocked for testing
+
+  const subPx = Math.max(11, Math.round(11 * fs));
+  ctx.save();
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  const puzzleText = game.isPuzzleMode ? `currently on puzzle ${game.puzzleId}` : "select a puzzle to play";
+  ctx.fillText(
+    `${puzzleText} · ${maxCleared} cleared`,
+    rect.x + padX, startY
+  );
+  ctx.restore();
+
+  const viewportX = rect.x + padX;
+  const viewportY = startY + subPx + 12;
+  const viewportW = rect.w - padX * 2;
+  const viewportH = rect.y + rect.h - viewportY - 16;
+
+  const rowHeight = Math.round(44 * fs);
+  const totalHeight = 50 * rowHeight;
+
+  menuState.viewportY = viewportY;
+  menuState.viewportH = viewportH;
+  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
+  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+
+  // Content Area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
+  ctx.clip();
+
+  for (let i = 1; i <= 50; i++) {
+    const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
+
+    // Viewport cull
+    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) {
+      continue;
+    }
+
+    const cfg = puzzleConfig(i);
+    const isCurrent = game.isPuzzleMode && (i === game.puzzleId);
+    const isLocked = i > unlockedCount;
+    const pzData = (stats && stats.puzzles && stats.puzzles[String(i)]) || null;
+    const cleared = !!(pzData && pzData.cleared);
+    const played = !!(pzData && pzData.plays);
+    const bestScore = pzData ? pzData.bestScore | 0 : 0;
+
+    // Draw background
+    ctx.save();
+    const baseAlpha = isCurrent ? 0.08 : cleared ? 0.05 : played ? 0.03 : isLocked ? 0.015 : 0.02;
+    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.fill();
+
+    // Border
+    if (isCurrent) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.4;
+    } else if (cleared) {
+      ctx.strokeStyle = hexToRgba(GOLD, 0.4);
+      ctx.lineWidth = 1;
+    } else if (isLocked) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.06);
+      ctx.lineWidth = 1;
+    } else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.12);
+      ctx.lineWidth = 1;
+    }
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.stroke();
+
+    // Label
+    const labelPx = Math.round(13 * fs);
+    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.25) : CREAM;
+    ctx.font = `600 ${labelPx}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    
+    let displayName = `${i}. ${cfg.name}`;
+    ctx.fillText(displayName, viewportX + 10, rowY + rowHeight / 2);
+    const labelW = ctx.measureText(displayName).width;
+
+    // Mini icons next to name
+    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
+    const modeCx = viewportX + 10 + labelW + 10 * fs;
+    const stencilCx = modeCx + 14 * fs;
+    drawMiniModeIcon(ctx, cfg.descentType === 'time', modeCx, rowY + rowHeight / 2, fs, iconColor);
+    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
+
+    // Cleared Star or Lock
+    const lockX = viewportX + 130 * fs;
+    if (isLocked) {
+      const lockY = rowY + rowHeight / 2;
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(CREAM, 0.25);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(lockX, lockY - 2.5 * fs, 2.5 * fs, Math.PI, 0);
+      ctx.stroke();
+      ctx.fillStyle = hexToRgba(CREAM, 0.2);
+      ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
+      ctx.restore();
+    } else if (cleared) {
+      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
+    } else if (played) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.45);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Colors preview dots
+    const dotR = 2 * fs;
+    const gap = dotR * 2.4;
+    const totalDots = cfg.colors.length;
+    const startDotX = viewportX + 155 * fs;
+    for (let c = 0; c < totalDots; c++) {
+      const key = cfg.colors[c];
+      const cx = startDotX + c * gap;
+      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.15 : 0.55);
+      ctx.beginPath();
+      ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Detail text: e.g. "Target Goal" vs "Clear All"
+    if (viewportW > 280 * fs) {
+      const detailPx = Math.round(9 * fs);
+      ctx.font = `400 ${detailPx}px ${SANS}`;
+      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
+      ctx.textAlign = 'left';
+      const goalText = cfg.goalType === 'clear-targets' ? "Target" : "Clear All";
+      ctx.fillText(goalText, viewportX + 205 * fs, rowY + rowHeight / 2);
+    }
+
+    // Best Score / Completed
+    const scorePx = Math.round(10 * fs);
+    ctx.font = `500 ${scorePx}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.15 : played ? 0.85 : 0.3);
+    ctx.textAlign = 'right';
+    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 18 : 12);
+    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, rowY + rowHeight / 2);
+
+    ctx.restore();
+
+    // Register hit target
+    if (!isLocked) {
+      menuState.hits.push({
+        x: viewportX,
+        y: rowY,
+        w: viewportW,
+        h: rowHeight,
+        action: 'pick-puzzle',
+        value: i
+      });
+    }
+  }
+  ctx.restore();
+
+  // Scrollbar
+  if (menuState.maxScrollY > 0) {
+    ctx.save();
+    const sbW = 3;
+    const sbX = viewportX + viewportW - sbW;
+    const trackH = viewportH;
+    const thumbH = Math.max(16, trackH * (viewportH / totalHeight));
+    const thumbY = viewportY + (trackH - thumbH) * (menuState.scrollY / menuState.maxScrollY);
+
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
+    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
+    ctx.fill();
+
+    ctx.fillStyle = hexToRgba(GOLD, 0.7);
+    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 // ─── Options panel ──────────────────────────────────────────────────────────
 
 function drawOptionsPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 350 * fs, 400 * fs);
+  const gameMode = Arcade.state.get('gameMode') || 'campaign';
+  
+  // Compute card height dynamically: title + stencils disabled notice/packs + fast launch
+  const isZen = gameMode === 'zen';
+  const stencilsDisabled = (gameMode === 'campaign' || gameMode === 'puzzle');
+  const cardH = Math.round((200 + (isZen ? 50 : 0) + (stencilsDisabled ? 34 : 0) + 5 * 44) * fs);
+  
+  const rect = cardRect(layout, 350 * fs, cardH);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Options', { showBack: true, fs });
@@ -830,60 +1165,57 @@ function drawOptionsPanel(ctx, layout, settings) {
   const innerW = rect.w - padX * 2;
   let y = startY + 10;
 
-  // Game Mode Section
-  y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
-
-  const colW = Math.floor((innerW - 12) / 2);
-  const colH = Math.round(52 * fs);
-  const speedMode = !!Arcade.state.get('speedMode');
-
-  const modeOpts = [
-    { id: 'classic', label: 'Classic', sub: 'Standard play', value: false },
-    { id: 'speed', label: 'Speed', sub: 'Rapid fire', value: true }
-  ];
-
-  for (let i = 0; i < 2; i++) {
-    const opt = modeOpts[i];
-    const isSelected = (opt.value === speedMode);
-    const tx = rect.x + padX + i * (colW + 12);
-    const ty = y;
-
+  // Fast Launch Option (Zen mode only)
+  if (isZen) {
+    const fastLaunch = !!Arcade.state.get('fastLaunch');
+    const rowH = Math.round(38 * fs);
     ctx.save();
-    ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
-    roundedRectPath(ctx, tx, ty, colW, colH, 8);
+    ctx.fillStyle = fastLaunch ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+    roundedRectPath(ctx, rect.x + padX, y, innerW, rowH, 6);
     ctx.fill();
 
-    ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
-    ctx.lineWidth = isSelected ? 1.4 : 1;
+    ctx.strokeStyle = fastLaunch ? GOLD : hexToRgba(CREAM, 0.12);
+    ctx.lineWidth = fastLaunch ? 1.4 : 1;
     ctx.stroke();
-
-    const cx = tx + 18 * fs;
-    const cy = ty + colH / 2;
-    if (opt.id === 'classic') {
-      drawGlyph(ctx, 'moon', cx, cy);
-    } else {
-      drawGlyph(ctx, 'speed', cx, cy);
-    }
 
     const titlePx = Math.round(13 * fs);
     const subPx = Math.round(9 * fs);
 
     ctx.fillStyle = CREAM;
-    ctx.font = `600 ${titlePx}px ${SERIF}`;
+    ctx.font = `500 ${titlePx}px ${SERIF}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
-    ctx.fillText(opt.label, tx + 32 * fs, ty + colH * 0.22);
+    ctx.fillText('Fast Launch', rect.x + padX + 12 * fs, y + rowH * 0.18);
 
     ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
     ctx.font = `400 ${subPx}px ${SERIF}`;
-    ctx.fillText(opt.sub, tx + 32 * fs, ty + colH * 0.58);
+    ctx.fillText('Rapid fire launching mechanics', rect.x + padX + 12 * fs, y + rowH * 0.58);
 
+    // Toggle switch checkbox indicator
+    const cx = rect.x + padX + innerW - 16 * fs;
+    const cy = y + rowH / 2;
+    if (fastLaunch) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, cy - 1);
+      ctx.lineTo(cx - 1, cy + 2);
+      ctx.lineTo(cx + 4, cy - 4);
+      ctx.stroke();
+    } else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.3);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
 
-    menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'toggle-speed', value: opt.value });
+    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'toggle-fast-launch' });
+    y += rowH + 16;
   }
-
-  y += colH + 16;
 
   // Lantern Art Section
   y = drawSectionHeader(ctx, rect.x + padX, y, 'Lantern Art', fs);
@@ -891,12 +1223,44 @@ function drawOptionsPanel(ctx, layout, settings) {
   const activePackId = Arcade.state.get('stencilPack') || 'bugs';
   const rowH = Math.round(38 * fs);
 
+  if (stencilsDisabled) {
+    ctx.save();
+    const noticeH = Math.round(34 * fs);
+    ctx.fillStyle = 'rgba(232, 183, 112, 0.04)';
+    ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    roundedRectPath(ctx, rect.x + padX, y, innerW, noticeH, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = hexToRgba(GOLD, 0.85);
+    ctx.font = `italic 400 ${Math.round(10 * fs)}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      'Art is determined by level config in Campaign and Puzzle modes.',
+      rect.x + rect.w / 2,
+      y + noticeH / 2
+    );
+    ctx.restore();
+    y += noticeH + 10;
+  }
+
+  ctx.save();
+  if (stencilsDisabled) {
+    ctx.globalAlpha = 0.35;
+  }
+
   for (const pack of Object.values(STENCIL_PACKS)) {
     const isSelected = pack.id === activePackId;
     drawCompactStencilRow(ctx, rect.x + padX, y, innerW, rowH, pack, isSelected, fs);
-    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    if (!stencilsDisabled) {
+      menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    }
     y += rowH + 6;
   }
+  ctx.restore();
 }
 
 function drawCompactStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {

@@ -38,6 +38,42 @@ const REFLECT_STOPS = {
 export const LANTERN_SVG_VIEWBOX = { w: 100, h: 125 };
 
 export function buildLanternSvg(color) {
+  if (color === 'stone_blocker') {
+    const bodyPath = 'M25 25 Q 50 20 75 25 Q 95 30 90 65 Q 86 90 83 105 Q 84 112 84 114 L 16 114 Q 16 112 17 105 Q 14 90 10 65 Q 5 30 25 25 Z';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 125">`
+      + `<defs>`
+        + `<radialGradient id="stone-grad" cx="40%" cy="40%" r="85%">`
+          + `<stop offset="0%" stop-color="#A5A5A5"/>`   // Muted moonlit sheen
+          + `<stop offset="25%" stop-color="#707070"/>`  // Medium-dark stone grey
+          + `<stop offset="60%" stop-color="#444444"/>`  // Dark grey stone
+          + `<stop offset="88%" stop-color="#262626"/>`  // Deep charcoal shadow
+          + `<stop offset="100%" stop-color="#121212"/>` // Edge border shadow
+        + `</radialGradient>`
+        + `<radialGradient id="reflect-grad" cx="50%" cy="100%" r="100%">`
+          + `<stop offset="0%" stop-color="#282828" stop-opacity="0.6"/>`
+          + `<stop offset="100%" stop-color="#0E0E0E"/>`
+        + `</radialGradient>`
+        + `<radialGradient id="warm-glow-l" cx="15%" cy="90%" r="75%">`
+          + `<stop offset="0%" stop-color="#FFAA54" stop-opacity="0.32"/>`
+          + `<stop offset="50%" stop-color="#FF7F35" stop-opacity="0.12"/>`
+          + `<stop offset="100%" stop-color="#FF7F35" stop-opacity="0"/>`
+        + `</radialGradient>`
+        + `<radialGradient id="warm-glow-r" cx="85%" cy="90%" r="75%">`
+          + `<stop offset="0%" stop-color="#FFAA54" stop-opacity="0.32"/>`
+          + `<stop offset="50%" stop-color="#FF7F35" stop-opacity="0.12"/>`
+          + `<stop offset="100%" stop-color="#FF7F35" stop-opacity="0"/>`
+        + `</radialGradient>`
+      + `</defs>`
+      + `<path d="${bodyPath}" fill="url(#stone-grad)" stroke="#121212" stroke-width="1.8" stroke-linejoin="round"/>`
+      + `<path d="M 32 30 Q 36 60 44 75 T 38 108" fill="none" stroke="#E0E0E0" stroke-width="0.8" opacity="0.18"/>`
+      + `<path d="M 66 28 Q 58 64 68 88 T 62 110" fill="none" stroke="#E0E0E0" stroke-width="0.8" opacity="0.18"/>`
+      + `<ellipse cx="50" cy="114" rx="34" ry="6" fill="url(#reflect-grad)"/>`
+      + `<ellipse cx="50" cy="114" rx="35" ry="6.5" fill="none" stroke="#121212" stroke-width="1.8"/>`
+      + `<path d="${bodyPath}" fill="url(#warm-glow-l)" opacity="0.95"/>`
+      + `<path d="${bodyPath}" fill="url(#warm-glow-r)" opacity="0.95"/>`
+    + `</svg>`;
+  }
+
   const g = PAPER_STOPS[color] || PAPER_STOPS.paper;
   const r = REFLECT_STOPS[color] || REFLECT_STOPS.paper;
   const uid = `mg-${color}`;

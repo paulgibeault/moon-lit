@@ -3,7 +3,7 @@ import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
   openMenu, closeMenu,
 } from './renderer/menu.js';
-import { getEndOverlayHit } from './renderer/hud.js';
+import { getEndOverlayHit, getQuickRestartButtonRect } from './renderer/hud.js';
 
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
@@ -18,8 +18,9 @@ const UI_SAFE_TOP_PX = 56;
 // cached and only refreshed on window resize / scroll.
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const {
-    onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange, onToggleSpeed,
+    onWinClick, onLossClick, onInteract, onStartLevel, onStartPuzzle, onMenuChange, onToggleSpeed,
     onPrevClick, onRestartClick, onNextClick,
+    onChangeGameMode, onToggleFastLaunch,
   } = callbacks;
   
   // Notify main.js when the menu opens/closes so the rAF loop can wake up.
@@ -31,9 +32,12 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
 
   const menuActions = {
     onStartLevel: (lv) => onStartLevel?.(lv),
+    onStartPuzzle: (pz) => onStartPuzzle?.(pz),
     onResume:     () => {},
     onToggleSpeed: (active) => onToggleSpeed?.(active),
     onInteract:   () => { bump(); fireMenuChange(); },
+    onChangeGameMode: (mode) => onChangeGameMode?.(mode),
+    onToggleFastLaunch: (active) => onToggleFastLaunch?.(active),
   };
 
   let rect = canvas.getBoundingClientRect();
@@ -93,6 +97,24 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       return;
     }
     const game = getGame();
+    const layout = getLayout();
+    if (game && layout && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER && !game.showModeIntroCard) {
+      const btn = getQuickRestartButtonRect(layout);
+      if (localX >= btn.x && localX <= btn.x + btn.w && localY >= btn.y && localY <= btn.y + btn.h) {
+        const now = performance.now();
+        if (!game.quickRestartArmed || (now - game.quickRestartArmedTime > 3000)) {
+          game.quickRestartArmed = true;
+          game.quickRestartArmedTime = now;
+        } else {
+          game.quickRestartArmed = false;
+          onRestartClick?.();
+        }
+        fireMenuChange();
+        e.preventDefault();
+        return;
+      }
+    }
+
     if (game.showModeIntroCard) {
       game.showModeIntroCard = false;
       e.preventDefault();
@@ -119,7 +141,8 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
         canvas.releasePointerCapture?.(e.pointerId);
         aimingPointerId = null;
       }
-      if (handleMenuPointerUp(localX, localY, menuActions)) {
+      const game = getGame();
+      if (handleMenuPointerUp(localX, localY, menuActions, game)) {
         fireMenuChange();
       }
       e.preventDefault();
@@ -149,6 +172,13 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     bump();
     if (isMenuPanelOpen()) {
       closeMenu();
+      const game = getGame();
+      const targetMode = Arcade.state.get('gameMode') || 'campaign';
+      const currentIsPuzzle = !!game?.isPuzzleMode;
+      const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+      if (currentMode !== targetMode) {
+        onChangeGameMode?.(targetMode);
+      }
     } else {
       openMenu();
     }
