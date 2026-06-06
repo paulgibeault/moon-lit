@@ -3,6 +3,7 @@ import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
   openMenu, closeMenu,
 } from './renderer/menu.js';
+import { getEndOverlayHit } from './renderer/hud.js';
 
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
@@ -16,7 +17,10 @@ const UI_SAFE_TOP_PX = 56;
 // Replaces the previous mouse + touch duplication. The bounding-rect is
 // cached and only refreshed on window resize / scroll.
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
-  const { onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange, onToggleSpeed } = callbacks;
+  const {
+    onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange, onToggleSpeed,
+    onPrevClick, onRestartClick, onNextClick,
+  } = callbacks;
   
   // Notify main.js when the menu opens/closes so the rAF loop can wake up.
   const fireMenuChange = () => onMenuChange?.();
@@ -47,9 +51,15 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
   const inSafeZone = (clientY) => (clientY - rect.top) < UI_SAFE_TOP_PX;
 
-  const handleEndClick = (game) => {
-    if (game.phase === PHASE.WIN) onWinClick?.();
-    else if (game.phase === PHASE.GAME_OVER) onLossClick?.();
+  const handleEndClick = (game, localX, localY) => {
+    const action = getEndOverlayHit(localX, localY);
+    if (action === 'prev') {
+      onPrevClick?.();
+    } else if (action === 'restart') {
+      onRestartClick?.();
+    } else if (action === 'next') {
+      onNextClick?.();
+    }
   };
 
   // Track the pointer that started an aim gesture, so a stray pointerup from
@@ -89,7 +99,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       return;
     }
     if (isGameOver(game)) {
-      handleEndClick(game);
+      handleEndClick(game, localX, localY);
       e.preventDefault();
       return;
     }

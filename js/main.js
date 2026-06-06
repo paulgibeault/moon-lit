@@ -494,6 +494,21 @@ window.addEventListener('resize', () => { resize(); requestFrame(); });
 attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
   onLossClick: restartLevel,
+  onPrevClick: () => {
+    const won = game.phase === PHASE.WIN;
+    recordOutcome(game, won);
+    loadAndStartLevel(game.level - 1);
+  },
+  onRestartClick: () => {
+    const won = game.phase === PHASE.WIN;
+    recordOutcome(game, won);
+    loadAndStartLevel(game.level);
+  },
+  onNextClick: () => {
+    const won = game.phase === PHASE.WIN;
+    recordOutcome(game, won);
+    loadAndStartLevel(game.level + 1);
+  },
   onInteract: bumpInteraction,
   onStartLevel: startLevel,
   onToggleSpeed: (active) => {

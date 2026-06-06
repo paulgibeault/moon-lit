@@ -44,7 +44,7 @@ export function render(ctx, layout, game, settings, stats, scores) {
   drawScoreHud(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
-    drawEndOverlay(ctx, layout, game, settings);
+    drawEndOverlay(ctx, layout, game, settings, stats);
   }
   if (game.showModeIntroCard) {
     drawModeIntroCard(ctx, layout, game, settings);
