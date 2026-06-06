@@ -179,9 +179,13 @@ export function drawScoreHud(ctx, layout, game, settings) {
   const scoreTextX = edge + moonR * 2 + glyphPad;
   ctx.fillText(scoreText, scoreTextX, 8);
 
-  // Subtext: "stage N · best M" or "puzzle N · best M"
-  let sub = game.isPuzzleMode ? `puzzle ${game.puzzleId}` : `stage ${game.level}`;
-  if (!game.isPuzzleMode && settings.bestScore) {
+  // Subtext: "stage N · best M" or "puzzle N · name · goal"
+  let sub = `stage ${game.level}`;
+  if (game.isPuzzleMode) {
+    const pz = puzzleConfig(game.puzzleId);
+    const goalName = pz.goalType === 'clear-targets' ? 'target' : 'clear all';
+    sub = `puzzle ${game.puzzleId} · ${pz.name} · ${goalName}`;
+  } else if (settings.bestScore) {
     sub += ` · best ${formatScore(settings.bestScore)}`;
   }
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
@@ -631,43 +635,8 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
   const cx = viewW / 2;
   let y = cardY + 28 * fs;
 
-  // Title: "TIMED MODE"
-  const titlePx = Math.max(18, Math.round(18 * fs));
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#F5E9C9'; // Cream
-  ctx.font = `600 ${titlePx}px ${SERIF}`;
-  ctx.fillText('Timed Mode Introduced', cx, y);
-  y += titlePx + 16 * fs;
-
-  // Large glowing lightning bolt icon!
-  const iconSize = 32 * fs;
-  ctx.save();
-  ctx.translate(cx, y + iconSize / 2);
-  // Add a soft glow behind lightning bolt
-  if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
-    ctx.shadowColor = '#E8B770';
-    ctx.shadowBlur = 15;
-  }
-  ctx.fillStyle = '#E8B770';
-  ctx.beginPath();
-  ctx.moveTo(1 * fs, -15 * fs);
-  ctx.lineTo(-7 * fs, 0 * fs);
-  ctx.lineTo(-2 * fs, 0 * fs);
-  ctx.lineTo(-4 * fs, 15 * fs);
-  ctx.lineTo(6 * fs, 0 * fs);
-  ctx.lineTo(1 * fs, 0 * fs);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  y += iconSize + 22 * fs;
-
-  // Explanation text
-  const linePx = Math.max(12, Math.round(12.5 * fs));
-  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
-  ctx.font = `400 ${linePx}px ${SERIF}`;
-  
-  const lines = [
+  let title = 'Timed Mode Introduced';
+  let lines = [
     "The river flows faster now.",
     "Under the speed of the rising moon, the trellis",
     "descends automatically over time instead",
@@ -676,6 +645,127 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
     "Aim quickly and clear the lanterns",
     "before they touch the water!"
   ];
+  let drawIcon = (ctx) => {
+    ctx.save();
+    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = '#E8B770';
+      ctx.shadowBlur = 15;
+    }
+    ctx.fillStyle = '#E8B770';
+    ctx.beginPath();
+    ctx.moveTo(1 * fs, -15 * fs);
+    ctx.lineTo(-7 * fs, 0 * fs);
+    ctx.lineTo(-2 * fs, 0 * fs);
+    ctx.lineTo(-4 * fs, 15 * fs);
+    ctx.lineTo(6 * fs, 0 * fs);
+    ctx.lineTo(1 * fs, 0 * fs);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  if (game.isPuzzleMode) {
+    if (game.puzzleId === 6) {
+      title = 'Target Mode Introduced';
+      lines = [
+        "Your goal is to clear the golden target lanterns.",
+        "",
+        "You can pop them directly or drop them.",
+        "Unlike classic stages, you do NOT need",
+        "to clear other lanterns on the board to win!",
+        "",
+        "Look for the glowing gold circles around targets."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        ctx.strokeStyle = '#E8B770'; // Gold border
+        ctx.lineWidth = 4 * fs;
+        ctx.beginPath();
+        ctx.arc(0, 0, 18 * fs, 0, Math.PI * 2);
+        ctx.stroke();
+        // Inner glowing core
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 18 * fs);
+        grad.addColorStop(0, 'rgba(255, 220, 150, 0.6)');
+        grad.addColorStop(1, 'rgba(255, 140, 50, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, 18 * fs, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      };
+    } else if (game.puzzleId === 7) {
+      title = 'Stone Blockers Introduced';
+      lines = [
+        "Stone lanterns cannot be matched.",
+        "",
+        "To clear them, you must pop the normal lanterns",
+        "holding them up so they drop into the water!",
+        "",
+        "Plan your shots to break their anchors."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        ctx.fillStyle = '#4A4A4A'; // Stone grey
+        ctx.strokeStyle = 'rgba(245, 233, 201, 0.4)';
+        ctx.lineWidth = 2 * fs;
+        roundedRectPath(ctx, -14 * fs, -14 * fs, 28 * fs, 28 * fs, 6 * fs);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      };
+    } else if (game.puzzleId === 14) {
+      title = 'Timed Descent Introduced';
+      lines = [
+        "The river flows faster now.",
+        "Under the speed of the rising moon, the trellis",
+        "descends automatically over time instead",
+        "of counting your shots.",
+        "",
+        "Aim quickly and clear the lanterns",
+        "before they touch the water!"
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+          ctx.shadowColor = '#E8B770';
+          ctx.shadowBlur = 15;
+        }
+        ctx.fillStyle = '#E8B770';
+        ctx.beginPath();
+        ctx.moveTo(1 * fs, -15 * fs);
+        ctx.lineTo(-7 * fs, 0 * fs);
+        ctx.lineTo(-2 * fs, 0 * fs);
+        ctx.lineTo(-4 * fs, 15 * fs);
+        ctx.lineTo(6 * fs, 0 * fs);
+        ctx.lineTo(1 * fs, 0 * fs);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      };
+    }
+  }
+
+  // Title text
+  const titlePx = Math.max(18, Math.round(18 * fs));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#F5E9C9'; // Cream
+  ctx.font = `600 ${titlePx}px ${SERIF}`;
+  ctx.fillText(title, cx, y);
+  y += titlePx + 16 * fs;
+
+  // Icon drawing
+  const iconSize = 32 * fs;
+  ctx.save();
+  ctx.translate(cx, y + iconSize / 2);
+  drawIcon(ctx);
+  ctx.restore();
+  y += iconSize + 22 * fs;
+
+  // Explanation text
+  const linePx = Math.max(12, Math.round(12.5 * fs));
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
+  ctx.font = `400 ${linePx}px ${SERIF}`;
 
   for (const line of lines) {
     if (line === "") {
@@ -687,7 +777,7 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
   }
 
   y = cardY + cardH - 32 * fs;
-  
+
   // CTA
   const ctaPx = Math.max(11, Math.round(11 * fs));
   ctx.fillStyle = '#E8B770'; // Gold

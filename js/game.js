@@ -174,7 +174,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: !isPuzzleMode && (level === 10),
+    showModeIntroCard: (!isPuzzleMode && level === 10) || (isPuzzleMode && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
     
     // Puzzle properties
     isPuzzleMode,
