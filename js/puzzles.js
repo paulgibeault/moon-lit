@@ -72,9 +72,9 @@ const HAND_CRAFTED_PUZZLES = [
     goalType: 'clear-all',
     board: [
       ". . Y Y . . . .",
-      " R R R R R . ",
-      "R R R R R R . .",
-      " R R R R R . "
+      " . . R R R R . ",
+      ". . R R R R R .",
+      " . . R R R R . "
     ]
   },
   {
@@ -87,11 +87,11 @@ const HAND_CRAFTED_PUZZLES = [
     descentType: 'none',
     goalType: 'clear-all',
     board: [
-      ". . G G . . . .",
-      " . G . G . . ",
-      "P P P . P P P P",
-      " P P . . P P ",
-      "P P P . P P P P"
+      ". . . G G . . .",
+      " G G . G G ",
+      "P P P . . P P P",
+      " P P . P P ",
+      "P P P . . P P P"
     ]
   },
   {
@@ -119,9 +119,9 @@ const HAND_CRAFTED_PUZZLES = [
     descentType: 'none',
     goalType: 'clear-all',
     board: [
-      ". . R R . . . .",
-      " X X . X X . ",
-      "B B B . B B B B"
+      ". . . R R . . .",
+      " X . . X X . ",
+      "B B B . . B B B"
     ]
   },
   {
@@ -135,10 +135,10 @@ const HAND_CRAFTED_PUZZLES = [
     goalType: 'clear-all',
     board: [
       "O O O . . . . .",
-      " B . . . . . ",
-      "B B B B B B . .",
+      "B . . . . . .",
+      ". B B B B . . .",
       " . . . . . B ",
-      ". . B B B B B B"
+      ". . . B B B B B"
     ]
   },
   {
@@ -203,7 +203,7 @@ const HAND_CRAFTED_PUZZLES = [
     board: [
       "G G . . . . O O",
       " T . . . . T ",
-      "P P . . . P P P"
+      "P . . . . . . P"
     ]
   },
   {
@@ -211,14 +211,14 @@ const HAND_CRAFTED_PUZZLES = [
     name: "Lotus Pond",
     description: "Supercharged firelight under the canopy. Target the center.",
     colors: ['red', 'blue', 'paper'],
-    queue: ['red', 'blue'],
+    queue: ['blue', 'red'],
     stencilPack: 'flowers',
     descentType: 'none',
     goalType: 'clear-targets',
     env: { glowIntensity: 3.0 },
     board: [
-      ". . T T T T . .",
-      " . R R R R . ",
+      ". . R R R R . .",
+      " . T T T T . ",
       "B B B B B B B B"
     ]
   },
@@ -233,7 +233,7 @@ const HAND_CRAFTED_PUZZLES = [
     goalType: 'clear-all',
     board: [
       "R R . Y Y . B B",
-      " . . . . . . ",
+      " R . . Y . . B ",
       "R R . Y Y . B B"
     ]
   },
@@ -248,7 +248,7 @@ const HAND_CRAFTED_PUZZLES = [
     goalType: 'clear-all',
     board: [
       "G G G G G G G G",
-      " X X X X X X ",
+      " X X . . X X ",
       "P P P . . P P P",
       " P P . . P P "
     ]

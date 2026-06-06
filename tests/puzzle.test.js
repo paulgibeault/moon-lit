@@ -8,8 +8,8 @@ import { puzzleConfig } from '../js/puzzles.js';
 
 function fixtureLayout() {
   return {
-    size: 20, originX: 100, trellisY: 40, deadLineY: 600, cols: 8, maxRows: 13,
-    viewW: 400, viewH: 720, wallLeft: 40, wallRight: 360, tipY: 684,
+    size: 16, originX: 88, trellisY: 64, deadLineY: 631, cols: 8, maxRows: 19,
+    viewW: 400, viewH: 720, wallLeft: 40, wallRight: 360, tipY: 633,
   };
 }
 
