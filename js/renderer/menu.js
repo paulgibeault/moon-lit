@@ -24,13 +24,23 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'stencils'
-  stagesPage: 0,
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'options'
   fade: 0,             // 0..1
   fadeTarget: 0,
   hits: [],            // [{x, y, w, h, action, value}]
   // Rebuilt every draw — geometry the input layer reads.
   buttonRect: null,
+  cardRect: null,      // Bounding box of the active card
+
+  // Scrolling state
+  scrollY: 0,
+  isDragging: false,
+  dragStartY: 0,
+  dragStartScrollY: 0,
+  dragMoved: false,
+  maxScrollY: 0,
+  viewportY: 0,
+  viewportH: 0,
 };
 
 export function isMenuOpen() {
@@ -44,9 +54,10 @@ export function isMenuSettled() {
 }
 
 export function openMenu() {
-  if (menuState.panel === 'hidden') menuState.stagesPage = 0;
   menuState.panel = 'root';
   menuState.fadeTarget = 1;
+  menuState.scrollY = 0;
+  menuState.isDragging = false;
 }
 export function closeMenu() {
   menuState.fadeTarget = 0;
@@ -55,6 +66,8 @@ export function setMenuPanel(panel) {
   if (panel === 'hidden') { closeMenu(); return; }
   menuState.panel = panel;
   menuState.fadeTarget = 1;
+  menuState.scrollY = 0;
+  menuState.isDragging = false;
 }
 
 // Per-frame tick. Easing is a fixed step per call — main.js drives this from
@@ -65,7 +78,7 @@ export function tickMenu(settings) {
   if (reduced) {
     menuState.fade = menuState.fadeTarget;
   } else {
-    const step = 0.18;
+    const step = 0.25;
     if (menuState.fade < menuState.fadeTarget) {
       menuState.fade = Math.min(1, menuState.fade + step);
     } else if (menuState.fade > menuState.fadeTarget) {
@@ -77,44 +90,92 @@ export function tickMenu(settings) {
   }
 }
 
-// Hit-test a pointer at canvas-local (x, y). Returns true if the event was
-// consumed (the menu took it). `actions` is { onStartLevel(n), onResume() }.
-export function hitTestMenu(x, y, actions) {
-  // The menu button is always present; check first.
+export function handleMenuPointerDown(x, y, clientY) {
   const btn = menuState.buttonRect;
   if (btn && pointIn(x, y, btn)) {
     if (isMenuPanelOpen()) closeMenu();
     else openMenu();
     return true;
   }
-  if (!isMenuPanelOpen()) return false;
-  // Mid-dismissal: panel is fading out (fadeTarget=0). Swallow taps so the
-  // player can't trigger a stale menu item that's already on its way out,
-  // but don't fall through to the game underneath either — the dim scrim is
-  // still visible and a tap should belong to it.
-  if (menuState.fadeTarget === 0) return true;
+  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
 
+  const card = menuState.cardRect;
+  // If we press outside the card, it is a scrim click, so don't drag-scroll
+  if (card && !pointIn(x, y, card)) {
+    return true;
+  }
+
+  // Start drag scroll
+  menuState.isDragging = true;
+  menuState.dragStartY = clientY;
+  menuState.dragStartScrollY = menuState.scrollY;
+  menuState.dragMoved = false;
+  return true;
+}
+
+export function handleMenuPointerMove(x, y, clientY) {
+  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
+
+  if (menuState.isDragging) {
+    const deltaY = clientY - menuState.dragStartY;
+    if (Math.abs(deltaY) > 8) {
+      menuState.dragMoved = true;
+    }
+    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.dragStartScrollY - deltaY));
+    return true;
+  }
+  return false;
+}
+
+export function handleMenuPointerUp(x, y, actions) {
+  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
+
+  const btn = menuState.buttonRect;
+  if (btn && pointIn(x, y, btn)) {
+    return true;
+  }
+
+  if (menuState.isDragging) {
+    menuState.isDragging = false;
+    if (menuState.dragMoved) {
+      return true; // consumed as scroll drag, no click
+    }
+  }
+
+  // Check buttons / hits
   for (const h of menuState.hits) {
     if (!pointIn(x, y, h)) continue;
     switch (h.action) {
-      case 'show-root':    menuState.panel = 'root'; return true;
-      case 'show-stages':  menuState.panel = 'stages'; return true;
-      case 'show-records': menuState.panel = 'records'; return true;
-      case 'show-stencils': menuState.panel = 'stencils'; return true;
+      case 'show-root':    setMenuPanel('root'); return true;
+      case 'show-stages':  setMenuPanel('stages'); return true;
+      case 'show-options': setMenuPanel('options'); return true;
+      case 'show-records': setMenuPanel('records'); return true;
       case 'pick-stencil': {
-        changeStencilPack(h.value).then(() => {
-          actions?.onInteract?.(); // wakes up the draw loop
-        });
+        changeStencilPack(h.value);
+        actions?.onInteract?.(); // wakes up the draw loop instantly
+        return true;
+      }
+      case 'toggle-speed': {
+        const current = !!Arcade.state.get('speedMode');
+        const target = h.value !== undefined ? h.value : !current;
+        if (current !== target) {
+          Arcade.state.set('speedMode', target);
+          actions?.onToggleSpeed?.(target);
+        }
         return true;
       }
       case 'close':        closeMenu(); actions?.onResume?.(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
-      case 'page-prev':    menuState.stagesPage = Math.max(0, menuState.stagesPage - 1); return true;
-      case 'page-next':    menuState.stagesPage = h.value; return true;
     }
   }
-  // Tap fell inside the scrim but outside any control — dismiss.
-  closeMenu();
+
+  // Tap fell inside the scrim but outside the card - dismiss
+  const card = menuState.cardRect;
+  if (card && !pointIn(x, y, card)) {
+    closeMenu();
+    return true;
+  }
+
   return true;
 }
 
@@ -140,7 +201,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   if (menuState.panel === 'root')         drawRootPanel(ctx, layout, settings);
   else if (menuState.panel === 'records') drawRecordsPanel(ctx, layout, settings, stats, scores);
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
-  else if (menuState.panel === 'stencils') drawStencilsPanel(ctx, layout, settings);
+  else if (menuState.panel === 'options') drawOptionsPanel(ctx, layout, settings);
   ctx.restore();
 }
 
@@ -301,7 +362,8 @@ function drawDashedRule(ctx, x, y, w) {
 
 function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 320 * fs, 360 * fs);
+  const rect = cardRect(layout, 320 * fs, 315 * fs);
+  menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
@@ -309,7 +371,7 @@ function drawRootPanel(ctx, layout, settings) {
   const rowH = Math.round(48 * fs);
   const items = [
     { label: 'Stages',      sub: 'pick or revisit a stage',   action: 'show-stages',   glyph: 'stages' },
-    { label: 'Lantern Art', sub: 'change painted designs',    action: 'show-stencils', glyph: 'stencils' },
+    { label: 'Options',     sub: 'configure art and mode',    action: 'show-options',  glyph: 'stencils' },
     { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' },
     { label: 'Continue',    sub: 'back to the river',         action: 'close',         glyph: 'moon' },
   ];
@@ -410,6 +472,20 @@ function drawGlyph(ctx, kind, cx, cy) {
       drawStar(ctx, cx + 6, cy - 5, 2.5, hexToRgba(CREAM, 0.95));
       break;
     }
+    case 'speed': {
+      // Lightning bolt
+      ctx.fillStyle = hexToRgba(GOLD, 0.9);
+      ctx.beginPath();
+      ctx.moveTo(cx + 1, cy - 7);
+      ctx.lineTo(cx - 3, cy + 0);
+      ctx.lineTo(cx - 1, cy + 0);
+      ctx.lineTo(cx - 2, cy + 7);
+      ctx.lineTo(cx + 3, cy - 0);
+      ctx.lineTo(cx + 1, cy - 0);
+      ctx.closePath();
+      ctx.fill();
+      break;
+    }
     case 'moon':
     default: {
       ctx.fillStyle = hexToRgba(CREAM, 0.95);
@@ -443,6 +519,7 @@ function drawStar(ctx, cx, cy, r, color) {
 function drawRecordsPanel(ctx, layout, settings, stats, scores) {
   const fs = fontScaleOf(settings);
   const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Records', { showBack: true, fs });
 
@@ -547,31 +624,17 @@ function drawStatRow(ctx, x, y, w, label, value, fs) {
 
 // ─── Stages panel ───────────────────────────────────────────────────────────
 
-const TILES_PER_PAGE = 12;     // 3 columns × 4 rows
-
 function drawStagesPanel(ctx, layout, game, settings, stats) {
   const fs = fontScaleOf(settings);
   const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Choose a stage', { showBack: true, fs });
 
   const padX = 20;
-  const innerW = rect.w - padX * 2;
-  const cols = 3;
-  const tileW = Math.floor((innerW - 12 * (cols - 1)) / cols);
-  const tileH = Math.round(tileW * 1.15);
-
-  // Range of stages the player can pick. bestLevel in stats is highest reached
-  // (set to game.level + 1 on a clear), so anything <= bestLevel is unlocked.
   const reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0);
-  const totalStages = Math.max(reached, 1);
-  const pages = Math.max(1, Math.ceil(totalStages / TILES_PER_PAGE));
-  if (menuState.stagesPage >= pages) menuState.stagesPage = pages - 1;
-  const page = menuState.stagesPage;
-  const first = page * TILES_PER_PAGE + 1;
-  const last  = Math.min(totalStages, (page + 1) * TILES_PER_PAGE);
+  const totalStages = LEVELS.length;
 
-  // Subhead — current stage + progress hint.
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();
   ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
@@ -580,156 +643,409 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   ctx.textAlign = 'left';
   ctx.fillText(
     `currently on stage ${game.level} · ${reached} reached`,
-    rect.x + padX, startY,
+    rect.x + padX, startY
   );
   ctx.restore();
 
-  const gridY = startY + subPx + 12;
-  for (let i = first; i <= last; i++) {
-    const idx = i - first;
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const tx = rect.x + padX + col * (tileW + 12);
-    const ty = gridY + row * (tileH + 10);
-    const data = (stats && stats.levels && stats.levels[String(i)]) || null;
-    drawStageTile(ctx, tx, ty, tileW, tileH, i, game.level, data, fs);
-    menuState.hits.push({ x: tx, y: ty, w: tileW, h: tileH, action: 'pick-stage', value: i });
-  }
+  const viewportX = rect.x + padX;
+  const viewportY = startY + subPx + 12;
+  const viewportW = rect.w - padX * 2;
+  const viewportH = rect.y + rect.h - viewportY - 16;
 
-  // Pagination — only if more than one page.
-  if (pages > 1) {
-    const navY = rect.y + rect.h - 36;
-    const cx = rect.x + rect.w / 2;
-    drawPagination(ctx, cx, navY, page, pages, fs);
+  const rowHeight = Math.round(42 * fs);
+  const totalHeight = totalStages * rowHeight;
+
+  menuState.viewportY = viewportY;
+  menuState.viewportH = viewportH;
+  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
+  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+
+  // Content Area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
+  ctx.clip();
+
+  for (let i = 1; i <= totalStages; i++) {
+    const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
+
+    // Viewport cull
+    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) {
+      continue;
+    }
+
+    const isCurrent = i === game.level;
+    const isLocked = i > reached;
+    const levelData = (stats && stats.levels && stats.levels[String(i)]) || null;
+    const cleared = !!(levelData && levelData.cleared);
+    const played = !!(levelData && levelData.plays);
+    const bestScore = levelData ? levelData.bestScore | 0 : 0;
+
+    // Draw background
+    ctx.save();
+    const baseAlpha = isCurrent ? 0.08 : cleared ? 0.05 : played ? 0.03 : isLocked ? 0.015 : 0.02;
+    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.fill();
+
+    // Border
+    if (isCurrent) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.4;
+    } else if (cleared) {
+      ctx.strokeStyle = hexToRgba(GOLD, 0.4);
+      ctx.lineWidth = 1;
+    } else if (isLocked) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.06);
+      ctx.lineWidth = 1;
+    } else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.12);
+      ctx.lineWidth = 1;
+    }
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.stroke();
+
+    // Label
+    const labelPx = Math.round(14 * fs);
+    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.25) : CREAM;
+    ctx.font = `600 ${labelPx}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const labelText = `Stage ${i}`;
+    ctx.fillText(labelText, viewportX + 12, rowY + rowHeight / 2);
+    const labelW = ctx.measureText(labelText).width;
+
+    const cfg = levelConfig(i);
+
+    // Draw Mini Icons next to number
+    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
+    const modeCx = viewportX + 12 + labelW + 10 * fs;
+    const stencilCx = modeCx + 14 * fs;
+    drawMiniModeIcon(ctx, cfg.isSpeedMode, modeCx, rowY + rowHeight / 2, fs, iconColor);
+    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
+
+    // Cleared Star or Lock (shifted right to make room for mini icons)
+    const lockX = viewportX + 115 * fs;
+    if (isLocked) {
+      const lockY = rowY + rowHeight / 2;
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(CREAM, 0.25);
+      ctx.lineWidth = 1.2;
+      // draw lock shackle (loop)
+      ctx.beginPath();
+      ctx.arc(lockX, lockY - 2.5 * fs, 2.5 * fs, Math.PI, 0);
+      ctx.stroke();
+      // draw lock body
+      ctx.fillStyle = hexToRgba(CREAM, 0.2);
+      ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
+      ctx.restore();
+    } else if (cleared) {
+      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
+    } else if (played) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.45);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Palette Preview (shifted right to make room)
+    const dotR = 2 * fs;
+    const gap = dotR * 2.4;
+    const totalDots = cfg.colors;
+    const startDotX = viewportX + 145 * fs;
+    for (let c = 0; c < totalDots; c++) {
+      const key = COLOR_KEYS[c];
+      const cx = startDotX + c * gap;
+      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.15 : 0.55);
+      ctx.beginPath();
+      ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Text details (e.g. Insects · Timed) if viewport width allows it
+    if (viewportW > 280 * fs) {
+      const detailPx = Math.round(10 * fs);
+      ctx.font = `400 ${detailPx}px ${SANS}`;
+      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
+      ctx.textAlign = 'left';
+      const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
+      const modeName = cfg.isSpeedMode ? 'Timed' : 'Classic';
+      ctx.fillText(`${packName} · ${modeName}`, viewportX + 190 * fs, rowY + rowHeight / 2);
+    }
+
+    // Best Score
+    const scorePx = Math.round(11 * fs);
+    ctx.font = `500 ${scorePx}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.15 : played ? 0.85 : 0.3);
+    ctx.textAlign = 'right';
+    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 18 : 12);
+    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, rowY + rowHeight / 2);
+
+    ctx.restore();
+
+    // Register hit target with scrolled coordinates (if unlocked)
+    if (!isLocked) {
+      menuState.hits.push({
+        x: viewportX,
+        y: rowY,
+        w: viewportW,
+        h: rowHeight,
+        action: 'pick-stage',
+        value: i
+      });
+    }
+  }
+  ctx.restore();
+
+  // Scrollbar
+  if (menuState.maxScrollY > 0) {
+    const sbW = 4;
+    const sbX = viewportX + viewportW - sbW - 2;
+    const thumbH = Math.max(20, Math.round((viewportH / totalHeight) * viewportH));
+    const thumbY = viewportY + Math.round((menuState.scrollY / menuState.maxScrollY) * (viewportH - thumbH));
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(232, 183, 112, 0.05)';
+    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
+    ctx.fill();
+
+    ctx.fillStyle = hexToRgba(GOLD, 0.7);
+    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
+    ctx.fill();
+    ctx.restore();
   }
 }
 
-function drawStageTile(ctx, x, y, w, h, level, currentLevel, data, fs) {
-  const cleared = !!(data && data.cleared);
-  const played  = !!(data && data.plays);
-  const isCurrent = level === currentLevel;
-  const bestScore = data ? data.bestScore | 0 : 0;
-  const cfg = levelConfig(level);
+// ─── Options panel ──────────────────────────────────────────────────────────
 
+function drawOptionsPanel(ctx, layout, settings) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 350 * fs, 400 * fs);
+  menuState.cardRect = rect;
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Options', { showBack: true, fs });
+
+  const padX = 20;
+  const innerW = rect.w - padX * 2;
+  let y = startY + 10;
+
+  // Game Mode Section
+  y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
+
+  const colW = Math.floor((innerW - 12) / 2);
+  const colH = Math.round(52 * fs);
+  const speedMode = !!Arcade.state.get('speedMode');
+
+  const modeOpts = [
+    { id: 'classic', label: 'Classic', sub: 'Standard play', value: false },
+    { id: 'speed', label: 'Speed', sub: 'Rapid fire', value: true }
+  ];
+
+  for (let i = 0; i < 2; i++) {
+    const opt = modeOpts[i];
+    const isSelected = (opt.value === speedMode);
+    const tx = rect.x + padX + i * (colW + 12);
+    const ty = y;
+
+    ctx.save();
+    ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+    roundedRectPath(ctx, tx, ty, colW, colH, 8);
+    ctx.fill();
+
+    ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
+    ctx.lineWidth = isSelected ? 1.4 : 1;
+    ctx.stroke();
+
+    const cx = tx + 18 * fs;
+    const cy = ty + colH / 2;
+    if (opt.id === 'classic') {
+      drawGlyph(ctx, 'moon', cx, cy);
+    } else {
+      drawGlyph(ctx, 'speed', cx, cy);
+    }
+
+    const titlePx = Math.round(13 * fs);
+    const subPx = Math.round(9 * fs);
+
+    ctx.fillStyle = CREAM;
+    ctx.font = `600 ${titlePx}px ${SERIF}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText(opt.label, tx + 32 * fs, ty + colH * 0.22);
+
+    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+    ctx.font = `400 ${subPx}px ${SERIF}`;
+    ctx.fillText(opt.sub, tx + 32 * fs, ty + colH * 0.58);
+
+    ctx.restore();
+
+    menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'toggle-speed', value: opt.value });
+  }
+
+  y += colH + 16;
+
+  // Lantern Art Section
+  y = drawSectionHeader(ctx, rect.x + padX, y, 'Lantern Art', fs);
+
+  const activePackId = Arcade.state.get('stencilPack') || 'bugs';
+  const rowH = Math.round(38 * fs);
+
+  for (const pack of Object.values(STENCIL_PACKS)) {
+    const isSelected = pack.id === activePackId;
+    drawCompactStencilRow(ctx, rect.x + padX, y, innerW, rowH, pack, isSelected, fs);
+    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
+    y += rowH + 6;
+  }
+}
+
+function drawCompactStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {
   ctx.save();
-  // Base tile — slightly warmer for cleared, dim for never-played.
-  const baseAlpha = cleared ? 0.10 : played ? 0.07 : 0.05;
-  ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
-  roundedRectPath(ctx, x, y, w, h, 9);
+  ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.03)';
+  roundedRectPath(ctx, x, y, w, h, 6);
   ctx.fill();
 
-  // Border — cream hairline; current stage gets a gold ring with a small glow.
-  if (isCurrent) {
-    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
-      ctx.shadowColor = GOLD;
-      ctx.shadowBlur = 8;
-    }
-    ctx.strokeStyle = hexToRgba(GOLD, 0.75);
-    ctx.lineWidth = 1.4;
-  } else if (cleared) {
-    ctx.strokeStyle = hexToRgba(GOLD, 0.45);
-    ctx.lineWidth = 1;
-  } else {
-    ctx.strokeStyle = hexToRgba(CREAM, 0.22);
-    ctx.lineWidth = 1;
-  }
+  ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.12);
+  ctx.lineWidth = isSelected ? 1.4 : 1;
   ctx.stroke();
-  ctx.shadowBlur = 0;
 
-  // Stage number — large serif, italic feels lantern-paper.
-  const numPx = Math.max(22, Math.round(w * 0.36 * fs));
-  ctx.fillStyle = cleared ? CREAM : hexToRgba(CREAM, 0.78);
-  ctx.font = `300 ${numPx}px Georgia, serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(level), x + w / 2, y + h * 0.36);
+  const titlePx = Math.round(13 * fs);
+  const subPx = Math.round(9 * fs);
 
-  // Best score (or em-dash for never-played).
-  const scorePx = Math.max(10, Math.round(10 * fs));
-  ctx.font = `500 ${scorePx}px ${SERIF}`;
-  ctx.fillStyle = hexToRgba(CREAM, played ? 0.85 : 0.35);
-  ctx.fillText(bestScore ? fmtInt(bestScore) : '—', x + w / 2, y + h * 0.66);
+  ctx.fillStyle = CREAM;
+  ctx.font = `500 ${titlePx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText(pack.name, x + 12 * fs, y + h * 0.18);
 
-  // Palette ribbon — tiny color dots showing which lantern colors this stage
-  // uses. A fine touch that previews difficulty at a glance.
-  const dotR = 2.2;
-  const gap = dotR * 2.4;
-  const totalDots = cfg.colors;
-  const stripW = (totalDots - 1) * gap;
-  const dotY = y + h * 0.84;
-  for (let i = 0; i < totalDots; i++) {
-    const key = COLOR_KEYS[i];
-    const cx = x + w / 2 - stripW / 2 + i * gap;
-    ctx.fillStyle = hexToRgba(COLORS[key], cleared ? 0.95 : 0.55);
-    ctx.beginPath();
-    ctx.arc(cx, dotY, dotR, 0, Math.PI * 2);
-    ctx.fill();
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `400 ${subPx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+
+  const maxTextW = w - 44 * fs;
+  let descText = pack.description;
+  if (ctx.measureText(descText).width > maxTextW) {
+    while (descText.length > 0 && ctx.measureText(descText + '...').width > maxTextW) {
+      descText = descText.slice(0, -1);
+    }
+    descText += '...';
   }
+  ctx.fillText(descText, x + 12 * fs, y + h * 0.58);
 
-  // Top-right corner: ✦ for cleared, ◦ for attempted-not-cleared.
-  if (cleared) {
-    drawStar(ctx, x + w - 10, y + 10, 3, hexToRgba(GOLD, 0.95));
-  } else if (played) {
-    ctx.strokeStyle = hexToRgba(CREAM, 0.45);
+  // Selection indicator
+  ctx.save();
+  const cx = x + w - 16 * fs;
+  const cy = y + h / 2;
+
+  if (isSelected) {
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy - 1);
+    ctx.lineTo(cx - 1, cy + 2);
+    ctx.lineTo(cx + 4, cy - 4);
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = hexToRgba(CREAM, 0.3);
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(x + w - 10, y + 10, 2.4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
     ctx.stroke();
   }
+  ctx.restore();
 
   ctx.restore();
 }
 
-function drawPagination(ctx, cx, y, page, pages, fs) {
-  const px = Math.max(11, Math.round(11 * fs));
-  const gap = 14;
-  const dotR = 3;
-  const totalW = (pages - 1) * gap;
-  // Prev arrow.
-  if (page > 0) {
-    const r = { x: cx - totalW / 2 - 36, y: y - 12, w: 24, h: 24, action: 'page-prev' };
-    menuState.hits.push(r);
-    ctx.save();
-    ctx.strokeStyle = hexToRgba(CREAM, 0.7);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 1.6;
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function drawMiniModeIcon(ctx, isSpeedMode, cx, cy, fs, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  if (isSpeedMode) {
+    // Lightning bolt
     ctx.beginPath();
-    ctx.moveTo(r.x + r.w * 0.6, r.y + 6);
-    ctx.lineTo(r.x + r.w * 0.3, r.y + 12);
-    ctx.lineTo(r.x + r.w * 0.6, r.y + 18);
-    ctx.stroke();
-    ctx.restore();
-  }
-  // Page dots.
-  for (let i = 0; i < pages; i++) {
-    const dx = cx - totalW / 2 + i * gap;
-    ctx.save();
-    ctx.fillStyle = hexToRgba(i === page ? CREAM : CREAM, i === page ? 0.95 : 0.3);
-    ctx.beginPath();
-    ctx.arc(dx, y, dotR, 0, Math.PI * 2);
+    ctx.moveTo(cx + 1 * fs, cy - 5 * fs);
+    ctx.lineTo(cx - 3 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 1 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 2 * fs, cy + 5 * fs);
+    ctx.lineTo(cx + 3 * fs, cy - 0 * fs);
+    ctx.lineTo(cx + 1 * fs, cy - 0 * fs);
+    ctx.closePath();
     ctx.fill();
-    ctx.restore();
-    // Each dot is a tap target that jumps to that page.
-    menuState.hits.push({ x: dx - 10, y: y - 12, w: 20, h: 24, action: 'page-next', value: i });
-  }
-  // Next arrow.
-  if (page < pages - 1) {
-    const r = { x: cx + totalW / 2 + 12, y: y - 12, w: 24, h: 24, action: 'page-next', value: page + 1 };
-    menuState.hits.push(r);
-    ctx.save();
-    ctx.strokeStyle = hexToRgba(CREAM, 0.7);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 1.6;
+  } else {
+    // Crescent Moon
     ctx.beginPath();
-    ctx.moveTo(r.x + r.w * 0.4, r.y + 6);
-    ctx.lineTo(r.x + r.w * 0.7, r.y + 12);
-    ctx.lineTo(r.x + r.w * 0.4, r.y + 18);
-    ctx.stroke();
-    ctx.restore();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.fill();
+    // crescent shadow
+    ctx.fillStyle = PANEL_BG;
+    ctx.beginPath();
+    ctx.arc(cx + 1.8 * fs, cy - 0.4 * fs, 3.6 * fs, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.restore();
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+function drawMiniStencilIcon(ctx, stencilPack, cx, cy, fs, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1 * fs;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (stencilPack === 'plain') {
+    // Circle outline
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (stencilPack === 'bugs') {
+    // Bug outline
+    ctx.beginPath();
+    // Body line
+    ctx.moveTo(cx, cy - 3.8 * fs);
+    ctx.lineTo(cx, cy + 3.8 * fs);
+    // Legs
+    ctx.moveTo(cx - 3.2 * fs, cy - 1 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy - 1 * fs);
+    ctx.moveTo(cx - 3.2 * fs, cy + 1.5 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy + 1.5 * fs);
+    ctx.stroke();
+    // Head dot
+    ctx.beginPath();
+    ctx.arc(cx, cy - 3.8 * fs, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'flowers') {
+    // Simple flower
+    for (let a = 0; a < Math.PI * 2; a += (Math.PI * 2) / 5) {
+      const px = cx + Math.cos(a) * 2.2 * fs;
+      const py = cy + Math.sin(a) * 2.2 * fs;
+      ctx.beginPath();
+      ctx.arc(px, py, 1 * fs, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'dragons') {
+    // Wave/Snake
+    ctx.beginPath();
+    ctx.moveTo(cx - 2.8 * fs, cy - 2.8 * fs);
+    ctx.bezierCurveTo(cx + 2.8 * fs, cy - 2.8 * fs, cx - 2.8 * fs, cy + 2.8 * fs, cx + 2.8 * fs, cy + 2.8 * fs);
+    ctx.stroke();
+  } else if (stencilPack === 'random') {
+    // 2x2 dot grid
+    ctx.fillRect(cx - 2.2 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx - 2.2 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
+  }
+  ctx.restore();
+}
 
 function roundedRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
@@ -753,82 +1069,4 @@ function fmtTime(ms) {
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
-}
-
-// ─── Stencils panel ──────────────────────────────────────────────────────────
-
-function drawStencilsPanel(ctx, layout, settings) {
-  const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 350 * fs, 430 * fs);
-  drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Lantern Art', { showBack: true, fs });
-
-  const padX = 20;
-  const innerW = rect.w - padX * 2;
-  const activePackId = Arcade.state.get('stencilPack') || 'bugs';
-
-  let y = startY + 6;
-  const rowH = Math.round(56 * fs);
-
-  for (const pack of Object.values(STENCIL_PACKS)) {
-    const isSelected = pack.id === activePackId;
-    drawStencilRow(ctx, rect.x + padX, y, innerW, rowH, pack, isSelected, fs);
-    menuState.hits.push({ x: rect.x + padX, y, w: innerW, h: rowH, action: 'pick-stencil', value: pack.id });
-    y += rowH + 8;
-  }
-}
-
-function drawStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {
-  ctx.save();
-  // Base tile
-  ctx.fillStyle = isSelected ? 'rgba(245, 233, 201, 0.08)' : 'rgba(245, 233, 201, 0.04)';
-  roundedRectPath(ctx, x, y, w, h, 8);
-  ctx.fill();
-
-  // Border
-  ctx.strokeStyle = isSelected ? GOLD : hexToRgba(CREAM, 0.15);
-  ctx.lineWidth = isSelected ? 1.4 : 1;
-  ctx.stroke();
-
-  // Name and Description
-  const titlePx = Math.round(14 * fs);
-  const subPx = Math.round(11 * fs);
-
-  ctx.fillStyle = CREAM;
-  ctx.font = `500 ${titlePx}px ${SERIF}`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText(pack.name, x + 16, y + h * 0.18);
-
-  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-  ctx.font = `400 ${subPx}px ${SERIF}`;
-  ctx.fillText(pack.description, x + 16, y + h * 0.58);
-
-  // Selection Checkmark / Circle on the right
-  ctx.save();
-  const cx = x + w - 24;
-  const cy = y + h / 2;
-  
-  if (isSelected) {
-    // Draw gold checkmark
-    ctx.strokeStyle = GOLD;
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, cy - 1);
-    ctx.lineTo(cx - 1, cy + 3);
-    ctx.lineTo(cx + 6, cy - 5);
-    ctx.stroke();
-  } else {
-    // Draw faint circle
-    ctx.strokeStyle = hexToRgba(CREAM, 0.35);
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  ctx.restore();
 }

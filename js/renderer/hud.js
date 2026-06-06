@@ -1,4 +1,5 @@
-import { PALETTE, PERF_CONFIG } from '../constants.js';
+import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS } from '../constants.js';
+import { STENCIL_PACKS } from '../stencil-packs.js';
 import { PHASE } from '../game.js';
 import {
   SERIF, SANS, HUD_OPACITY,
@@ -67,12 +68,18 @@ const DESCENT_LINE_Y = 44;
 const DESCENT_BAR_W = 24;
 
 export function drawDescentMeter(ctx, layout, game, settings) {
-  if (game.shotsUntilDescent == null) return;
-  const n = game.shotsUntilDescent | 0;
-  const cap = (game.descentShots | 0) || 8;
-  // 0 at a fresh descent, 1 right before it triggers. Used for both the bar
-  // drop and the cream → ember color blend.
-  const progress = Math.max(0, Math.min(1, (cap - n) / cap));
+  const isSpeed = !!game.isSpeedMode;
+  
+  if (isSpeed) {
+    if (game.timeUntilDescent == null) return;
+  } else {
+    if (game.shotsUntilDescent == null) return;
+  }
+
+  const n = isSpeed ? Math.ceil(game.timeUntilDescent) : (game.shotsUntilDescent | 0);
+  const cap = isSpeed ? game.descentTimeLimit : ((game.descentShots | 0) || 8);
+  const progress = Math.max(0, Math.min(1, (cap - (isSpeed ? game.timeUntilDescent : n)) / cap));
+
   const iconLeft = layout.viewW - 12 - DESCENT_ICON_W;
   const cx = iconLeft + DESCENT_ICON_W / 2;
   const lineSpan = DESCENT_LINE_Y - DESCENT_BAR_TOP - 14;  // bar travel range
@@ -125,7 +132,7 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   ctx.font = `400 ${subPx}px ${SANS}`;
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
   ctx.textBaseline = 'top';
-  ctx.fillText('descent', cx, DESCENT_LINE_Y + 3);
+  ctx.fillText(isSpeed ? 'time drop' : 'descent', cx, DESCENT_LINE_Y + 3);
   ctx.restore();
 }
 
@@ -306,76 +313,511 @@ function drawSparkle(ctx, cx, cy, r, color) {
 
 // Stage-clear / game-over panel. Shows a tween-counted score, the per-component
 // breakdown, the player name, and a "new best" ribbon if the score is fresh.
-export function drawEndOverlay(ctx, layout, game, settings) {
+export function drawEndOverlay(ctx, layout, game, settings, stats) {
   const { viewW, viewH } = layout;
   const won = game.phase === PHASE.WIN;
   const fs = fontScaleOf(settings);
 
   ctx.save();
-  ctx.fillStyle = 'rgba(10, 15, 34, 0.82)';
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.85)';
   ctx.fillRect(0, 0, viewW, viewH);
 
-  const titlePx = Math.max(26, Math.round(layout.size * 1.45 * fs));
-  const scorePx = Math.max(36, Math.round(layout.size * 2.2  * fs));
-  const linePx  = Math.max(12, Math.round(layout.size * 0.55 * fs));
-  const ctaPx   = Math.max(12, Math.round(layout.size * 0.6  * fs));
+  // Card layout dimensions
+  const cardW = Math.min(350 * fs, viewW - 32);
+  const cardH = Math.min(480 * fs, viewH - 40);
+  const cardX = (viewW - cardW) / 2;
+  const cardY = (viewH - cardH) / 2;
+
+  // Draw card background (deep indigo panel)
+  const cardBg = 'rgba(20, 26, 50, 0.96)';
+  ctx.fillStyle = cardBg;
+  roundedRectPath(ctx, cardX, cardY, cardW, cardH, 12);
+  ctx.fill();
+
+  // Card gold border
+  ctx.strokeStyle = '#E8B770'; // Gold
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Soft secondary inner border for visual depth
+  ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, cardX + 3 * fs, cardY + 3 * fs, cardW - 6 * fs, cardH - 6 * fs, 10);
+  ctx.stroke();
 
   const cx = viewW / 2;
-  let y = viewH * 0.30;
+  let y = cardY + 28 * fs;
+
+  // Outcome Title
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const titlePx = Math.max(16, Math.round(18 * fs));
+  ctx.fillStyle = won ? '#E8B770' : '#E8843E'; // Gold for win, warm orange for game over
+  ctx.font = `600 ${titlePx}px ${SERIF}`;
+  ctx.fillText(won ? `Stage ${game.level} Cleared` : 'Trellis Touched the Water', cx, y);
+  y += titlePx + 10 * fs;
+
+  // Player Name (if set)
+  if (settings.playerName) {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.6)';
+    ctx.font = `italic 400 ${Math.round(11 * fs)}px Georgia, serif`;
+    ctx.fillText(settings.playerName, cx, y);
+    y += 16 * fs;
+  }
+
+  // Score Display
+  const scorePx = Math.max(36, Math.round(42 * fs));
+  ctx.fillStyle = '#F5E9C9'; // Cream
+  ctx.font = `300 ${scorePx}px Georgia, serif`;
+  ctx.fillText(String(hudState.displayScore | 0), cx, y);
+  y += scorePx * 0.75;
+
+  // Personal Best line
+  const isNewBest = settings.bestScore != null && game.score >= settings.bestScore && game.score > 0;
+  const linePx = Math.max(11, Math.round(11 * fs));
+  ctx.font = `italic 400 ${linePx}px Georgia, serif`;
+  if (isNewBest) {
+    ctx.fillStyle = '#E8B770'; // Gold
+    ctx.fillText(`✦ new personal best ✦`, cx, y);
+  } else if (settings.bestScore) {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.4)';
+    ctx.fillText(`best ${settings.bestScore}`, cx, y);
+  }
+  y += 22 * fs;
+
+  // Divider 1
+  drawDashedRule(ctx, cardX + 20 * fs, y, cardW - 40 * fs);
+  y += 12 * fs;
+
+  // Stats Grid (2 rows of 3 columns)
+  const b = game.breakdown || {};
+  const metrics = [
+    { label: 'pops', value: b.pop || 0 },
+    { label: 'clusters', value: b.cluster || 0 },
+    { label: 'drops', value: b.drop || 0 },
+    { label: 'chains', value: b.chain || 0 },
+    { label: 'combos', value: b.combo || 0 },
+    { label: 'clear', value: b.clear || 0 },
+  ];
+  const gridX = cardX + 20 * fs;
+  const colW = (cardW - 40 * fs - 16 * fs) / 3;
+  const colH = 34 * fs;
+  const gridGap = 8 * fs;
+
+  for (let i = 0; i < 6; i++) {
+    const row = Math.floor(i / 3);
+    const col = i % 3;
+    const bx = gridX + col * (colW + gridGap);
+    const by = y + row * (colH + gridGap);
+
+    const m = metrics[i];
+    const active = m.value > 0;
+
+    ctx.save();
+    ctx.fillStyle = active ? 'rgba(245, 233, 201, 0.05)' : 'rgba(245, 233, 201, 0.02)';
+    roundedRectPath(ctx, bx, by, colW, colH, 4 * fs);
+    ctx.fill();
+
+    ctx.strokeStyle = active ? 'rgba(232, 183, 112, 0.2)' : 'rgba(245, 233, 201, 0.05)';
+    ctx.lineWidth = 1;
+    roundedRectPath(ctx, bx, by, colW, colH, 4 * fs);
+    ctx.stroke();
+
+    // Value
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = `600 ${Math.round(11 * fs)}px ${SANS}`;
+    ctx.fillStyle = active ? '#F5E9C9' : 'rgba(245, 233, 201, 0.25)';
+    ctx.fillText(String(m.value), bx + colW / 2, by + 4 * fs);
+
+    // Label
+    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
+    ctx.fillStyle = active ? 'rgba(245, 233, 201, 0.6)' : 'rgba(245, 233, 201, 0.18)';
+    ctx.fillText(m.label, bx + colW / 2, by + 18 * fs);
+    ctx.restore();
+  }
+  y += 2 * colH + gridGap + 14 * fs;
+
+  // Divider 2
+  drawDashedRule(ctx, cardX + 20 * fs, y, cardW - 40 * fs);
+  y += 12 * fs;
+
+  // Next Level Preview Box
+  const boxX = cardX + 20 * fs;
+  const boxW = cardW - 40 * fs;
+  const boxH = 72 * fs;
+  const boxY = y;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.02)';
+  roundedRectPath(ctx, boxX, boxY, boxW, boxH, 6 * fs);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(232, 183, 112, 0.12)';
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, boxX, boxY, boxW, boxH, 6 * fs);
+  ctx.stroke();
+  ctx.restore();
+
+  const nextLevelNum = game.level + 1;
+  const nextCfg = levelConfig(nextLevelNum);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(232, 183, 112, 0.85)';
+  ctx.font = `600 ${Math.max(9, Math.round(9 * fs))}px ${SANS}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  if (nextLevelNum <= 1000 && nextCfg) {
+    ctx.fillText(`STAGE ${nextLevelNum} PREVIEW`, boxX + 10 * fs, boxY + 8 * fs);
+
+    const innerW = boxW - 20 * fs;
+    const colCenter1 = boxX + 10 * fs + innerW / 6;
+    const colCenter2 = boxX + 10 * fs + innerW / 2;
+    const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
+    const contentCenterY = boxY + 42 * fs;
+
+    // Col 1: Mode
+    drawMiniModeIcon(ctx, nextCfg.isSpeedMode, colCenter1, contentCenterY - 8 * fs, fs, '#F5E9C9', cardBg);
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(nextCfg.isSpeedMode ? 'Timed' : 'Classic', colCenter1, contentCenterY + 12 * fs);
+
+    // Col 2: Stencil Pack
+    drawMiniStencilIcon(ctx, nextCfg.stencilPack, colCenter2, contentCenterY - 8 * fs, fs, '#F5E9C9');
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const shortNames = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
+    ctx.fillText(shortNames[nextCfg.stencilPack] || nextCfg.stencilPack, colCenter2, contentCenterY + 12 * fs);
+
+    // Col 3: Palette Colors
+    const dotR = 2.4 * fs;
+    const dotGap = dotR * 2.5;
+    const startDotX = colCenter3 - ((nextCfg.colors - 1) * dotGap) / 2;
+    for (let c = 0; c < nextCfg.colors; c++) {
+      const key = COLOR_KEYS[c];
+      ctx.fillStyle = COLORS[key];
+      ctx.beginPath();
+      ctx.arc(startDotX + c * dotGap, contentCenterY - 8 * fs, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${nextCfg.colors} Colors`, colCenter3, contentCenterY + 12 * fs);
+  } else {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `italic 600 ${Math.round(13 * fs)}px ${SERIF}`;
+    ctx.fillStyle = '#E8B770';
+    ctx.fillText('All stages completed! ✦', boxX + boxW / 2, boxY + boxH / 2);
+  }
+  ctx.restore();
+
+  // Navigation Buttons
+  endOverlayHits.length = 0;
+
+  const btnY = cardY + cardH - 52 * fs;
+  const btnH = 36 * fs;
+  const btnGap = 8 * fs;
+  const btnPadX = 20 * fs;
+  const btnW = (cardW - btnPadX * 2 - btnGap * 2) / 3;
+
+  const reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0) + (won ? 1 : 0);
+
+  const prevBtn = {
+    x: cardX + btnPadX,
+    y: btnY,
+    w: btnW,
+    h: btnH,
+    label: 'Previous',
+    action: 'prev',
+    enabled: game.level > 1,
+  };
+
+  const restartBtn = {
+    x: cardX + btnPadX + btnW + btnGap,
+    y: btnY,
+    w: btnW,
+    h: btnH,
+    label: 'Restart',
+    action: 'restart',
+    enabled: true,
+  };
+
+  const nextBtn = {
+    x: cardX + btnPadX + (btnW + btnGap) * 2,
+    y: btnY,
+    w: btnW,
+    h: btnH,
+    label: 'Next',
+    action: 'next',
+    enabled: nextLevelNum <= 1000 && nextLevelNum <= reached,
+  };
+
+  // Push all to hit list so coordinates are checked on click
+  endOverlayHits.push(prevBtn, restartBtn, nextBtn);
+
+  // Render the buttons
+  drawButton(ctx, prevBtn, /*isPrimary=*/false, fs);
+  drawButton(ctx, restartBtn, /*isPrimary=*/!won, fs); // Primary restart on loss
+  drawButton(ctx, nextBtn, /*isPrimary=*/won, fs);     // Primary next on win
+
+  ctx.restore();
+}
+
+export function drawModeIntroCard(ctx, layout, game, settings) {
+  const { viewW, viewH } = layout;
+  const fs = fontScaleOf(settings);
+
+  ctx.save();
+  // Translucent dark backdrop
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.88)';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  // Layout calculations
+  const cardW = Math.min(340 * fs, viewW - 32);
+  const cardH = Math.min(330 * fs, viewH - 32);
+  const cardX = (viewW - cardW) / 2;
+  const cardY = (viewH - cardH) / 2;
+
+  // Draw card background
+  ctx.fillStyle = 'rgba(20, 26, 50, 0.96)'; // Dark indigo card body
+  roundedRectPath(ctx, cardX, cardY, cardW, cardH, 12);
+  ctx.fill();
+
+  // Card border
+  ctx.strokeStyle = '#E8B770'; // Gold border
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  const cx = viewW / 2;
+  let y = cardY + 28 * fs;
+
+  // Title: "TIMED MODE"
+  const titlePx = Math.max(18, Math.round(18 * fs));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#F5E9C9'; // Cream
+  ctx.font = `600 ${titlePx}px ${SERIF}`;
+  ctx.fillText('Timed Mode Introduced', cx, y);
+  y += titlePx + 16 * fs;
+
+  // Large glowing lightning bolt icon!
+  const iconSize = 32 * fs;
+  ctx.save();
+  ctx.translate(cx, y + iconSize / 2);
+  // Add a soft glow behind lightning bolt
+  if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+    ctx.shadowColor = '#E8B770';
+    ctx.shadowBlur = 15;
+  }
+  ctx.fillStyle = '#E8B770';
+  ctx.beginPath();
+  ctx.moveTo(1 * fs, -15 * fs);
+  ctx.lineTo(-7 * fs, 0 * fs);
+  ctx.lineTo(-2 * fs, 0 * fs);
+  ctx.lineTo(-4 * fs, 15 * fs);
+  ctx.lineTo(6 * fs, 0 * fs);
+  ctx.lineTo(1 * fs, 0 * fs);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  y += iconSize + 22 * fs;
+
+  // Explanation text
+  const linePx = Math.max(12, Math.round(12.5 * fs));
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
+  ctx.font = `400 ${linePx}px ${SERIF}`;
+  
+  const lines = [
+    "The river flows faster now.",
+    "Under the speed of the rising moon, the trellis",
+    "descends automatically over time instead",
+    "of counting your shots.",
+    "",
+    "Aim quickly and clear the lanterns",
+    "before they touch the water!"
+  ];
+
+  for (const line of lines) {
+    if (line === "") {
+      y += linePx * 0.6;
+    } else {
+      ctx.fillText(line, cx, y);
+      y += linePx * 1.35;
+    }
+  }
+
+  y = cardY + cardH - 32 * fs;
+  
+  // CTA
+  const ctaPx = Math.max(11, Math.round(11 * fs));
+  ctx.fillStyle = '#E8B770'; // Gold
+  ctx.font = `italic 500 ${ctaPx}px ${SERIF}`;
+  ctx.fillText('tap anywhere to begin', cx, y);
+
+  ctx.restore();
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  ctx.closePath();
+}
+
+const endOverlayHits = [];
+
+export function getEndOverlayHit(x, y) {
+  for (const h of endOverlayHits) {
+    if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
+      return h.enabled ? h.action : null;
+    }
+  }
+  return null;
+}
+
+function drawDashedRule(ctx, x, y, w) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + w, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawButton(ctx, btn, isPrimary, fs) {
+  ctx.save();
+  if (btn.enabled) {
+    if (isPrimary) {
+      ctx.fillStyle = '#E8B770'; // Gold
+      roundedRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 6 * fs);
+      ctx.fill();
+      ctx.fillStyle = '#0A0F22'; // Dark blue/black text
+      ctx.font = `600 ${Math.round(13 * fs)}px ${SANS}`;
+    } else {
+      ctx.fillStyle = 'rgba(245, 233, 201, 0.04)';
+      roundedRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 6 * fs);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(245, 233, 201, 0.25)';
+      ctx.lineWidth = 1;
+      roundedRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 6 * fs);
+      ctx.stroke();
+      ctx.fillStyle = '#F5E9C9'; // Cream
+      ctx.font = `500 ${Math.round(13 * fs)}px ${SANS}`;
+    }
+  } else {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.01)';
+    roundedRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 6 * fs);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(245, 233, 201, 0.06)';
+    ctx.lineWidth = 1;
+    roundedRectPath(ctx, btn.x, btn.y, btn.w, btn.h, 6 * fs);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.15)';
+    ctx.font = `500 ${Math.round(13 * fs)}px ${SANS}`;
+  }
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = won ? PALETTE.moon : PALETTE.deadLine;
-  ctx.font = `600 ${titlePx}px ${SERIF}`;
-  ctx.fillText(won ? `Stage ${game.level} cleared` : 'The trellis touched the water', cx, y);
-  y += titlePx * 1.2;
+  ctx.fillText(btn.label, btn.x + btn.w / 2, btn.y + btn.h / 2 + 1);
+  ctx.restore();
+}
 
-  if (settings.playerName) {
-    ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.secondary})`;
-    ctx.font = `italic 400 ${linePx * 1.2}px Georgia, serif`;
-    ctx.fillText(settings.playerName, cx, y);
-    y += linePx * 1.6;
+function drawMiniModeIcon(ctx, isSpeedMode, cx, cy, fs, color, bg = 'rgba(20, 26, 50, 0.96)') {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  if (isSpeedMode) {
+    // Lightning bolt
+    ctx.beginPath();
+    ctx.moveTo(cx + 1 * fs, cy - 5 * fs);
+    ctx.lineTo(cx - 3 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 1 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 2 * fs, cy + 5 * fs);
+    ctx.lineTo(cx + 3 * fs, cy - 0 * fs);
+    ctx.lineTo(cx + 1 * fs, cy - 0 * fs);
+    ctx.closePath();
+    ctx.fill();
   } else {
-    y += linePx * 0.4;
+    // Crescent Moon
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.fill();
+    // crescent shadow
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(cx + 1.8 * fs, cy - 0.4 * fs, 3.6 * fs, 0, Math.PI * 2);
+    ctx.fill();
   }
+  ctx.restore();
+}
 
-  // The headline number — counts up via the tween in tweenHud().
-  ctx.fillStyle = PALETTE.moon;
-  ctx.font = `300 ${scorePx}px Georgia, serif`;
-  ctx.fillText(String(hudState.displayScore | 0), cx, y);
-  y += scorePx * 0.85;
+function drawMiniStencilIcon(ctx, stencilPack, cx, cy, fs, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1 * fs;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
-  // Breakdown line: only shows non-zero components, joined by interpunct.
-  const parts = [];
-  const b = game.breakdown || {};
-  if (b.pop)     parts.push(`pops ${b.pop}`);
-  if (b.cluster) parts.push(`clusters ${b.cluster}`);
-  if (b.drop)    parts.push(`drops ${b.drop}`);
-  if (b.chain)   parts.push(`chains ${b.chain}`);
-  if (b.combo)   parts.push(`combos ${b.combo}`);
-  if (b.clear)   parts.push(`clear ${b.clear}`);
-  if (parts.length) {
-    ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.secondary})`;
-    ctx.font = `400 ${linePx}px Georgia, serif`;
-    ctx.fillText(parts.join(' · '), cx, y);
-    y += linePx * 1.6;
+  if (stencilPack === 'plain') {
+    // Circle outline
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (stencilPack === 'bugs') {
+    // Bug outline
+    ctx.beginPath();
+    // Body line
+    ctx.moveTo(cx, cy - 3.8 * fs);
+    ctx.lineTo(cx, cy + 3.8 * fs);
+    // Legs
+    ctx.moveTo(cx - 3.2 * fs, cy - 1 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy - 1 * fs);
+    ctx.moveTo(cx - 3.2 * fs, cy + 1.5 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy + 1.5 * fs);
+    ctx.stroke();
+    // Head dot
+    ctx.beginPath();
+    ctx.arc(cx, cy - 3.8 * fs, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'flowers') {
+    // Simple flower
+    for (let a = 0; a < Math.PI * 2; a += (Math.PI * 2) / 5) {
+      const px = cx + Math.cos(a) * 2.2 * fs;
+      const py = cy + Math.sin(a) * 2.2 * fs;
+      ctx.beginPath();
+      ctx.arc(px, py, 1 * fs, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'dragons') {
+    // Wave/Snake
+    ctx.beginPath();
+    ctx.moveTo(cx - 2.8 * fs, cy - 2.8 * fs);
+    ctx.bezierCurveTo(cx + 2.8 * fs, cy - 2.8 * fs, cx - 2.8 * fs, cy + 2.8 * fs, cx + 2.8 * fs, cy + 2.8 * fs);
+    ctx.stroke();
+  } else if (stencilPack === 'random') {
+    // 2x2 dot grid
+    ctx.fillRect(cx - 2.2 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx - 2.2 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
   }
-
-  // Best line. If we just set a new best, the ribbon glows in moonHalo orange.
-  const isNewBest = settings.bestScore != null && game.score >= settings.bestScore && game.score > 0;
-  ctx.font = `italic 400 ${linePx * 1.05}px Georgia, serif`;
-  if (isNewBest) {
-    ctx.fillStyle = PALETTE.moonHalo;
-    ctx.fillText(`✦ new personal best ✦`, cx, y);
-  } else if (settings.bestScore) {
-    ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.soft})`;
-    ctx.fillText(`best ${settings.bestScore}`, cx, y);
-  }
-  y += linePx * 2.2;
-
-  ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.secondary})`;
-  ctx.font = `400 ${ctaPx}px Georgia, serif`;
-  const cta = won ? `tap for stage ${game.level + 1}` : 'tap to try again';
-  ctx.fillText(cta, cx, y);
   ctx.restore();
 }

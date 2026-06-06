@@ -1,5 +1,10 @@
 import { setAim, fire, launcherTip, PHASE } from './game.js';
-import { hitTestMenu, isMenuPanelOpen } from './renderer/menu.js';
+import {
+  handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
+  openMenu, closeMenu,
+} from './renderer/menu.js';
+import { getEndOverlayHit } from './renderer/hud.js';
+
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
 // sits in a ~40px strip above the iframe — taps that just barely miss those
@@ -12,17 +17,24 @@ const UI_SAFE_TOP_PX = 56;
 // Replaces the previous mouse + touch duplication. The bounding-rect is
 // cached and only refreshed on window resize / scroll.
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
-  const { onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange } = callbacks;
-  const menuActions = {
-    onStartLevel: (lv) => onStartLevel?.(lv),
-    onResume:     () => {},
-  };
+  const {
+    onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange, onToggleSpeed,
+    onPrevClick, onRestartClick, onNextClick,
+  } = callbacks;
+  
   // Notify main.js when the menu opens/closes so the rAF loop can wake up.
   const fireMenuChange = () => onMenuChange?.();
   // Bump on every pointer event so main.js can keep ambient animations
   // (twinkle, moon halo breath) alive while the player is actively touching
   // the interface, and let the rAF loop idle out shortly after they stop.
   const bump = () => onInteract && onInteract();
+
+  const menuActions = {
+    onStartLevel: (lv) => onStartLevel?.(lv),
+    onResume:     () => {},
+    onToggleSpeed: (active) => onToggleSpeed?.(active),
+    onInteract:   () => { bump(); fireMenuChange(); },
+  };
 
   let rect = canvas.getBoundingClientRect();
   const refreshRect = () => { rect = canvas.getBoundingClientRect(); };
@@ -39,9 +51,15 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
   const inSafeZone = (clientY) => (clientY - rect.top) < UI_SAFE_TOP_PX;
 
-  const handleEndClick = (game) => {
-    if (game.phase === PHASE.WIN) onWinClick?.();
-    else if (game.phase === PHASE.GAME_OVER) onLossClick?.();
+  const handleEndClick = (game, localX, localY) => {
+    const action = getEndOverlayHit(localX, localY);
+    if (action === 'prev') {
+      onPrevClick?.();
+    } else if (action === 'restart') {
+      onRestartClick?.();
+    } else if (action === 'next') {
+      onNextClick?.();
+    }
   };
 
   // Track the pointer that started an aim gesture, so a stray pointerup from
@@ -50,28 +68,38 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
 
   const onPointerMove = (e) => {
     bump();
-    // Don't re-aim while the menu is open — the player is interacting with
-    // it, not the launcher. Pointermove doesn't open or close the menu, so we
-    // can safely no-op here.
-    if (isMenuPanelOpen()) return;
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    if (isMenuPanelOpen()) {
+      if (handleMenuPointerMove(localX, localY, e.clientY)) {
+        fireMenuChange();
+      }
+      e.preventDefault();
+      return;
+    }
     if (isGameOver(getGame())) return;
     aimAt(e.clientX, e.clientY);
   };
 
   const onPointerDown = (e) => {
     bump();
-    // Menu first: button taps always claim the event, and any tap while a
-    // panel is open is routed through the menu (item, scrim-dismiss, etc.).
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
-    if (hitTestMenu(localX, localY, menuActions)) {
+    if (handleMenuPointerDown(localX, localY, e.clientY)) {
+      aimingPointerId = e.pointerId;
+      canvas.setPointerCapture?.(e.pointerId);
       fireMenuChange();
       e.preventDefault();
       return;
     }
     const game = getGame();
+    if (game.showModeIntroCard) {
+      game.showModeIntroCard = false;
+      e.preventDefault();
+      return;
+    }
     if (isGameOver(game)) {
-      handleEndClick(game);
+      handleEndClick(game, localX, localY);
       e.preventDefault();
       return;
     }
@@ -84,10 +112,16 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
 
   const onPointerUp = (e) => {
     bump();
-    // While a panel is open, swallow pointerup so an in-flight aim gesture
-    // that ended over the menu can't fire the launcher.
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
     if (isMenuPanelOpen()) {
-      aimingPointerId = null;
+      if (aimingPointerId === e.pointerId) {
+        canvas.releasePointerCapture?.(e.pointerId);
+        aimingPointerId = null;
+      }
+      if (handleMenuPointerUp(localX, localY, menuActions)) {
+        fireMenuChange();
+      }
       e.preventDefault();
       return;
     }
@@ -106,10 +140,27 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     if (aimingPointerId === e.pointerId) aimingPointerId = null;
   };
 
+  const onKeyDown = (e) => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.closest?.('#bamboo-admin'))) return;
+
+    e.preventDefault();
+    bump();
+    if (isMenuPanelOpen()) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+    fireMenuChange();
+  };
+
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
   window.addEventListener('resize', refreshRect);
   window.addEventListener('scroll', refreshRect, { passive: true });
+  window.addEventListener('keydown', onKeyDown);
 }
+

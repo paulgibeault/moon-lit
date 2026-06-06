@@ -11,7 +11,7 @@ import {
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
-  isHudSettled,
+  isHudSettled, drawModeIntroCard,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -34,13 +34,20 @@ export function render(ctx, layout, game, settings, stats, scores) {
   }
   drawLauncher(ctx, layout, game);
   drawShotQueue(ctx, layout, game, settings);
-  if (game.shot) drawProjectile(ctx, game.shot, layout);
+  if (game.shots && game.shots.length > 0) {
+    for (const shot of game.shots) {
+      drawProjectile(ctx, shot, layout);
+    }
+  }
   drawBursts(ctx, layout, game, settings);
   drawFloats(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
   if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
-    drawEndOverlay(ctx, layout, game, settings);
+    drawEndOverlay(ctx, layout, game, settings, stats);
+  }
+  if (game.showModeIntroCard) {
+    drawModeIntroCard(ctx, layout, game, settings);
   }
   // Menu (button + panels) draws last so it sits above the end-overlay too —
   // the player can open the stage selector from a game-over screen to pick a

@@ -128,25 +128,102 @@ export const M3_DEFAULT_SEED = 0x4D6F6F6E;   // 'Moon' in ASCII; placeholder unt
 
 export let DESCENT_SHOTS = 6;
 
-// Beginner-friendly opening curve. Stage 1 should be clearable on a
-// cold-start playthrough with no instructions; later stages ramp toward
-// the historical defaults (6 colors, 5 rows, descent every 6 shots).
-// Stages beyond the table clamp to the last entry.
-export const LEVELS = Object.freeze([
-  { colors: 3, initialRows: 3, descentShots: 12 },
-  { colors: 3, initialRows: 4, descentShots: 10 },
-  { colors: 4, initialRows: 4, descentShots: 9  },
-  { colors: 4, initialRows: 5, descentShots: 8  },
-  { colors: 5, initialRows: 5, descentShots: 7  },
-  { colors: 6, initialRows: 5, descentShots: 6  },
-  { colors: 6, initialRows: 6, descentShots: 6  },
-  { colors: 6, initialRows: 7, descentShots: 6  },
-]);
+function generateLevelConfig(level) {
+  if (level === 1) {
+    return { colors: 3, initialRows: 3, descentShots: 12, isSpeedMode: false, stencilPack: 'plain' };
+  }
+  if (level === 2) {
+    return { colors: 3, initialRows: 4, descentShots: 10, isSpeedMode: false, stencilPack: 'plain' };
+  }
+  if (level === 3) {
+    return { colors: 4, initialRows: 4, descentShots: 9, isSpeedMode: false, stencilPack: 'bugs' };
+  }
+  if (level === 4) {
+    return { colors: 4, initialRows: 4, descentShots: 8, isSpeedMode: false, stencilPack: 'bugs' };
+  }
+  if (level === 5) {
+    return { colors: 5, initialRows: 5, descentShots: 8, isSpeedMode: false, stencilPack: 'flowers' };
+  }
+  if (level === 6) {
+    return { colors: 5, initialRows: 5, descentShots: 7, isSpeedMode: false, stencilPack: 'flowers' };
+  }
+  if (level === 7) {
+    return { colors: 6, initialRows: 5, descentShots: 7, isSpeedMode: false, stencilPack: 'dragons' };
+  }
+  if (level === 8) {
+    return { colors: 6, initialRows: 6, descentShots: 6, isSpeedMode: false, stencilPack: 'dragons' };
+  }
+  if (level === 9) {
+    return { colors: 6, initialRows: 6, descentShots: 6, isSpeedMode: false, stencilPack: 'random' };
+  }
+  if (level === 10) {
+    return { colors: 5, initialRows: 5, descentShots: 8, isSpeedMode: true, stencilPack: 'bugs' };
+  }
+
+  // Consistent randomization for level 11 to 1000
+  // LCG generator seeded by level
+  let s = (level * 104729 + 7919) >>> 0;
+  const nextRng = () => {
+    s = (s * 1103515245 + 12345) >>> 0;
+    return (s & 0x7fffffff) / 2147483648;
+  };
+
+  // Determine colors: starts around 4-5, ramps up to 6
+  let colors = 5;
+  const colorsRoll = nextRng();
+  if (level <= 20) {
+    colors = colorsRoll < 0.4 ? 4 : 5;
+  } else if (level <= 40) {
+    colors = colorsRoll < 0.3 ? 5 : 6;
+  } else {
+    colors = colorsRoll < 0.15 ? 5 : 6;
+  }
+
+  // Determine initialRows: starts around 4-5, ramps up to 7
+  let initialRows = 5;
+  const rowsRoll = nextRng();
+  if (level <= 25) {
+    initialRows = rowsRoll < 0.3 ? 4 : (rowsRoll < 0.8 ? 5 : 6);
+  } else if (level <= 60) {
+    initialRows = rowsRoll < 0.2 ? 5 : (rowsRoll < 0.7 ? 6 : 7);
+  } else {
+    initialRows = rowsRoll < 0.3 ? 6 : 7;
+  }
+
+  // Determine descentShots: 5 to 9
+  let descentShots = 6;
+  const shotsRoll = nextRng();
+  if (shotsRoll < 0.15) descentShots = 5;
+  else if (shotsRoll < 0.5) descentShots = 6;
+  else if (shotsRoll < 0.8) descentShots = 7;
+  else if (shotsRoll < 0.95) descentShots = 8;
+  else descentShots = 9;
+
+  // Determine stencil pack: randomized among all 5 options
+  const packs = ['plain', 'bugs', 'flowers', 'dragons', 'random'];
+  const stencilPack = packs[Math.floor(nextRng() * packs.length)];
+
+  // Determine isSpeedMode: 50% chance of timed mode
+  const isSpeedMode = nextRng() < 0.5;
+
+  return { colors, initialRows, descentShots, isSpeedMode, stencilPack };
+}
+
+export const LEVELS = Object.freeze(
+  Array.from({ length: 1000 }, (_, i) => generateLevelConfig(i + 1))
+);
 
 export function levelConfig(level) {
   const idx = Math.max(0, Math.min(LEVELS.length - 1, (level | 0) - 1));
   return LEVELS[idx];
 }
+
+// Speed Mode Tuning parameters
+export const SPEED_MODE_PROJECTILE_SPEED = 65;
+export const SPEED_MODE_DESCENT_DRIFT_SPEED = 35;
+export const SPEED_MODE_SETTLE_ANIM_SEC = 0.03;
+export const SPEED_MODE_DESCENT_TIME_FACTOR = 1.5;
+export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
 
 // Performance and rendering optimizations configuration.
 export const PERF_CONFIG = {

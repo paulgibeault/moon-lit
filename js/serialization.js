@@ -5,7 +5,12 @@
 // SETTLING/DESCENDING have a resolved board underneath their visual anims,
 // so restoring skips straight to the post-anim state cleanly.
 
-import { COLOR_KEYS, levelConfig } from './constants.js';
+import {
+  COLOR_KEYS, levelConfig,
+  PROJECTILE_SPEED, DESCENT_DRIFT_SPEED, SETTLE_ANIM_SEC,
+  SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
+  SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR
+} from './constants.js';
 import { mulberry32FromState } from './prng.js';
 import { createBoard } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
@@ -45,6 +50,22 @@ export function serializeGame(g) {
     bestCombo: g.bestCombo,
     shotsUntilDescent: g.shotsUntilDescent,
     pendingDescent: g.pendingDescent,
+    isSpeedMode: g.isSpeedMode,
+    timeUntilDescent: g.timeUntilDescent,
+    descentTimeLimit: g.descentTimeLimit,
+    showModeIntroCard: g.showModeIntroCard,
+    shots: (g.shots || []).map(s => ({
+      x: s.x,
+      y: s.y,
+      vx: s.vx,
+      vy: s.vy,
+      color: s.color,
+      designId: s.designId,
+      flightT: s.flightT,
+      swayPhase: s.swayPhase,
+      swayFreq: s.swayFreq,
+      swayAmp: s.swayAmp
+    })),
     board: {
       descentCount: g.board.descentCount,
       lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId })),
@@ -219,6 +240,23 @@ export function restoreGame(saved) {
     afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
   }
 
+  const isSpeedMode = !!migrated.isSpeedMode;
+  const descentTimeLimit = migrated.descentTimeLimit ?? (config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR);
+  const timeUntilDescent = migrated.timeUntilDescent ?? descentTimeLimit;
+  const showModeIntroCard = !!migrated.showModeIntroCard;
+  const shots = (migrated.shots || []).map(s => ({
+    x: s.x,
+    y: s.y,
+    vx: s.vx,
+    vy: s.vy,
+    color: s.color,
+    designId: s.designId,
+    flightT: s.flightT ?? 0,
+    swayPhase: s.swayPhase ?? 0,
+    swayFreq: s.swayFreq ?? 0,
+    swayAmp: s.swayAmp ?? 0
+  }));
+
   return {
     rng,
     board,
@@ -232,7 +270,15 @@ export function restoreGame(saved) {
       afterNext: queueAfterNext,
       afterNextDesign
     },
-    shot: null,
+    shots,
+    get shot() { return this.shots[0] || null; },
+    set shot(val) {
+      if (val === null) {
+        this.shots.shift();
+      } else {
+        this.shots[0] = val;
+      }
+    },
     score: migrated.score | 0,
     effects: [],
     floats: [],
@@ -254,6 +300,14 @@ export function restoreGame(saved) {
     level,
     colors,
     descentShots: config.descentShots,
+    isSpeedMode,
+    projectileSpeed: isSpeedMode ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
+    descentDriftSpeed: isSpeedMode ? SPEED_MODE_DESCENT_DRIFT_SPEED : DESCENT_DRIFT_SPEED,
+    settleAnimSec: isSpeedMode ? SPEED_MODE_SETTLE_ANIM_SEC : SETTLE_ANIM_SEC,
+    descentTimeLimit,
+    timeUntilDescent,
+    fireCooldown: 0,
+    showModeIntroCard,
   };
 }
 
