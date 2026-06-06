@@ -1,7 +1,9 @@
 import { setAim, fire, launcherTip, PHASE } from './game.js';
 import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
+  openMenu, closeMenu,
 } from './renderer/menu.js';
+
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
 // sits in a ~40px strip above the iframe — taps that just barely miss those
@@ -123,10 +125,27 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     if (aimingPointerId === e.pointerId) aimingPointerId = null;
   };
 
+  const onKeyDown = (e) => {
+    if (e.code !== 'Space' && e.key !== ' ') return;
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || t.closest?.('#bamboo-admin'))) return;
+
+    e.preventDefault();
+    bump();
+    if (isMenuPanelOpen()) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+    fireMenuChange();
+  };
+
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
   window.addEventListener('resize', refreshRect);
   window.addEventListener('scroll', refreshRect, { passive: true });
+  window.addEventListener('keydown', onKeyDown);
 }
+
