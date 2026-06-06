@@ -22,7 +22,7 @@ function getActivePackId() {
 // starts fresh. v1: original (red, orange, yellow, green, blue, white).
 // v2: muted palette with plum. v3: traditional festival palette with pink.
 // v4: pink replaced by paper (natural undyed tissue paper).
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export function serializeGame(g) {
   return {
@@ -34,10 +34,13 @@ export function serializeGame(g) {
     queue: {
       current:   g.queue.current,
       currentDesign: g.queue.currentDesign,
+      currentSpecial: g.queue.currentSpecial,
       next:      g.queue.next,
       nextDesign: g.queue.nextDesign,
+      nextSpecial: g.queue.nextSpecial,
       afterNext: g.queue.afterNext,
       afterNextDesign: g.queue.afterNextDesign,
+      afterNextSpecial: g.queue.afterNextSpecial,
     },
     breakdown: { ...g.breakdown },
     counts: { ...g.counts },
@@ -47,7 +50,14 @@ export function serializeGame(g) {
     pendingDescent: g.pendingDescent,
     board: {
       descentCount: g.board.descentCount,
-      lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId })),
+      lanterns: g.board.lanterns.map(l => ({
+        nx: l.nx,
+        ny: l.ny,
+        color: l.color,
+        designId: l.designId,
+        isSpecial: l.isSpecial || false,
+        specialType: l.specialType || null
+      })),
     },
     rngState: g.rng.getState(),
   };
@@ -76,8 +86,11 @@ function migrateSaveState(saved) {
       // pink was replaced by paper in v4
       state = migrateV3ToV4(state);
     } else if (state.version === 4) {
-      // v4: pink replaced by paper (natural undyed tissue paper)
+      // v4: pink replaced by paper (natural unedited tissue paper)
       state = migrateV4ToV5(state);
+    } else if (state.version === 5) {
+      // v5: golden stencils & design matching
+      state = migrateV5ToV6(state);
     } else {
       // Fallback to prevent infinite loop
       state.version = SAVE_VERSION;
@@ -91,6 +104,27 @@ function migrateV4ToV5(state) {
   return {
     ...state,
     version: 5
+  };
+}
+
+function migrateV5ToV6(state) {
+  return {
+    ...state,
+    version: 6,
+    queue: state.queue ? {
+      ...state.queue,
+      currentSpecial: null,
+      nextSpecial: null,
+      afterNextSpecial: null
+    } : undefined,
+    board: state.board ? {
+      ...state.board,
+      lanterns: (state.board.lanterns || []).map(l => ({
+        ...l,
+        isSpecial: false,
+        specialType: null
+      }))
+    } : undefined
   };
 }
 
@@ -188,6 +222,8 @@ export function restoreGame(saved) {
           ny: l.ny ?? 0,
           color: mappedColor,
           designId,
+          isSpecial: l.isSpecial ?? false,
+          specialType: l.specialType ?? null,
           x: 0,
           y: 0
         });
@@ -205,6 +241,10 @@ export function restoreGame(saved) {
   const queueAfterNext = mapColor(
     migrated.queue?.afterNext || COLOR_KEYS[2] || COLOR_KEYS[0]
   );
+
+  const currentSpecial = migrated.queue?.currentSpecial ?? null;
+  const nextSpecial = migrated.queue?.nextSpecial ?? null;
+  const afterNextSpecial = migrated.queue?.afterNextSpecial ?? null;
 
   let currentDesign = migrated.queue?.currentDesign;
   if (currentDesign === undefined) {
@@ -227,10 +267,13 @@ export function restoreGame(saved) {
     queue: { 
       current: queueCurrent, 
       currentDesign,
+      currentSpecial,
       next: queueNext, 
       nextDesign,
+      nextSpecial,
       afterNext: queueAfterNext,
-      afterNextDesign
+      afterNextDesign,
+      afterNextSpecial
     },
     shot: null,
     score: migrated.score | 0,

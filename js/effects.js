@@ -20,6 +20,7 @@ export function hasActiveEffects(game) {
   if (game.floats && game.floats.length > 0) return true;
   if (game.ripples && game.ripples.length > 0) return true;
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) return true;
+  if (game.windSwept && game.windSwept.length > 0) return true;
   return false;
 }
 
@@ -48,6 +49,17 @@ export function tickEffects(game, dtSec) {
     }
     game.ripples = kept;
   }
+  if (game.windSwept && game.windSwept.length) {
+    const kept = [];
+    for (const fx of game.windSwept) {
+      fx.t += dtSec;
+      fx.x += fx.vx * dtSec;
+      fx.y += fx.vy * dtSec;
+      fx.spin += fx.spinVy * dtSec;
+      if (fx.t < fx.life) kept.push(fx);
+    }
+    game.windSwept = kept;
+  }
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) {
     game.moonPulse.t += dtSec;
   }
@@ -55,6 +67,29 @@ export function tickEffects(game, dtSec) {
 
 export function spawnBurst(game, x, y) {
   game.effects.push({ x, y, t: 0, life: BURST_DURATION_SEC });
+}
+
+export function spawnWindSwept(game, lantern, layout) {
+  if (!game.windSwept) game.windSwept = [];
+  const rng = game.rng || Math.random;
+  const speed = 400 + rng() * 200;
+  const vx = -speed;
+  const vy = (rng() - 0.5) * 50;
+  const spinVy = (rng() - 0.5) * 6;
+  game.windSwept.push({
+    x: lantern.x,
+    y: lantern.y,
+    color: lantern.color,
+    designId: lantern.designId,
+    isSpecial: lantern.isSpecial,
+    specialType: lantern.specialType,
+    vx,
+    vy,
+    spin: 0,
+    spinVy,
+    t: 0,
+    life: 1.5,
+  });
 }
 
 export function pulseMoon(game) {

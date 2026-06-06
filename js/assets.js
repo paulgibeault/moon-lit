@@ -219,26 +219,38 @@ export async function loadLanterns() {
     );
   }
 
-  const promises = [];
+  const plainCanvases = {};
+  await Promise.all(
+    COLOR_KEYS.map(async (colorKey) => {
+      plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+    })
+  );
+
+  function copyCanvas(srcCanvas) {
+    const dst = document.createElement('canvas');
+    dst.width = srcCanvas.width;
+    dst.height = srcCanvas.height;
+    dst.getContext('2d').drawImage(srcCanvas, 0, 0);
+    return dst;
+  }
 
   if (activePackId === 'random') {
-    // 1. Rasterize plain paper versions (recorded as sprites[colorKey])
+    // 1. Record plain paper versions (recorded as sprites[colorKey])
     for (const colorKey of COLOR_KEYS) {
-      promises.push((async () => {
-        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-        record(colorKey, canvas, measureBbox(canvas));
-      })());
+      record(colorKey, plainCanvases[colorKey], measureBbox(plainCanvases[colorKey]));
     }
 
-    // 2. Rasterize every color with every loaded design (recorded as sprites[colorKey + '_' + designId])
+    // 2. Rasterize every color with every loaded design (recorded as sprites[colorKey + '_' + designId] and sprites[colorKey + '_' + designId + '_golden'])
     for (const colorKey of COLOR_KEYS) {
+      const plainCanvas = plainCanvases[colorKey];
       for (const d of allDesigns) {
-        promises.push((async () => {
-          const stencilImg = stencilImages[d.designId];
-          if (!stencilImg) return;
+        const stencilImg = stencilImages[d.designId];
+        if (!stencilImg) continue;
 
-          const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-          const stencil = makeBugStencil(stencilImg);
+        // Normal version
+        {
+          const canvas = copyCanvas(plainCanvas);
+          const stencil = makeBugStencil(stencilImg, false);
           const ctx = canvas.getContext('2d');
           ctx.save();
           ctx.globalCompositeOperation = 'source-atop';
@@ -255,17 +267,42 @@ export async function loadLanterns() {
           ctx.restore();
 
           record(`${colorKey}_${d.designId}`, canvas, measureBbox(canvas));
-        })());
+        }
+
+        // Golden version
+        {
+          const canvas = copyCanvas(plainCanvas);
+          const stencil = makeBugStencil(stencilImg, true);
+          const ctx = canvas.getContext('2d');
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+
+          // Dimensions to center on the lantern body
+          const cx = 50 * RASTER_SCALE;
+          const cy = 65 * RASTER_SCALE;
+          const dSize = 56 * RASTER_SCALE;
+          const offsetY = 5 * RASTER_SCALE;
+
+          const opacity = d.packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+          ctx.globalAlpha = opacity;
+          ctx.drawImage(stencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
+          ctx.restore();
+
+          record(`${colorKey}_${d.designId}_golden`, canvas, measureBbox(canvas));
+        }
       }
     }
   } else {
     // Standard pack logic (original flow)
     for (const colorKey of COLOR_KEYS) {
-      promises.push((async () => {
-        const canvas = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-        const stencilImg = stencilImages[colorKey];
+      const plainCanvas = plainCanvases[colorKey];
+      const stencilImg = stencilImages[colorKey];
+
+      // Normal version
+      {
+        const canvas = copyCanvas(plainCanvas);
         if (stencilImg) {
-          const stencil = makeBugStencil(stencilImg);
+          const stencil = makeBugStencil(stencilImg, false);
           const ctx = canvas.getContext('2d');
           ctx.save();
           ctx.globalCompositeOperation = 'source-atop';
@@ -281,11 +318,31 @@ export async function loadLanterns() {
           ctx.restore();
         }
         record(colorKey, canvas, measureBbox(canvas));
-      })());
+      }
+
+      // Golden version
+      {
+        const canvas = copyCanvas(plainCanvas);
+        if (stencilImg) {
+          const stencil = makeBugStencil(stencilImg, true);
+          const ctx = canvas.getContext('2d');
+          ctx.save();
+          ctx.globalCompositeOperation = 'source-atop';
+
+          const cx = 50 * RASTER_SCALE;
+          const cy = 65 * RASTER_SCALE;
+          const d = 56 * RASTER_SCALE;
+          const offsetY = 5 * RASTER_SCALE;
+
+          const opacity = activePackId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+          ctx.globalAlpha = opacity;
+          ctx.drawImage(stencil, cx - d/2, cy - d/2 + offsetY, d, d);
+          ctx.restore();
+        }
+        record(`${colorKey}_golden`, canvas, measureBbox(canvas));
+      }
     }
   }
-
-  await Promise.all(promises);
   try {
     const img = await loadImage(BURST_SRC);
     const frameSize = img.naturalHeight || img.height;
@@ -330,10 +387,19 @@ export function getFlameSheet() {
   return flameSheet;
 }
 
-export function getLanternSprite(colorKey, designId = null) {
-  if (designId) {
-    const key = `${colorKey}_${designId}`;
+export function getLanternSprite(colorKey, designId = null, isSpecial = false) {
+  if (isSpecial) {
+    if (designId) {
+      const key = `${colorKey}_${designId}_golden`;
+      if (sprites[key]) return sprites[key];
+    }
+    const key = `${colorKey}_golden`;
     if (sprites[key]) return sprites[key];
+  } else {
+    if (designId) {
+      const key = `${colorKey}_${designId}`;
+      if (sprites[key]) return sprites[key];
+    }
   }
   return sprites[colorKey] || null;
 }
@@ -358,7 +424,7 @@ export function getBurstSheet() {
 //
 // Converts a black-on-white bug drawing into a black stencil with transparent background,
 // where brightness determines transparency (white -> transparent, black -> opaque).
-function makeBugStencil(img) {
+function makeBugStencil(img, isGolden = false) {
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
@@ -378,10 +444,16 @@ function makeBugStencil(img) {
     const brightness = (r + g + b) / 3;
     // Derive alpha: white background (255) -> 0 alpha, dark lines (0) -> 255 alpha (boosted by 1.8x for visibility)
     d[i+3] = Math.min(255, Math.round((255 - brightness) * 1.8));
-    // Make the stencil color completely black
-    d[i] = 0;
-    d[i+1] = 0;
-    d[i+2] = 0;
+    if (isGolden) {
+      d[i] = 255;
+      d[i+1] = 195;
+      d[i+2] = 45;
+    } else {
+      // Make the stencil color completely black
+      d[i] = 0;
+      d[i+1] = 0;
+      d[i+2] = 0;
+    }
   }
   cx.putImageData(imgData, 0, 0);
   return c;

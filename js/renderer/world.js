@@ -1819,7 +1819,7 @@ export function drawReflections(ctx, layout, game, settings) {
     ctx.translate(dx, reflectY);
     ctx.scale(1, -1);
     drawLantern(ctx, 0, 0, layout.size, l.color,
-      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true, designId: l.designId });
+      { lit: true, intensity: 0.55, phase: phaseOf(l), boost, isReflection: true, designId: l.designId, isSpecial: l.isSpecial, specialType: l.specialType });
     ctx.restore();
   }
 
@@ -1843,7 +1843,7 @@ export function drawReflections(ctx, layout, game, settings) {
         ctx.translate(drawX, deadLineY + height);
         ctx.scale(1, -1);
         drawLantern(ctx, 0, 0, layout.size, shot.color,
-          { lit: true, intensity: ignite * 0.55, phase, isReflection: true, designId: shot.designId });
+          { lit: true, intensity: ignite * 0.55, phase, isReflection: true, designId: shot.designId, isSpecial: shot.isSpecial, specialType: shot.specialType });
         ctx.restore();
       }
     }
@@ -1944,11 +1944,30 @@ export function drawBoard(ctx, layout, game, settings) {
       ctx.translate(dx, dy + animY);
       ctx.rotate(spin);
       drawLantern(ctx, 0, 0, size, l.color,
-        { lit, phase: phaseOf(l), boost, designId: l.designId });
+        { lit, phase: phaseOf(l), boost, designId: l.designId, isSpecial: l.isSpecial, specialType: l.specialType });
       ctx.restore();
     } else {
       drawLantern(ctx, dx, dy + animY, size, l.color,
-        { lit, phase: phaseOf(l), boost, designId: l.designId });
+        { lit, phase: phaseOf(l), boost, designId: l.designId, isSpecial: l.isSpecial, specialType: l.specialType });
+    }
+  }
+
+  if (game.windSwept && game.windSwept.length) {
+    for (const fx of game.windSwept) {
+      ctx.save();
+      ctx.translate(fx.x, fx.y + animY);
+      if (fx.spin) {
+        ctx.rotate(fx.spin);
+      }
+      drawLantern(ctx, 0, 0, size, fx.color, {
+        lit: true,
+        phase: 0,
+        boost: 0,
+        designId: fx.designId,
+        isSpecial: fx.isSpecial,
+        specialType: fx.specialType
+      });
+      ctx.restore();
     }
   }
 }
@@ -1985,6 +2004,8 @@ function emberLevel(phase, intensity, boost) {
   return Math.max(0.05, Math.min(1.3, base + (boost || 0)));
 }
 
+
+
 export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const lit = opts ? !!opts.lit : false;
   const intensity = opts && opts.intensity != null ? opts.intensity : 1;
@@ -1993,8 +2014,9 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const level = lit ? emberLevel(phase, intensity, boost) : 0;
   const isReflection = opts && opts.isReflection;
   const designId = opts && opts.designId;
+  const isSpecial = opts && opts.isSpecial;
 
-  const sprite = getLanternSprite(colorKey, designId);
+  const sprite = getLanternSprite(colorKey, designId, isSpecial);
   if (sprite) {
     // Fit the painted silhouette so its width fills 2*size (the cell width).
     // Height is proportional to the lamp's aspect ratio, so taller-than-wide
@@ -2012,14 +2034,30 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
       if (lit) drawEmberHalo(ctx, cx, rimY, size, level);
       const prevAlpha = ctx.globalAlpha;
       ctx.globalAlpha = prevAlpha * LANTERN_PARAMS.opacity;
+      if (isSpecial) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(255, 180, 30, 0.75)';
+        ctx.shadowBlur = 10;
+      }
       ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+      if (isSpecial) {
+        ctx.restore();
+      }
       ctx.globalAlpha = prevAlpha;
       return;
     }
     if (lit) drawEmberHalo(ctx, cx, rimY, size, level);
     const prevAlpha = ctx.globalAlpha;
     ctx.globalAlpha = prevAlpha * LANTERN_PARAMS.opacity;
+    if (isSpecial) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(255, 180, 30, 0.75)';
+      ctx.shadowBlur = 10;
+    }
     ctx.drawImage(image, sx, sy, sw, sh, cx - dw / 2, cy - dh / 2, dw, dh);
+    if (isSpecial) {
+      ctx.restore();
+    }
     ctx.globalAlpha = prevAlpha;
     // Optional opacity backing — overlays the lantern's color onto the sprite
     // silhouette using 'source-atop' so only the painted pixels gain saturation.
@@ -2061,6 +2099,7 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     // Hockey-puck of burning tar — drawn last so it sits in front of the
     // flame's base. Always visible, lit or not.
     drawFuelCore(ctx, cx, rimY, size);
+
     return;
   }
   // Fallback: procedural circle if the sprite failed to load.
@@ -2077,6 +2116,7 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   ctx.strokeStyle = mixWithBlack(fill, 0.5);
   ctx.lineWidth = 1;
   ctx.stroke();
+
 }
 
 // Per-lantern glow gradients (ember halo, ember core, flame body + core) are
@@ -2350,7 +2390,7 @@ function drawProceduralLauncherFallback(ctx, layout, game) {
     ctx.save();
     ctx.translate(0, lanternY);
     ctx.rotate(-game.aimAngle);
-    drawLantern(ctx, 0, 0, r, game.queue.current, { lit: false, designId: game.queue.currentDesign });
+    drawLantern(ctx, 0, 0, r, game.queue.current, { lit: false, designId: game.queue.currentDesign, isSpecial: !!game.queue.currentSpecial, specialType: game.queue.currentSpecial });
     ctx.restore();
   }
 
@@ -2537,7 +2577,9 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
           lit: litVal,
           intensity: 0.40 + 0.12 * Math.sin(tSec * 4.0),
           phase: 0,
-          designId: game.queue.currentDesign
+          designId: game.queue.currentDesign,
+          isSpecial: !!game.queue.currentSpecial,
+          specialType: game.queue.currentSpecial
         });
         ctx.restore();
 
@@ -2573,7 +2615,9 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
           intensity: igniteEase * seatedIntensity * (1 + 0.5 * catchPulse),
           boost: 0.55 * catchPulse,
           phase: 0,
-          designId: game.queue.nextDesign
+          designId: game.queue.nextDesign,
+          isSpecial: !!game.queue.nextSpecial,
+          specialType: game.queue.nextSpecial
       });
       ctx.restore();
     } else if (theta_mount === Math.PI / 2) {
@@ -2582,7 +2626,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
       // rotates up into the on-deck side position.
       ctx.save();
       ctx.translate(0, -d_hinge_lantern);
-      drawLantern(ctx, 0, 0, r, game.queue.afterNext, { lit: false, designId: game.queue.afterNextDesign });
+      drawLantern(ctx, 0, 0, r, game.queue.afterNext, { lit: false, designId: game.queue.afterNextDesign, isSpecial: !!game.queue.afterNextSpecial, specialType: game.queue.afterNextSpecial });
       ctx.restore();
     }
 
@@ -2826,7 +2870,7 @@ export function drawAimLine(ctx, layout, game) {
   if (trace.settle) {
     ctx.save();
     ctx.globalAlpha = HUD_OPACITY.faint;
-    drawLantern(ctx, trace.settle.x, trace.settle.y, layout.size, game.queue.current, { lit: false, designId: game.queue.currentDesign });
+    drawLantern(ctx, trace.settle.x, trace.settle.y, layout.size, game.queue.current, { lit: false, designId: game.queue.currentDesign, isSpecial: !!game.queue.currentSpecial, specialType: game.queue.currentSpecial });
     ctx.restore();
   }
 }
@@ -2846,5 +2890,5 @@ export function drawProjectile(ctx, shot, layout) {
   const drawY = shot.y + ( shot.vx) * wobble;
   const ignite = Math.min(1, t / IGNITE_SEC);
   drawLantern(ctx, drawX, drawY, layout.size, shot.color,
-    { lit: true, intensity: ignite, phase, designId: shot.designId });
+    { lit: true, intensity: ignite, phase, designId: shot.designId, isSpecial: shot.isSpecial, specialType: shot.specialType });
 }

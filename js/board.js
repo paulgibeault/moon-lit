@@ -121,8 +121,8 @@ export function isCleared(board) {
   return board.lanterns.length === 0;
 }
 
-export function addLantern(board, x, y, color, layout, designId = null) {
-  const l = { x, y, color, designId };
+export function addLantern(board, x, y, color, layout, designId = null, isSpecial = false, specialType = null) {
+  const l = { x, y, color, designId, isSpecial, specialType };
   normalizePos(l, layout);
   board.lanterns.push(l);
   return l;

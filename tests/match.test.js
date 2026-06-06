@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBoard, addLantern } from '../js/board.js';
+import { createBoard, addLantern, normalizePos } from '../js/board.js';
 import { findCluster, popMatches, dropFloating } from '../js/match.js';
 import { popScore, dropScore, POP_POINTS } from '../js/scoring.js';
 import { settleAround } from '../js/physics.js';
@@ -22,6 +22,7 @@ function place(board, layout, col, row, color) {
   const x = layout.originX + (col * 2 + odd) * r;
   const y = layout.trellisY + r + row * SQRT3 * r;
   const lantern = { x, y, color };
+  normalizePos(lantern, layout);
   board.lanterns.push(lantern);
   return lantern;
 }
@@ -141,4 +142,118 @@ test('match still triggers when settle would absorb a tight pocket', () => {
 
   assert.ok(popped.length >= 3,
     `expected 3+ pop, got ${popped.length}; new at (${newLantern.x.toFixed(2)}, ${newLantern.y.toFixed(2)})`);
+});
+
+test('design matching pops same-design lanterns across different colors', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  const a = place(b, layout, 2, 0, 'red');
+  a.designId = 'bugs_red';
+  const c = place(b, layout, 3, 0, 'green');
+  c.designId = 'bugs_red';
+  const d = place(b, layout, 4, 0, 'blue');
+  d.designId = 'bugs_red';
+
+  const popped = popMatches(b, a, layout);
+  assert.equal(popped.length, 3);
+  assert.equal(b.lanterns.length, 0);
+});
+
+test('Golden piece matched with 0 matching stencils clears as normal', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  const a = place(b, layout, 2, 0, 'red');
+  a.isSpecial = true;
+  a.designId = 'bugs_red';
+
+  place(b, layout, 3, 0, 'red');
+  place(b, layout, 4, 0, 'red');
+
+  place(b, layout, 2, 1, 'green');
+
+  const popped = popMatches(b, a, layout);
+  assert.equal(popped.length, 3);
+  assert.ok(!popped.some(l => l.color === 'green'));
+});
+
+test('Golden piece matched with 1-2 matching stencils triggers 1.5 radius clear', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  const a = place(b, layout, 2, 0, 'red');
+  a.isSpecial = true;
+  a.designId = 'bugs_red';
+
+  const c = place(b, layout, 3, 0, 'green');
+  c.designId = 'bugs_red';
+  const d = place(b, layout, 4, 0, 'blue');
+  d.designId = 'bugs_red';
+
+  const touch = place(b, layout, 2, 1, 'yellow');
+  const far = place(b, layout, 2, 5, 'paper');
+
+  const popped = popMatches(b, a, layout);
+  assert.equal(popped.length, 4);
+  assert.ok(popped.includes(touch));
+  assert.ok(!popped.includes(far));
+});
+
+test('Golden piece matched with 3-4 matching stencils clears all lanterns of same color', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  
+  const a = place(b, layout, 2, 0, 'red');
+  a.isSpecial = true;
+  a.designId = 'bugs_red';
+
+  const c = place(b, layout, 3, 0, 'green');
+  c.designId = 'bugs_red';
+  const d = place(b, layout, 4, 0, 'blue');
+  d.designId = 'bugs_red';
+  const e = place(b, layout, 5, 0, 'yellow');
+  e.designId = 'bugs_red';
+
+  const redFar = place(b, layout, 2, 5, 'red');
+  const blueFar = place(b, layout, 3, 5, 'blue');
+
+  const popped = popMatches(b, a, layout);
+  assert.equal(popped.length, 5);
+  assert.ok(popped.includes(redFar));
+  assert.ok(!popped.includes(blueFar));
+});
+
+test('Golden piece matched with 5 or more matching stencils triggers wind sweep carrying 3/4 away', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  
+  const a = place(b, layout, 1, 0, 'red');
+  a.isSpecial = true;
+  a.designId = 'bugs_red';
+
+  const l2 = place(b, layout, 2, 0, 'green');
+  l2.designId = 'bugs_red';
+  const l3 = place(b, layout, 3, 0, 'blue');
+  l3.designId = 'bugs_red';
+  const l4 = place(b, layout, 4, 0, 'yellow');
+  l4.designId = 'bugs_red';
+  const l5 = place(b, layout, 5, 0, 'paper');
+  l5.designId = 'bugs_red';
+  const l6 = place(b, layout, 6, 0, 'orange');
+  l6.designId = 'bugs_red';
+
+  for (let i = 0; i < 12; i++) {
+    place(b, layout, i % 8, 2 + Math.floor(i / 8), 'red');
+  }
+
+  const popped = popMatches(b, a, layout);
+  assert.equal(popped.length, 15);
+  assert.equal(b.lanterns.length, 3);
+
+  const windSweptCount = popped.filter(l => l.isWindSwept).length;
+  assert.equal(windSweptCount, 9);
+  assert.ok(!a.isWindSwept);
+  assert.ok(!l2.isWindSwept);
+  assert.ok(!l3.isWindSwept);
+  assert.ok(!l4.isWindSwept);
+  assert.ok(!l5.isWindSwept);
+  assert.ok(!l6.isWindSwept);
 });

@@ -23,7 +23,7 @@ import { clamp, SQRT3 } from './geometry.js';
 import { traceFromShot, launcherTip } from './projectile.js';
 import {
   emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, spawnRipple,
-  tickEffects,
+  tickEffects, spawnWindSwept,
 } from './effects.js';
 
 export const PHASE = Object.freeze({
@@ -70,6 +70,10 @@ export function createGame({ seed, layout, level = 1 } = {}) {
   const currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
   const nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
   const afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+  const SPECIAL_TYPES = ['lunar_burst', 'celestial_ray', 'stardust_prism'];
+  const currentSpecial = (rng() < 0.10) ? pick(rng, SPECIAL_TYPES) : null;
+  const nextSpecial = (rng() < 0.10) ? pick(rng, SPECIAL_TYPES) : null;
+  const afterNextSpecial = (rng() < 0.10) ? pick(rng, SPECIAL_TYPES) : null;
 
   return {
     rng,
@@ -79,10 +83,13 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     queue: {
       current:   queueCurrent,
       currentDesign,
+      currentSpecial,
       next:      queueNext,
       nextDesign,
+      nextSpecial,
       afterNext: queueAfterNext,
       afterNextDesign,
+      afterNextSpecial,
     },
     shot: null,
     score: 0,
@@ -126,6 +133,8 @@ export function fire(game, layout) {
     vy: -Math.cos(angle),
     color: game.queue.current,
     designId: game.queue.currentDesign,
+    isSpecial: !!game.queue.currentSpecial,
+    specialType: game.queue.currentSpecial || null,
     flightT: 0,
     swayPhase: game.rng() * Math.PI * 2,
     swayFreq,
@@ -178,8 +187,15 @@ export function step(game, dtSec, layout) {
 
   const trace = traceFromShot(layout, game.board, game.shot, PROJECTILE_SPEED * layout.size * dtSec, dtSec);
   if (trace.settled) {
-    const placed = { x: trace.x, y: trace.y, color: game.shot.color, designId: game.shot.designId };
-    addLantern(game.board, placed.x, placed.y, placed.color, layout, placed.designId);
+    const placed = {
+      x: trace.x,
+      y: trace.y,
+      color: game.shot.color,
+      designId: game.shot.designId,
+      isSpecial: game.shot.isSpecial,
+      specialType: game.shot.specialType
+    };
+    addLantern(game.board, placed.x, placed.y, placed.color, layout, placed.designId, placed.isSpecial, placed.specialType);
     game.shot = null;
     if (placed.y >= layout.deadLineY) {
       startDrowning(game);
@@ -348,7 +364,7 @@ function resolvePlacement(game, layout) {
   // drift the new lantern off its same-color anchors past the tight 1.04
   // adjacency tolerance, silently failing visually-valid matches. Settle
   // is only meaningful when the new lantern stays on the board.
-  const popped = popMatches(game.board, lantern, layout);
+  const popped = popMatches(game.board, lantern, layout, game.rng);
   if (popped.length === 0) {
     settleAround(game.board, layout, lantern);
   }
@@ -367,7 +383,13 @@ function resolvePlacement(game, layout) {
   game.counts.popped     += popped.length;
   game.counts.dropped    += dropped.length;
 
-  for (const l of popped) spawnBurst(game, l.x, l.y);
+  for (const l of popped) {
+    if (l.isWindSwept) {
+      spawnWindSwept(game, l, layout);
+    } else {
+      spawnBurst(game, l.x, l.y);
+    }
+  }
   for (const l of dropped) spawnBurst(game, l.x, l.y);
 
   emitFloats(game, popped, dropped, breakdown, layout);
@@ -385,8 +407,10 @@ function advanceQueue(game) {
   // beneath the wheel until the next shot rotates it up).
   game.queue.current = game.queue.next;
   game.queue.currentDesign = game.queue.nextDesign;
+  game.queue.currentSpecial = game.queue.nextSpecial;
   game.queue.next = game.queue.afterNext;
   game.queue.nextDesign = game.queue.afterNextDesign;
+  game.queue.nextSpecial = game.queue.afterNextSpecial;
   // The freshly-loaded lantern (the future on-deck) should never reintroduce
   // a color the board no longer contains. Already-visible lanterns keep
   // whatever color they were drawn with.
@@ -397,6 +421,16 @@ function advanceQueue(game) {
   
   const activePackId = getActivePackId();
   game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
+
+  let isSpecial = false;
+  if (game.combo >= 5) {
+    isSpecial = true;
+  } else if (game.rng() < 0.10) {
+    isSpecial = true;
+  }
+  const SPECIAL_TYPES = ['lunar_burst', 'celestial_ray', 'stardust_prism'];
+  game.queue.afterNextSpecial = isSpecial ? pick(game.rng, SPECIAL_TYPES) : null;
+
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }
 
