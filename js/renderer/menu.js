@@ -652,8 +652,8 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   const startY = drawTitleBar(ctx, rect, 'Choose a stage', { showBack: true, fs });
 
   const padX = 20;
-  const reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0);
   const totalStages = LEVELS.length;
+  const reached = totalStages; // temporarily unlocked for testing
 
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();
@@ -855,7 +855,7 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
       }
     }
   }
-  const unlockedCount = Math.min(50, maxCleared + 1);
+  const unlockedCount = 50; // temporarily unlocked for testing
 
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();

@@ -2001,7 +2001,7 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const designId = opts && opts.designId;
 
   const isTarget = opts && opts.isTarget;
-  const sprite = getLanternSprite(colorKey, designId, isTarget);
+  const sprite = getLanternSprite(isBlocker ? 'stone_blocker' : colorKey, designId, isTarget);
   if (sprite) {
     // Fit the painted silhouette so its width fills 2*size (the cell width).
     // Height is proportional to the lamp's aspect ratio, so taller-than-wide
@@ -2040,12 +2040,12 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
     // sky behind most effectively; the bottom is where the flame's own warm
     // glow takes over and the paper reads as backlit/translucent. The
     // gradient sells "lit from outside above, lit from within below."
-    if (LANTERN_PARAMS.backing > 0 || isBlocker) {
+    if (LANTERN_PARAMS.backing > 0 && !isBlocker) {
       ctx.save();
       ctx.globalCompositeOperation = 'source-atop';
-      const useBacking = isBlocker ? 1.0 : LANTERN_PARAMS.backing;
+      const useBacking = LANTERN_PARAMS.backing;
       const baseAlpha = prevAlpha * useBacking;
-      const color = isBlocker ? '#4A4A4A' : (COLORS[colorKey] || PALETTE.ember);
+      const color = COLORS[colorKey] || PALETTE.ember;
       const top = cy - dh / 2;
       const bottom = cy + dh / 2;
       const grad = ctx.createLinearGradient(0, top, 0, bottom);

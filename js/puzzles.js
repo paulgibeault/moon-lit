@@ -395,6 +395,20 @@ function generatePuzzle(id) {
     queue.push(queueColors[Math.floor(rng() * queueColors.length)]);
   }
 
+  // Ensure targetColor has sufficient representation in clear-targets mode so it is solvable
+  if (goalType === 'clear-targets' && targetColor) {
+    const targetCount = queue.filter(c => c === targetColor).length;
+    if (targetCount < 3) {
+      let needed = 3 - targetCount;
+      for (let i = queue.length - 1; i >= 0 && needed > 0; i--) {
+        if (queue[i] !== targetColor) {
+          queue[i] = targetColor;
+          needed--;
+        }
+      }
+    }
+  }
+
   // Format naming
   const nameTemplates = [
     "Bamboo Whispers", "Loy Krathong Breeze", "River Glow", "Midnight Shadow",

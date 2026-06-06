@@ -125,6 +125,8 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   return {
     rng,
     board,
+    quickRestartArmed: false,
+    quickRestartArmedTime: 0,
     phase: PHASE.AIMING,
     aimAngle: 0,
     queue: {

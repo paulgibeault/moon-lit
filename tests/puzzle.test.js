@@ -190,3 +190,17 @@ test('puzzle 3 complete simulation ending in failure when queue runs out', () =>
   
   assert.equal(game.phase, PHASE.DROWNING);
 });
+
+test('quick restart armed state is initialized on game object', () => {
+  const layout = fixtureLayout();
+  const game = createGame({ layout, isPuzzleMode: true, puzzleId: 1 });
+  assert.equal(game.quickRestartArmed, false);
+  assert.equal(game.quickRestartArmedTime, 0);
+  
+  // Verify manual toggle works
+  game.quickRestartArmed = true;
+  game.quickRestartArmedTime = 12345;
+  assert.equal(game.quickRestartArmed, true);
+  assert.equal(game.quickRestartArmedTime, 12345);
+});
+

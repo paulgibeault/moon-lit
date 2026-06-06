@@ -152,7 +152,7 @@ export function populatePuzzle(board, layout, pattern, pz = null) {
       if (char === 'T') {
         color = (pz && pz.targetColor) ? pz.targetColor : 'red';
         isTarget = true;
-        designId = null;
+        designId = 'dragons_dragon_head';
       } else if (char === 'X') {
         color = 'paper';
         isBlocker = true;

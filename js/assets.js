@@ -247,12 +247,65 @@ export async function loadLanterns() {
     }
   }
 
+  // Always load the moth stencil so the stone blocker can render its embossed moth design
+  if (!stencilImages['bugs_moth']) {
+    try {
+      stencilImages['bugs_moth'] = await loadImage(
+        STENCIL_PACKS.bugs.sources.paper      // moth.png
+      );
+    } catch (e) {
+      console.warn('[moon-lit] failed to load moth stencil for stone blocker', e);
+    }
+  }
+
   await Promise.all(
     COLOR_KEYS.map(async (colorKey) => {
       plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
       plainBboxes[colorKey] = measureBbox(plainCanvases[colorKey]);
     })
   );
+
+  // Rasterize and register the stone blocker lantern
+  try {
+    const stoneCanvas = await rasterizeSvg(buildLanternSvg('stone_blocker'), w, h);
+    plainCanvases['stone_blocker'] = stoneCanvas;
+    plainBboxes['stone_blocker'] = measureBbox(stoneCanvas);
+
+    // Apply the embossed moth stencil onto the white/grey stone blocker
+    const mothImg = stencilImages['bugs_moth'];
+    if (mothImg) {
+      const shadowStencil = getStencil('bugs_moth', mothImg, 'black');
+      const highlightStencil = getStencil('bugs_moth', mothImg, 'white');
+      const ctx = stoneCanvas.getContext('2d');
+      
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop'; // only draw inside the stone lantern shape
+
+      const cx = 50 * RASTER_SCALE;
+      const cy = 65 * RASTER_SCALE;
+      const dSize = 56 * RASTER_SCALE;
+      const offsetY = 5 * RASTER_SCALE;
+      const shift = 0.8 * RASTER_SCALE;
+
+      // 1. Recessed engraving base shadow (subtle dark tint inside the chiseled lines)
+      ctx.globalAlpha = 0.15;
+      ctx.drawImage(shadowStencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
+
+      // 2. Chiseled offset shadow (shifted top-left)
+      ctx.globalAlpha = 0.40;
+      ctx.drawImage(shadowStencil, cx - dSize/2 - shift, cy - dSize/2 + offsetY - shift, dSize, dSize);
+
+      // 3. Chiseled offset highlight (shifted bottom-right)
+      ctx.globalAlpha = 0.50;
+      ctx.drawImage(highlightStencil, cx - dSize/2 + shift, cy - dSize/2 + offsetY + shift, dSize, dSize);
+
+      ctx.restore();
+    }
+
+    record('stone_blocker', stoneCanvas, plainBboxes['stone_blocker']);
+  } catch (e) {
+    console.warn('[moon-lit] failed to load stone blocker lantern', e);
+  }
 
   function copyCanvas(srcCanvas) {
     const dst = document.createElement('canvas');
@@ -428,6 +481,9 @@ function rasterizeSingleLantern(colorKey, designId, isGolden) {
 }
 
 export function getLanternSprite(colorKey, designId = null, isSpecial = false) {
+  if (colorKey === 'stone_blocker') {
+    return sprites['stone_blocker'] || null;
+  }
   if (isSpecial) {
     if (designId) {
       const key = `${colorKey}_${designId}_golden`;
@@ -466,17 +522,24 @@ export function getBurstSheet() {
 //   brightness would wrongly transparentize the interior white highlights
 //   and leave visible "splits" through the bamboo trunk.
 //
-function getStencil(stencilKey, img, isGolden = false) {
-  const key = `${stencilKey}_${isGolden}`;
+function getStencil(stencilKey, img, colorType = 'black') {
+  let type = colorType;
+  if (colorType === true) type = 'golden';
+  if (colorType === false) type = 'black';
+  const key = `${stencilKey}_${type}`;
   if (!stencilCache[key]) {
-    stencilCache[key] = makeBugStencil(img, isGolden);
+    stencilCache[key] = makeBugStencil(img, type);
   }
   return stencilCache[key];
 }
 
 // Converts a black-on-white bug drawing into a black stencil with transparent background,
 // where brightness determines transparency (white -> transparent, black -> opaque).
-function makeBugStencil(img, isGolden = false) {
+function makeBugStencil(img, colorType = 'black') {
+  let type = colorType;
+  if (colorType === true) type = 'golden';
+  if (colorType === false) type = 'black';
+
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   const c = document.createElement('canvas');
@@ -496,10 +559,18 @@ function makeBugStencil(img, isGolden = false) {
     const brightness = (r + g + b) / 3;
     // Derive alpha: white background (255) -> 0 alpha, dark lines (0) -> 255 alpha (boosted by 1.8x for visibility)
     d[i+3] = Math.min(255, Math.round((255 - brightness) * 1.8));
-    if (isGolden) {
+    if (type === 'golden') {
       d[i] = 255;
       d[i+1] = 195;
       d[i+2] = 45;
+    } else if (type === 'white') {
+      d[i] = 255;
+      d[i+1] = 255;
+      d[i+2] = 255;
+    } else if (type === 'grey' || type === 'gray') {
+      d[i] = 60;
+      d[i+1] = 60;
+      d[i+2] = 60;
     } else {
       // Make the stencil color completely black
       d[i] = 0;

@@ -29,6 +29,12 @@ export function resetHudState(score = 0, best = 0) {
 // uses this as part of the "is anything still animating?" check before
 // suspending the rAF loop.
 export function isHudSettled(game) {
+  if (game && game.quickRestartArmed) {
+    const elapsed = performance.now() - game.quickRestartArmedTime;
+    if (elapsed < 3050) {
+      return false;
+    }
+  }
   return (hudState.displayScore | 0) === (game.score | 0)
       && hudState.bestFlash === 0;
 }
@@ -386,7 +392,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.fillStyle = '#F5E9C9'; // Cream
   ctx.font = `300 ${scorePx}px Georgia, serif`;
   ctx.fillText(String(hudState.displayScore | 0), cx, y);
-  y += scorePx * 0.75;
+  y += scorePx + 8 * fs;
 
   // Personal Best line
   const isNewBest = settings.bestScore != null && game.score >= settings.bestScore && game.score > 0;
@@ -461,7 +467,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   // Next Level Preview Box
   const boxX = cardX + 20 * fs;
   const boxW = cardW - 40 * fs;
-  const boxH = 72 * fs;
+  const boxH = 88 * fs; // Increased from 72 for better elegance and size
   const boxY = y;
 
   ctx.save();
@@ -485,39 +491,39 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
 
   ctx.save();
   ctx.fillStyle = 'rgba(232, 183, 112, 0.85)';
-  ctx.font = `600 ${Math.max(9, Math.round(9 * fs))}px ${SANS}`;
+  ctx.font = `600 ${Math.round(10 * fs)}px ${SANS}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
   if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= 50 && nextCfg)) {
-    ctx.fillText(isPuzzle ? `PUZZLE ${nextNum} PREVIEW` : `STAGE ${nextNum} PREVIEW`, boxX + 10 * fs, boxY + 8 * fs);
+    ctx.fillText(isPuzzle ? `PUZZLE ${nextNum} PREVIEW` : `STAGE ${nextNum} PREVIEW`, boxX + 12 * fs, boxY + 10 * fs);
 
     const innerW = boxW - 20 * fs;
     const colCenter1 = boxX + 10 * fs + innerW / 6;
     const colCenter2 = boxX + 10 * fs + innerW / 2;
     const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
-    const contentCenterY = boxY + 42 * fs;
+    const contentCenterY = boxY + 50 * fs;
 
     // Col 1: Mode
     const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time') : nextCfg.isSpeedMode;
-    drawMiniModeIcon(ctx, isNextSpeed, colCenter1, contentCenterY - 8 * fs, fs, '#F5E9C9', cardBg);
+    drawMiniModeIcon(ctx, isNextSpeed, colCenter1, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9', cardBg);
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(isNextSpeed ? 'Timed' : 'Classic', colCenter1, contentCenterY + 12 * fs);
+    ctx.fillText(isNextSpeed ? 'Timed' : 'Classic', colCenter1, contentCenterY + 16 * fs);
 
     // Col 2: Stencil Pack
-    drawMiniStencilIcon(ctx, nextCfg.stencilPack, colCenter2, contentCenterY - 8 * fs, fs, '#F5E9C9');
+    drawMiniStencilIcon(ctx, nextCfg.stencilPack, colCenter2, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9');
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const shortNames = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
-    ctx.fillText(shortNames[nextCfg.stencilPack] || nextCfg.stencilPack, colCenter2, contentCenterY + 12 * fs);
+    ctx.fillText(shortNames[nextCfg.stencilPack] || nextCfg.stencilPack, colCenter2, contentCenterY + 16 * fs);
 
     // Col 3: Palette Colors
-    const dotR = 2.4 * fs;
+    const dotR = 4.5 * fs;
     const dotGap = dotR * 2.5;
     const nextColorsArray = isPuzzle ? nextCfg.colors : COLOR_KEYS.slice(0, nextCfg.colors);
     const startDotX = colCenter3 - ((nextColorsArray.length - 1) * dotGap) / 2;
@@ -525,14 +531,14 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
       const key = nextColorsArray[c];
       ctx.fillStyle = COLORS[key];
       ctx.beginPath();
-      ctx.arc(startDotX + c * dotGap, contentCenterY - 8 * fs, dotR, 0, Math.PI * 2);
+      ctx.arc(startDotX + c * dotGap, contentCenterY - 10 * fs, dotR, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
-    ctx.font = `500 ${Math.round(10 * fs)}px ${SANS}`;
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${nextColorsArray.length} Colors`, colCenter3, contentCenterY + 12 * fs);
+    ctx.fillText(`${nextColorsArray.length} Colors`, colCenter3, contentCenterY + 16 * fs);
   } else {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -561,9 +567,9 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
         }
       }
     }
-    reached = Math.min(50, maxCleared + 1) + (won ? 1 : 0);
+    reached = 50; // temporarily unlocked for testing
   } else {
-    reached = Math.max(1, (stats && stats.bestLevel) | 0 || 1, game.level | 0) + (won ? 1 : 0);
+    reached = 1000; // temporarily unlocked for testing
   }
 
   const prevBtn = {
@@ -705,12 +711,7 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
       ];
       drawIcon = (ctx) => {
         ctx.save();
-        ctx.fillStyle = '#4A4A4A'; // Stone grey
-        ctx.strokeStyle = 'rgba(245, 233, 201, 0.4)';
-        ctx.lineWidth = 2 * fs;
-        roundedRectPath(ctx, -14 * fs, -14 * fs, 28 * fs, 28 * fs, 6 * fs);
-        ctx.fill();
-        ctx.stroke();
+        drawLantern(ctx, 0, 0, 14 * fs, 'paper', { isBlocker: true });
         ctx.restore();
       };
     } else if (game.puzzleId === 14) {
@@ -1035,6 +1036,119 @@ export function drawLanternInventory(ctx, layout, game, settings) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(plusText, rightX - totalDotsW + (displayCount * gap) + 2, dotsY + lanternR);
+  }
+
+  ctx.restore();
+}
+
+export function getQuickRestartButtonRect(layout) {
+  const size = layout.size;
+  const btnSize = size * 1.2;
+  const handedness = layout.handedness || 'right';
+
+  if (handedness === 'left') {
+    // Bottom-right corner (opposite of left handedness)
+    return {
+      x: layout.viewW - size * 1.8,
+      y: layout.viewH - size * 1.8,
+      w: btnSize,
+      h: btnSize
+    };
+  } else {
+    // Bottom-left corner (opposite of right handedness)
+    return {
+      x: size * 0.6,
+      y: layout.viewH - size * 1.8,
+      w: btnSize,
+      h: btnSize
+    };
+  }
+}
+
+export function drawQuickRestartButton(ctx, layout, game, settings) {
+  if (!game || !layout) return;
+  // Don't draw if game is over or intro card is active
+  if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER || game.showModeIntroCard) return;
+
+  const btn = getQuickRestartButtonRect(layout);
+  const now = performance.now();
+  
+  // Auto-disarm check
+  if (game.quickRestartArmed && (now - game.quickRestartArmedTime > 3000)) {
+    game.quickRestartArmed = false;
+  }
+
+  const armed = game.quickRestartArmed;
+  const fs = fontScaleOf(settings);
+  
+  ctx.save();
+  
+  // Coordinates
+  const cx = btn.x + btn.w / 2;
+  const cy = btn.y + btn.h / 2;
+  const r = btn.w / 2;
+
+  // Draw background circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (armed) {
+    ctx.fillStyle = 'rgba(232, 183, 112, 0.08)'; // Subtle gold background
+  } else {
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.02)'; // Extremely faint cream background
+  }
+  ctx.fill();
+
+  // Draw border
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  if (armed) {
+    ctx.strokeStyle = '#E8B770'; // Gold border
+    ctx.lineWidth = 1.5;
+    
+    // Add gold glow
+    if (typeof PERF_CONFIG !== 'undefined' && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+      ctx.shadowColor = '#E8B770';
+      ctx.shadowBlur = 8;
+    }
+  } else {
+    ctx.strokeStyle = 'rgba(245, 233, 201, 0.2)'; // Faint border
+    ctx.lineWidth = 1.0;
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0; // reset shadow
+
+  // Draw reload/restart circular arrow icon
+  ctx.beginPath();
+  ctx.strokeStyle = armed ? '#E8B770' : 'rgba(245, 233, 201, 0.4)';
+  ctx.lineWidth = armed ? 2.0 : 1.5;
+  ctx.lineCap = 'round';
+  
+  // Circular arc (3/4 of a circle)
+  const startAngle = -Math.PI / 2;
+  const endAngle = Math.PI;
+  const iconR = r * 0.45;
+  ctx.arc(cx, cy, iconR, startAngle, endAngle, false);
+  ctx.stroke();
+
+  // Arrow head at start of arc (facing down/left)
+  ctx.beginPath();
+  ctx.fillStyle = armed ? '#E8B770' : 'rgba(245, 233, 201, 0.4)';
+  const arrowSize = r * 0.18;
+  
+  // Arrow head triangle at (cx, cy - iconR) pointing right (clockwise)
+  ctx.moveTo(cx, cy - iconR);
+  ctx.lineTo(cx - arrowSize, cy - iconR - arrowSize * 0.5);
+  ctx.lineTo(cx - arrowSize * 0.3, cy - iconR + arrowSize * 0.8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw "tap again" confirmation text (positioned above the button at the bottom of the screen)
+  if (armed) {
+    ctx.font = `italic 500 ${Math.round(9.5 * fs)}px Georgia, serif`;
+    ctx.fillStyle = '#E8B770';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('tap again', cx, btn.y - 4);
   }
 
   ctx.restore();

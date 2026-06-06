@@ -230,7 +230,10 @@ export function restoreGame(saved) {
     if (migrated.board.lanterns) {
       for (const l of migrated.board.lanterns) {
         const mappedColor = mapColor(l.color);
-        const designId = l.designId !== undefined ? l.designId : (activePackId === 'random' ? getRandomDesignForColor(mappedColor, rng) : null);
+        let designId = l.designId !== undefined ? l.designId : (activePackId === 'random' ? getRandomDesignForColor(mappedColor, rng) : null);
+        if (!!l.isTarget && !designId) {
+          designId = 'dragons_dragon_head';
+        }
         board.lanterns.push({
           nx: l.nx ?? 0,
           ny: l.ny ?? 0,
@@ -248,13 +251,15 @@ export function restoreGame(saved) {
   const VALID_COLORS = new Set(COLOR_KEYS);
   const mapColor = c => VALID_COLORS.has(c) ? c : 'paper';
   
-  const queueCurrent = mapColor(migrated.queue?.current || COLOR_KEYS[0]);
-  const queueNext = mapColor(migrated.queue?.next || COLOR_KEYS[1]);
-  // Older saves predate the third magazine slot; fall back to a deterministic
-  // pick so the on-deck lantern has something to rotate up the first time.
-  const queueAfterNext = mapColor(
-    migrated.queue?.afterNext || COLOR_KEYS[2] || COLOR_KEYS[0]
-  );
+  const queueCurrent = (migrated.queue && migrated.queue.current !== undefined)
+    ? (migrated.queue.current === null ? null : mapColor(migrated.queue.current))
+    : COLOR_KEYS[0];
+  const queueNext = (migrated.queue && migrated.queue.next !== undefined)
+    ? (migrated.queue.next === null ? null : mapColor(migrated.queue.next))
+    : COLOR_KEYS[1];
+  const queueAfterNext = (migrated.queue && migrated.queue.afterNext !== undefined)
+    ? (migrated.queue.afterNext === null ? null : mapColor(migrated.queue.afterNext))
+    : COLOR_KEYS[2];
 
   let currentDesign = migrated.queue?.currentDesign;
   if (currentDesign === undefined) {
