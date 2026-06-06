@@ -124,6 +124,7 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
+    showModeIntroCard: (level === 10),
   };
 }
 
@@ -174,6 +175,8 @@ export function fire(game, layout) {
 }
 
 export function step(game, dtSec, layout) {
+  if (game.showModeIntroCard) return false;
+
   tickEffects(game, dtSec);
 
   // If Speed Mode is active, tick down the time-based descent timer.

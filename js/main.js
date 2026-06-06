@@ -1,11 +1,11 @@
-import { GAME_ID, SYSTEM_OVERRIDES } from './constants.js';
+import { GAME_ID, SYSTEM_OVERRIDES, levelConfig } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
 import { getEffectiveDpr, PERF_MODE, setPerfModeOverride } from './renderer/style.js';
 import { attachInput } from './input.js';
-import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping } from './assets.js';
+import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
@@ -14,20 +14,6 @@ import {
 } from './renderer/menu.js';
 
 await Arcade.ready;
-
-// Migration sentinel: nothing to migrate yet, but acceptance §13 looks for
-// arcade.v1.<gameId>._migrated.v1, and laying it down now means future
-// schema bumps slot in cleanly.
-Arcade.state.migrate('v1', () => { /* nothing yet */ });
-
-try {
-  await Promise.all([loadLanterns(), loadBambooSprites(), loadMoonTexture(), loadHarnessSprite()]);
-} catch (e) {
-  console.warn(`[${GAME_ID}] sprite load failed — falling back`, e);
-}
-
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
 
 // Persisted state keys. `gameState` is the full snapshot used to resume
 // between sessions; `bestScore` is the all-time best across launches.
@@ -75,9 +61,6 @@ function saveGameState(g) {
     console.warn(`[${GAME_ID}] failed to persist game state`, e);
   }
 }
-function clearGameState() {
-  Arcade.state.remove(GAME_STATE_KEY);
-}
 function commitBestIfHigher(score) {
   const prev = loadBest();
   if (score > prev) {
@@ -86,6 +69,34 @@ function commitBestIfHigher(score) {
   }
   return false;
 }
+function clearGameState() {
+  Arcade.state.remove(GAME_STATE_KEY);
+}
+
+// Migration sentinel: nothing to migrate yet, but acceptance §13 looks for
+// arcade.v1.<gameId>._migrated.v1, and laying it down now means future
+// schema bumps slot in cleanly.
+Arcade.state.migrate('v1', () => { /* nothing yet */ });
+
+const initialLevel = (() => {
+  const saved = loadGameState();
+  if (saved && saved.level) return saved.level | 0;
+  return loadProgressLevel();
+})();
+const initialConfig = levelConfig(initialLevel);
+if (initialConfig) {
+  Arcade.state.set('stencilPack', initialConfig.stencilPack);
+  Arcade.state.set('speedMode', initialConfig.isSpeedMode);
+}
+
+try {
+  await Promise.all([loadLanterns(), loadBambooSprites(), loadMoonTexture(), loadHarnessSprite()]);
+} catch (e) {
+  console.warn(`[${GAME_ID}] sprite load failed — falling back`, e);
+}
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
 
 // Wall-time tracker, persisted across launches via the SDK's session helper.
 // Auto-pauses on suspend; the cumulative elapsed feeds totalPlayMs in stats.
@@ -231,53 +242,34 @@ function resize() {
 
 // On stage transition we save the new resume point — eviction or a refresh
 // after this point will restore the player to the new stage.
+async function loadAndStartLevel(level, keepCurrentSettings = false) {
+  const cfg = levelConfig(level);
+  if (!keepCurrentSettings) {
+    Arcade.state.set('speedMode', cfg.isSpeedMode);
+    await changeStencilPack(cfg.stencilPack);
+  } else {
+    await loadLanterns();
+  }
+  startGame(createGame({ layout, level }));
+  saveProgress(game);
+  resetHudState(0, bestScore);
+  refreshMenuData();
+  forceRequestFrame();
+}
+
 function nextLevel() {
   recordOutcome(game, /*won=*/true);
-  const next = () => {
-    startGame(createGame({ layout, level: game.level + 1 }));
-    saveProgress(game);
-    resetHudState(0, bestScore);
-    refreshMenuData();
-  };
-  if (Arcade.state.get('stencilPack') === 'random') {
-    triggerNewRandomMapping();
-    loadLanterns().then(next);
-  } else {
-    next();
-  }
+  loadAndStartLevel(game.level + 1);
 }
 function restartLevel() {
   recordOutcome(game, /*won=*/false);
-  const next = () => {
-    startGame(createGame({ layout, level: game.level }));
-    saveProgress(game);
-    resetHudState(0, bestScore);
-    refreshMenuData();
-  };
-  if (Arcade.state.get('stencilPack') === 'random') {
-    triggerNewRandomMapping();
-    loadLanterns().then(next);
-  } else {
-    next();
-  }
+  loadAndStartLevel(game.level);
 }
 // Menu-driven stage switch. Treated as a deliberate revisit rather than a
 // run abandonment, so we don't record an outcome against the current game —
 // the player isn't trying to win, they're choosing where to play.
 function startLevel(level) {
-  const lv = Math.max(1, level | 0);
-  const next = () => {
-    startGame(createGame({ layout, level: lv }));
-    saveProgress(game);
-    resetHudState(0, bestScore);
-    refreshMenuData();
-  };
-  if (Arcade.state.get('stencilPack') === 'random') {
-    triggerNewRandomMapping();
-    loadLanterns().then(next);
-  } else {
-    next();
-  }
+  loadAndStartLevel(Math.max(1, level | 0));
 }
 
 // End-of-stage bookkeeping: leaderboard entry, stats update, best-score
@@ -330,6 +322,7 @@ function recordOutcome(g, won) {
 // changes view-state has to call it to wake the loop back up.
 function isQuiescent() {
   if (!game || !layout) return false;
+  if (game.showModeIntroCard) return false;
   if (isMenuPanelOpen()) {
     if (!isMenuSettled()) return false;
     return true;

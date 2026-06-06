@@ -83,6 +83,11 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       return;
     }
     const game = getGame();
+    if (game.showModeIntroCard) {
+      game.showModeIntroCard = false;
+      e.preventDefault();
+      return;
+    }
     if (isGameOver(game)) {
       handleEndClick(game);
       e.preventDefault();

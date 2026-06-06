@@ -711,11 +711,22 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
     ctx.font = `600 ${labelPx}px ${SERIF}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText(`Stage ${i}`, viewportX + 12, rowY + rowHeight / 2);
+    const labelText = `Stage ${i}`;
+    ctx.fillText(labelText, viewportX + 12, rowY + rowHeight / 2);
+    const labelW = ctx.measureText(labelText).width;
 
-    // Cleared Star or Lock
+    const cfg = levelConfig(i);
+
+    // Draw Mini Icons next to number
+    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
+    const modeCx = viewportX + 12 + labelW + 10 * fs;
+    const stencilCx = modeCx + 14 * fs;
+    drawMiniModeIcon(ctx, cfg.isSpeedMode, modeCx, rowY + rowHeight / 2, fs, iconColor);
+    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
+
+    // Cleared Star or Lock (shifted right to make room for mini icons)
+    const lockX = viewportX + 115 * fs;
     if (isLocked) {
-      const lockX = viewportX + 76 * fs;
       const lockY = rowY + rowHeight / 2;
       ctx.save();
       ctx.strokeStyle = hexToRgba(CREAM, 0.25);
@@ -729,21 +740,20 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
       ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
       ctx.restore();
     } else if (cleared) {
-      drawStar(ctx, viewportX + 76 * fs, rowY + rowHeight / 2, 3 * fs, GOLD);
+      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
     } else if (played) {
       ctx.strokeStyle = hexToRgba(CREAM, 0.45);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(viewportX + 76 * fs, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
+      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
       ctx.stroke();
     }
 
-    // Palette Preview
-    const cfg = levelConfig(i);
+    // Palette Preview (shifted right to make room)
     const dotR = 2 * fs;
     const gap = dotR * 2.4;
     const totalDots = cfg.colors;
-    const startDotX = viewportX + 115 * fs;
+    const startDotX = viewportX + 145 * fs;
     for (let c = 0; c < totalDots; c++) {
       const key = COLOR_KEYS[c];
       const cx = startDotX + c * gap;
@@ -751,6 +761,17 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
       ctx.beginPath();
       ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
       ctx.fill();
+    }
+
+    // Text details (e.g. Insects · Timed) if viewport width allows it
+    if (viewportW > 280 * fs) {
+      const detailPx = Math.round(10 * fs);
+      ctx.font = `400 ${detailPx}px ${SANS}`;
+      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
+      ctx.textAlign = 'left';
+      const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
+      const modeName = cfg.isSpeedMode ? 'Timed' : 'Classic';
+      ctx.fillText(`${packName} · ${modeName}`, viewportX + 190 * fs, rowY + rowHeight / 2);
     }
 
     // Best Score
@@ -939,6 +960,92 @@ function drawCompactStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+function drawMiniModeIcon(ctx, isSpeedMode, cx, cy, fs, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  if (isSpeedMode) {
+    // Lightning bolt
+    ctx.beginPath();
+    ctx.moveTo(cx + 1 * fs, cy - 5 * fs);
+    ctx.lineTo(cx - 3 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 1 * fs, cy + 0 * fs);
+    ctx.lineTo(cx - 2 * fs, cy + 5 * fs);
+    ctx.lineTo(cx + 3 * fs, cy - 0 * fs);
+    ctx.lineTo(cx + 1 * fs, cy - 0 * fs);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    // Crescent Moon
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.fill();
+    // crescent shadow
+    ctx.fillStyle = PANEL_BG;
+    ctx.beginPath();
+    ctx.arc(cx + 1.8 * fs, cy - 0.4 * fs, 3.6 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawMiniStencilIcon(ctx, stencilPack, cx, cy, fs, color) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1 * fs;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (stencilPack === 'plain') {
+    // Circle outline
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (stencilPack === 'bugs') {
+    // Bug outline
+    ctx.beginPath();
+    // Body line
+    ctx.moveTo(cx, cy - 3.8 * fs);
+    ctx.lineTo(cx, cy + 3.8 * fs);
+    // Legs
+    ctx.moveTo(cx - 3.2 * fs, cy - 1 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy - 1 * fs);
+    ctx.moveTo(cx - 3.2 * fs, cy + 1.5 * fs);
+    ctx.lineTo(cx + 3.2 * fs, cy + 1.5 * fs);
+    ctx.stroke();
+    // Head dot
+    ctx.beginPath();
+    ctx.arc(cx, cy - 3.8 * fs, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'flowers') {
+    // Simple flower
+    for (let a = 0; a < Math.PI * 2; a += (Math.PI * 2) / 5) {
+      const px = cx + Math.cos(a) * 2.2 * fs;
+      const py = cy + Math.sin(a) * 2.2 * fs;
+      ctx.beginPath();
+      ctx.arc(px, py, 1 * fs, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, 0.9 * fs, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (stencilPack === 'dragons') {
+    // Wave/Snake
+    ctx.beginPath();
+    ctx.moveTo(cx - 2.8 * fs, cy - 2.8 * fs);
+    ctx.bezierCurveTo(cx + 2.8 * fs, cy - 2.8 * fs, cx - 2.8 * fs, cy + 2.8 * fs, cx + 2.8 * fs, cy + 2.8 * fs);
+    ctx.stroke();
+  } else if (stencilPack === 'random') {
+    // 2x2 dot grid
+    ctx.fillRect(cx - 2.2 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx - 2.2 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
+    ctx.fillRect(cx + 0.4 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
+  }
+  ctx.restore();
+}
 
 function roundedRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);

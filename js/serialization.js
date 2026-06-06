@@ -53,6 +53,7 @@ export function serializeGame(g) {
     isSpeedMode: g.isSpeedMode,
     timeUntilDescent: g.timeUntilDescent,
     descentTimeLimit: g.descentTimeLimit,
+    showModeIntroCard: g.showModeIntroCard,
     shots: (g.shots || []).map(s => ({
       x: s.x,
       y: s.y,
@@ -242,6 +243,7 @@ export function restoreGame(saved) {
   const isSpeedMode = !!migrated.isSpeedMode;
   const descentTimeLimit = migrated.descentTimeLimit ?? (config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR);
   const timeUntilDescent = migrated.timeUntilDescent ?? descentTimeLimit;
+  const showModeIntroCard = !!migrated.showModeIntroCard;
   const shots = (migrated.shots || []).map(s => ({
     x: s.x,
     y: s.y,
@@ -305,6 +307,7 @@ export function restoreGame(saved) {
     descentTimeLimit,
     timeUntilDescent,
     fireCooldown: 0,
+    showModeIntroCard,
   };
 }
 

@@ -385,3 +385,108 @@ export function drawEndOverlay(ctx, layout, game, settings) {
   ctx.fillText(cta, cx, y);
   ctx.restore();
 }
+
+export function drawModeIntroCard(ctx, layout, game, settings) {
+  const { viewW, viewH } = layout;
+  const fs = fontScaleOf(settings);
+
+  ctx.save();
+  // Translucent dark backdrop
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.88)';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  // Layout calculations
+  const cardW = Math.min(340 * fs, viewW - 32);
+  const cardH = Math.min(330 * fs, viewH - 32);
+  const cardX = (viewW - cardW) / 2;
+  const cardY = (viewH - cardH) / 2;
+
+  // Draw card background
+  ctx.fillStyle = 'rgba(20, 26, 50, 0.96)'; // Dark indigo card body
+  roundedRectPath(ctx, cardX, cardY, cardW, cardH, 12);
+  ctx.fill();
+
+  // Card border
+  ctx.strokeStyle = '#E8B770'; // Gold border
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+
+  const cx = viewW / 2;
+  let y = cardY + 28 * fs;
+
+  // Title: "TIMED MODE"
+  const titlePx = Math.max(18, Math.round(18 * fs));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#F5E9C9'; // Cream
+  ctx.font = `600 ${titlePx}px ${SERIF}`;
+  ctx.fillText('Timed Mode Introduced', cx, y);
+  y += titlePx + 16 * fs;
+
+  // Large glowing lightning bolt icon!
+  const iconSize = 32 * fs;
+  ctx.save();
+  ctx.translate(cx, y + iconSize / 2);
+  // Add a soft glow behind lightning bolt
+  if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+    ctx.shadowColor = '#E8B770';
+    ctx.shadowBlur = 15;
+  }
+  ctx.fillStyle = '#E8B770';
+  ctx.beginPath();
+  ctx.moveTo(1 * fs, -15 * fs);
+  ctx.lineTo(-7 * fs, 0 * fs);
+  ctx.lineTo(-2 * fs, 0 * fs);
+  ctx.lineTo(-4 * fs, 15 * fs);
+  ctx.lineTo(6 * fs, 0 * fs);
+  ctx.lineTo(1 * fs, 0 * fs);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  y += iconSize + 22 * fs;
+
+  // Explanation text
+  const linePx = Math.max(12, Math.round(12.5 * fs));
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.85)';
+  ctx.font = `400 ${linePx}px ${SERIF}`;
+  
+  const lines = [
+    "The river flows faster now.",
+    "Under the speed of the rising moon, the trellis",
+    "descends automatically over time instead",
+    "of counting your shots.",
+    "",
+    "Aim quickly and clear the lanterns",
+    "before they touch the water!"
+  ];
+
+  for (const line of lines) {
+    if (line === "") {
+      y += linePx * 0.6;
+    } else {
+      ctx.fillText(line, cx, y);
+      y += linePx * 1.35;
+    }
+  }
+
+  y = cardY + cardH - 32 * fs;
+  
+  // CTA
+  const ctaPx = Math.max(11, Math.round(11 * fs));
+  ctx.fillStyle = '#E8B770'; // Gold
+  ctx.font = `italic 500 ${ctaPx}px ${SERIF}`;
+  ctx.fillText('tap anywhere to begin', cx, y);
+
+  ctx.restore();
+}
+
+function roundedRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y,     x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x,     y + h, rr);
+  ctx.arcTo(x,     y + h, x,     y,     rr);
+  ctx.arcTo(x,     y,     x + w, y,     rr);
+  ctx.closePath();
+}
