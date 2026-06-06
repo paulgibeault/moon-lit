@@ -127,3 +127,56 @@ export function addLantern(board, x, y, color, layout, designId = null) {
   board.lanterns.push(l);
   return l;
 }
+
+export function populatePuzzle(board, layout, pattern) {
+  const r = layout.size;
+  const rowH = SQRT3 * r;
+  
+  const charToKey = {
+    'R': 'red',
+    'O': 'orange',
+    'Y': 'yellow',
+    'G': 'green',
+    'B': 'blue',
+    'P': 'paper'
+  };
+
+  for (let row = 0; row < pattern.length; row++) {
+    const odd = row & 1;
+    const rowStr = pattern[row];
+    const tokens = rowStr.includes(' ') ? rowStr.split(/\s+/) : rowStr.split('');
+    const count = Math.min(layout.cols - odd, tokens.length);
+    
+    for (let i = 0; i < count; i++) {
+      const char = tokens[i].toUpperCase();
+      if (char === '.' || char === ' ') continue;
+      
+      let color = charToKey[char];
+      let isTarget = false;
+      let isBlocker = false;
+      let designId = null;
+
+      if (char === 'T') {
+        color = 'yellow';
+        isTarget = true;
+        designId = 'dragons_dragon_head';
+      } else if (char === 'X') {
+        color = 'paper';
+        isBlocker = true;
+        designId = 'flowers_bamboo';
+      }
+
+      if (!color) continue;
+
+      const nx = i * 2 + odd;
+      const ny = row * SQRT3;
+      const x = layout.originX + nx * r;
+      const y = layout.trellisY + r + row * rowH;
+
+      board.lanterns.push({
+        x, y, nx, ny, color, designId, isTarget, isBlocker
+      });
+    }
+  }
+}
+

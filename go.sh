@@ -74,3 +74,15 @@ echo "$PORT" > "$PORT_FILE"
 echo "Server running (PID $NEW_PID)"
 echo "  URL: http://localhost:$PORT"
 echo "  Log: $LOG_FILE"
+
+# Open the URL in a fresh Safari Private window. Safari has no CLI flag for
+# private browsing, so we drive it via AppleScript: Cmd+Shift+N spawns a new
+# private window, then we point its tab at our URL.
+URL="http://localhost:$PORT"
+osascript <<APPLESCRIPT
+tell application "Safari" to activate
+delay 0.3
+tell application "System Events" to keystroke "n" using {command down, shift down}
+delay 0.5
+tell application "Safari" to set URL of current tab of front window to "$URL"
+APPLESCRIPT

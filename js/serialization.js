@@ -14,6 +14,7 @@ import {
 import { mulberry32FromState } from './prng.js';
 import { createBoard } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
+import { puzzleConfig } from './puzzles.js';
 
 function getActivePackId() {
   if (typeof Arcade !== 'undefined' && Arcade.state) {
@@ -36,6 +37,11 @@ export function serializeGame(g) {
     score: g.score,
     aimAngle: g.aimAngle,
     phase: g.phase,
+    isPuzzleMode: g.isPuzzleMode,
+    puzzleId: g.puzzleId,
+    puzzleQueueIndex: g.puzzleQueueIndex,
+    puzzleGoalType: g.puzzleGoalType,
+    puzzleDescentType: g.puzzleDescentType,
     queue: {
       current:   g.queue.current,
       currentDesign: g.queue.currentDesign,
@@ -68,7 +74,7 @@ export function serializeGame(g) {
     })),
     board: {
       descentCount: g.board.descentCount,
-      lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId })),
+      lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker })),
     },
     rngState: g.rng.getState(),
   };
@@ -183,9 +189,30 @@ export function restoreGame(saved) {
 
   if (!migrated || migrated.version !== SAVE_VERSION) return null;
 
+  const isPuzzleMode = !!migrated.isPuzzleMode;
+  const puzzleId = migrated.puzzleId || 1;
   const level = migrated.level ?? 1;
-  const config = levelConfig(level);
-  const colors = COLOR_KEYS.slice(0, config.colors);
+  
+  let config = null;
+  let colors = null;
+  let descentShots = 0;
+  let descentTimeLimit = 0;
+  let puzzleGoalType = 'clear-all';
+  let puzzleDescentType = 'none';
+
+  if (isPuzzleMode) {
+    const pz = puzzleConfig(puzzleId);
+    colors = pz.colors;
+    puzzleGoalType = migrated.puzzleGoalType || pz.goalType || 'clear-all';
+    puzzleDescentType = migrated.puzzleDescentType || pz.descentType || 'none';
+    descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
+    descentTimeLimit = puzzleDescentType === 'time' ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
+  } else {
+    config = levelConfig(level);
+    colors = COLOR_KEYS.slice(0, config.colors);
+    descentShots = config.descentShots;
+    descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  }
   
   const rngState = migrated.rngState !== undefined ? migrated.rngState : 0x4D6F6F6E;
   const rng = mulberry32FromState(rngState >>> 0);
@@ -209,6 +236,8 @@ export function restoreGame(saved) {
           ny: l.ny ?? 0,
           color: mappedColor,
           designId,
+          isTarget: !!l.isTarget,
+          isBlocker: !!l.isBlocker,
           x: 0,
           y: 0
         });
@@ -241,7 +270,7 @@ export function restoreGame(saved) {
   }
 
   const isSpeedMode = !!migrated.isSpeedMode;
-  const descentTimeLimit = migrated.descentTimeLimit ?? (config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR);
+  descentTimeLimit = migrated.descentTimeLimit ?? descentTimeLimit;
   const timeUntilDescent = migrated.timeUntilDescent ?? descentTimeLimit;
   const showModeIntroCard = !!migrated.showModeIntroCard;
   const shots = (migrated.shots || []).map(s => ({
@@ -295,11 +324,11 @@ export function restoreGame(saved) {
     combo: migrated.combo | 0,
     bestCombo: migrated.bestCombo | 0,
     moonPulse: { t: 0, life: 0 },
-    shotsUntilDescent: migrated.shotsUntilDescent !== undefined ? (migrated.shotsUntilDescent | 0) : config.descentShots,
+    shotsUntilDescent: migrated.shotsUntilDescent !== undefined ? (migrated.shotsUntilDescent | 0) : descentShots,
     pendingDescent: !!migrated.pendingDescent,
     level,
     colors,
-    descentShots: config.descentShots,
+    descentShots,
     isSpeedMode,
     projectileSpeed: isSpeedMode ? SPEED_MODE_PROJECTILE_SPEED : PROJECTILE_SPEED,
     descentDriftSpeed: isSpeedMode ? SPEED_MODE_DESCENT_DRIFT_SPEED : DESCENT_DRIFT_SPEED,
@@ -308,6 +337,13 @@ export function restoreGame(saved) {
     timeUntilDescent,
     fireCooldown: 0,
     showModeIntroCard,
+    
+    // Puzzle Mode properties
+    isPuzzleMode,
+    puzzleId,
+    puzzleQueueIndex: migrated.puzzleQueueIndex !== undefined ? migrated.puzzleQueueIndex : 3,
+    puzzleGoalType,
+    puzzleDescentType,
   };
 }
 

@@ -1,5 +1,6 @@
-import { GAME_ID, SYSTEM_OVERRIDES, levelConfig } from './constants.js';
+import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, ENV_PARAMS, MOON_OVERRIDE } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
+import { puzzleConfig } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
@@ -151,10 +152,36 @@ function maybePersistOnPhaseChange() {
   }
 }
 
+function resetEnvAndMoonOverrides() {
+  ENV_PARAMS.windSpeed = 0.0;
+  ENV_PARAMS.windFrequency = 1.0;
+  ENV_PARAMS.glowIntensity = 1.0;
+  ENV_PARAMS.rippleSpeedScale = 1.0;
+  MOON_OVERRIDE.phase = -1;
+  MOON_OVERRIDE.position = -1;
+}
+
 function startGame(g) {
   game = g;
   lastPhase = null;
   if (game.board && layout) syncLanternPixels(game.board, layout);
+
+  // Apply look & feel parameters
+  resetEnvAndMoonOverrides();
+  if (game.isPuzzleMode) {
+    const pz = puzzleConfig(game.puzzleId);
+    if (pz.env) {
+      if (pz.env.windSpeed !== undefined) ENV_PARAMS.windSpeed = pz.env.windSpeed;
+      if (pz.env.windFrequency !== undefined) ENV_PARAMS.windFrequency = pz.env.windFrequency;
+      if (pz.env.glowIntensity !== undefined) ENV_PARAMS.glowIntensity = pz.env.glowIntensity;
+      if (pz.env.rippleSpeedScale !== undefined) ENV_PARAMS.rippleSpeedScale = pz.env.rippleSpeedScale;
+    }
+    if (pz.moon) {
+      if (pz.moon.phase !== undefined) MOON_OVERRIDE.phase = pz.moon.phase;
+      if (pz.moon.position !== undefined) MOON_OVERRIDE.position = pz.moon.position;
+    }
+  }
+
   saveGameState(game);
   lastPhase = game.phase;
 }
@@ -257,13 +284,35 @@ async function loadAndStartLevel(level, keepCurrentSettings = false) {
   forceRequestFrame();
 }
 
+async function loadAndStartPuzzle(puzzleId) {
+  const id = Math.max(1, Math.min(50, puzzleId | 0));
+  const cfg = puzzleConfig(id);
+  if (cfg.stencilPack) {
+    await changeStencilPack(cfg.stencilPack);
+  } else {
+    await loadLanterns();
+  }
+  startGame(createGame({ layout, isPuzzleMode: true, puzzleId: id }));
+  resetHudState(0, bestScore);
+  refreshMenuData();
+  forceRequestFrame();
+}
+
 function nextLevel() {
   recordOutcome(game, /*won=*/true);
-  loadAndStartLevel(game.level + 1);
+  if (game.isPuzzleMode) {
+    loadAndStartPuzzle(game.puzzleId + 1);
+  } else {
+    loadAndStartLevel(game.level + 1);
+  }
 }
 function restartLevel() {
   recordOutcome(game, /*won=*/false);
-  loadAndStartLevel(game.level);
+  if (game.isPuzzleMode) {
+    loadAndStartPuzzle(game.puzzleId);
+  } else {
+    loadAndStartLevel(game.level);
+  }
 }
 // Menu-driven stage switch. Treated as a deliberate revisit rather than a
 // run abandonment, so we don't record an outcome against the current game —
@@ -277,38 +326,66 @@ function startLevel(level) {
 function recordOutcome(g, won) {
   if (!g || g.score <= 0) return;
   const score = g.score | 0;
-  Arcade.scores.add(SCORES_CATEGORY, {
-    score,
-    meta: { level: g.level, won, combo: g.bestCombo | 0 },
-  });
-  // Charge the wall time accumulated since the last outcome to play time.
-  // sessionTimer auto-pauses on onSuspend, so hidden iframe time isn't billed.
-  const nowMs = sessionTimer.elapsedMs();
-  const playDelta = Math.max(0, nowMs - lastReportedMs);
-  lastReportedMs = nowMs;
-  Arcade.stats.update(STATS_KEY, (prev) => {
-    const s = { ...STATS_DEFAULTS, ...(prev || {}) };
-    s.played       += 1;
-    if (won) s.won += 1;
-    s.bestLevel    = Math.max(s.bestLevel, g.level + (won ? 1 : 0));
-    s.bestScore    = Math.max(s.bestScore, score);
-    s.bestCombo    = Math.max(s.bestCombo, g.bestCombo | 0);
-    s.totalPops   += g.counts.popped  | 0;
-    s.totalDrops  += g.counts.dropped | 0;
-    s.totalPlayMs += playDelta | 0;
-    // Per-stage rollup. cleared sticks once set (replaying a cleared stage
-    // never unclears it); bestScore is the high water-mark for that stage.
-    const lvKey = String(g.level | 0);
-    const levels = { ...(s.levels || {}) };
-    const cur = levels[lvKey] || { bestScore: 0, cleared: false, plays: 0 };
-    levels[lvKey] = {
-      bestScore: Math.max(cur.bestScore | 0, score),
-      cleared:   cur.cleared || won,
-      plays:     (cur.plays | 0) + 1,
-    };
-    s.levels = levels;
-    return s;
-  });
+
+  if (g.isPuzzleMode) {
+    Arcade.scores.add(SCORES_CATEGORY, {
+      score,
+      meta: { puzzleId: g.puzzleId, won, combo: g.bestCombo | 0, isPuzzleMode: true },
+    });
+    const nowMs = sessionTimer.elapsedMs();
+    const playDelta = Math.max(0, nowMs - lastReportedMs);
+    lastReportedMs = nowMs;
+    Arcade.stats.update(STATS_KEY, (prev) => {
+      const s = { ...STATS_DEFAULTS, ...(prev || {}) };
+      s.totalPlayMs += playDelta | 0;
+      s.totalPops   += g.counts.popped  | 0;
+      s.totalDrops  += g.counts.dropped | 0;
+
+      if (!s.puzzles) s.puzzles = {};
+      const pzKey = String(g.puzzleId);
+      const cur = s.puzzles[pzKey] || { bestScore: 0, cleared: false, plays: 0 };
+      s.puzzles[pzKey] = {
+        bestScore: Math.max(cur.bestScore | 0, score),
+        cleared:   cur.cleared || won,
+        plays:     (cur.plays | 0) + 1,
+      };
+      return s;
+    });
+  } else {
+    Arcade.scores.add(SCORES_CATEGORY, {
+      score,
+      meta: { level: g.level, won, combo: g.bestCombo | 0 },
+    });
+    // Charge the wall time accumulated since the last outcome to play time.
+    // sessionTimer auto-pauses on onSuspend, so hidden iframe time isn't billed.
+    const nowMs = sessionTimer.elapsedMs();
+    const playDelta = Math.max(0, nowMs - lastReportedMs);
+    lastReportedMs = nowMs;
+    Arcade.stats.update(STATS_KEY, (prev) => {
+      const s = { ...STATS_DEFAULTS, ...(prev || {}) };
+      s.played       += 1;
+      if (won) s.won += 1;
+      s.bestLevel    = Math.max(s.bestLevel, g.level + (won ? 1 : 0));
+      s.bestScore    = Math.max(s.bestScore, score);
+      s.bestCombo    = Math.max(s.bestCombo, g.bestCombo | 0);
+      s.totalPops   += g.counts.popped  | 0;
+      s.totalDrops  += g.counts.dropped | 0;
+      s.totalPlayMs += playDelta | 0;
+      // Per-stage rollup. cleared sticks once set (replaying a cleared stage
+      // never unclears it); bestScore is the high water-mark for that stage.
+      const lvKey = String(g.level | 0);
+      const levels = { ...(s.levels || {}) };
+      const cur = levels[lvKey] || { bestScore: 0, cleared: false, plays: 0 };
+      levels[lvKey] = {
+        bestScore: Math.max(cur.bestScore | 0, score),
+        cleared:   cur.cleared || won,
+        plays:     (cur.plays | 0) + 1,
+      };
+      s.levels = levels;
+      return s;
+    });
+  }
+
   const wasBest = commitBestIfHigher(score);
   if (wasBest) {
     bestScore = score;
@@ -317,12 +394,10 @@ function recordOutcome(g, won) {
   }
 }
 
-// Anything left to animate? When this returns false the rAF loop is allowed
-// to stop scheduling itself. requestFrame() is the inverse — anything that
-// changes view-state has to call it to wake the loop back up.
 function isQuiescent() {
   if (!game || !layout) return false;
   if (game.showModeIntroCard) return false;
+  if (game.isPuzzleMode && game.queue.current === null && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER) return false;
   if (isMenuPanelOpen()) {
     if (!isMenuSettled()) return false;
     return true;
@@ -356,7 +431,7 @@ function frame(now) {
     game.phase === PHASE.SETTLING ||
     game.phase === PHASE.DROWNING;
   const shotsInFlight = game.shots && game.shots.length > 0;
-  const needsStep = phaseAnimating || shotsInFlight || hasActiveEffects(game) || (game.isSpeedMode && game.phase === PHASE.AIMING);
+  const needsStep = phaseAnimating || shotsInFlight || hasActiveEffects(game) || (game.isSpeedMode && game.phase === PHASE.AIMING) || (game.isPuzzleMode && game.queue.current === null && game.phase === PHASE.AIMING);
   if (!menuOpen && needsStep) {
     step(game, dt, layout);
   }
@@ -497,20 +572,33 @@ attachInput(canvas, () => game, () => layout, {
   onPrevClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    loadAndStartLevel(game.level - 1);
+    if (game.isPuzzleMode) {
+      loadAndStartPuzzle(game.puzzleId - 1);
+    } else {
+      loadAndStartLevel(game.level - 1);
+    }
   },
   onRestartClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    loadAndStartLevel(game.level);
+    if (game.isPuzzleMode) {
+      loadAndStartPuzzle(game.puzzleId);
+    } else {
+      loadAndStartLevel(game.level);
+    }
   },
   onNextClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    loadAndStartLevel(game.level + 1);
+    if (game.isPuzzleMode) {
+      loadAndStartPuzzle(game.puzzleId + 1);
+    } else {
+      loadAndStartLevel(game.level + 1);
+    }
   },
   onInteract: bumpInteraction,
   onStartLevel: startLevel,
+  onStartPuzzle: loadAndStartPuzzle,
   onToggleSpeed: (active) => {
     Arcade.ui.toast(active ? 'speed mode active — lightning!' : 'speed mode disabled', { kind: 'info' });
     restartLevel();

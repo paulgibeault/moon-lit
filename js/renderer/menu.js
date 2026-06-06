@@ -14,6 +14,7 @@ import {
 } from './style.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
 import { changeStencilPack } from '../assets.js';
+import { puzzleConfig } from '../puzzles.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -24,7 +25,7 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'options'
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options'
   fade: 0,             // 0..1
   fadeTarget: 0,
   hits: [],            // [{x, y, w, h, action, value}]
@@ -148,6 +149,7 @@ export function handleMenuPointerUp(x, y, actions) {
     switch (h.action) {
       case 'show-root':    setMenuPanel('root'); return true;
       case 'show-stages':  setMenuPanel('stages'); return true;
+      case 'show-puzzles': setMenuPanel('puzzles'); return true;
       case 'show-options': setMenuPanel('options'); return true;
       case 'show-records': setMenuPanel('records'); return true;
       case 'pick-stencil': {
@@ -166,6 +168,7 @@ export function handleMenuPointerUp(x, y, actions) {
       }
       case 'close':        closeMenu(); actions?.onResume?.(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
+      case 'pick-puzzle':  closeMenu(); actions?.onStartPuzzle?.(h.value); return true;
     }
   }
 
@@ -201,6 +204,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   if (menuState.panel === 'root')         drawRootPanel(ctx, layout, settings);
   else if (menuState.panel === 'records') drawRecordsPanel(ctx, layout, settings, stats, scores);
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
+  else if (menuState.panel === 'puzzles') drawPuzzlesPanel(ctx, layout, game, settings, stats);
   else if (menuState.panel === 'options') drawOptionsPanel(ctx, layout, settings);
   ctx.restore();
 }
@@ -362,15 +366,16 @@ function drawDashedRule(ctx, x, y, w) {
 
 function drawRootPanel(ctx, layout, settings) {
   const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 320 * fs, 315 * fs);
+  const rect = cardRect(layout, 320 * fs, 360 * fs);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
   const startY = drawTitleBar(ctx, rect, 'Moon Lit', { fs });
 
   const padX = 24;
-  const rowH = Math.round(48 * fs);
+  const rowH = Math.round(44 * fs);
   const items = [
     { label: 'Stages',      sub: 'pick or revisit a stage',   action: 'show-stages',   glyph: 'stages' },
+    { label: 'Puzzles',     sub: '50 brain-teaser challenges', action: 'show-puzzles',  glyph: 'puzzles' },
     { label: 'Options',     sub: 'configure art and mode',    action: 'show-options',  glyph: 'stencils' },
     { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' },
     { label: 'Continue',    sub: 'back to the river',         action: 'close',         glyph: 'moon' },
@@ -437,6 +442,21 @@ function drawGlyph(ctx, kind, cx, cy) {
           ctx.stroke();
         }
       }
+      break;
+    }
+    case 'puzzles': {
+      // Draw a cute puzzle grid representation
+      ctx.strokeStyle = hexToRgba(GOLD, 0.9);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.rect(cx - 5, cy - 5, 10, 10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, cy);
+      ctx.lineTo(cx + 5, cy);
+      ctx.moveTo(cx, cy - 5);
+      ctx.lineTo(cx, cy + 5);
+      ctx.stroke();
       break;
     }
     case 'stencils': {
@@ -807,6 +827,207 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
 
     ctx.save();
     ctx.fillStyle = 'rgba(232, 183, 112, 0.05)';
+    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
+    ctx.fill();
+
+    ctx.fillStyle = hexToRgba(GOLD, 0.7);
+    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Choose a puzzle', { showBack: true, fs });
+
+  const padX = 20;
+  
+  // Determine how many puzzles are unlocked
+  let maxCleared = 0;
+  if (stats && stats.puzzles) {
+    for (let i = 1; i <= 50; i++) {
+      if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
+        maxCleared = Math.max(maxCleared, i);
+      }
+    }
+  }
+  const unlockedCount = Math.min(50, maxCleared + 1);
+
+  const subPx = Math.max(11, Math.round(11 * fs));
+  ctx.save();
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  const puzzleText = game.isPuzzleMode ? `currently on puzzle ${game.puzzleId}` : "select a puzzle to play";
+  ctx.fillText(
+    `${puzzleText} · ${maxCleared} cleared`,
+    rect.x + padX, startY
+  );
+  ctx.restore();
+
+  const viewportX = rect.x + padX;
+  const viewportY = startY + subPx + 12;
+  const viewportW = rect.w - padX * 2;
+  const viewportH = rect.y + rect.h - viewportY - 16;
+
+  const rowHeight = Math.round(44 * fs);
+  const totalHeight = 50 * rowHeight;
+
+  menuState.viewportY = viewportY;
+  menuState.viewportH = viewportH;
+  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
+  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+
+  // Content Area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
+  ctx.clip();
+
+  for (let i = 1; i <= 50; i++) {
+    const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
+
+    // Viewport cull
+    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) {
+      continue;
+    }
+
+    const cfg = puzzleConfig(i);
+    const isCurrent = game.isPuzzleMode && (i === game.puzzleId);
+    const isLocked = i > unlockedCount;
+    const pzData = (stats && stats.puzzles && stats.puzzles[String(i)]) || null;
+    const cleared = !!(pzData && pzData.cleared);
+    const played = !!(pzData && pzData.plays);
+    const bestScore = pzData ? pzData.bestScore | 0 : 0;
+
+    // Draw background
+    ctx.save();
+    const baseAlpha = isCurrent ? 0.08 : cleared ? 0.05 : played ? 0.03 : isLocked ? 0.015 : 0.02;
+    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.fill();
+
+    // Border
+    if (isCurrent) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.4;
+    } else if (cleared) {
+      ctx.strokeStyle = hexToRgba(GOLD, 0.4);
+      ctx.lineWidth = 1;
+    } else if (isLocked) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.06);
+      ctx.lineWidth = 1;
+    } else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.12);
+      ctx.lineWidth = 1;
+    }
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.stroke();
+
+    // Label
+    const labelPx = Math.round(13 * fs);
+    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.25) : CREAM;
+    ctx.font = `600 ${labelPx}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    
+    let displayName = `${i}. ${cfg.name}`;
+    ctx.fillText(displayName, viewportX + 10, rowY + rowHeight / 2);
+    const labelW = ctx.measureText(displayName).width;
+
+    // Mini icons next to name
+    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
+    const modeCx = viewportX + 10 + labelW + 10 * fs;
+    const stencilCx = modeCx + 14 * fs;
+    drawMiniModeIcon(ctx, cfg.descentType === 'time', modeCx, rowY + rowHeight / 2, fs, iconColor);
+    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
+
+    // Cleared Star or Lock
+    const lockX = viewportX + 130 * fs;
+    if (isLocked) {
+      const lockY = rowY + rowHeight / 2;
+      ctx.save();
+      ctx.strokeStyle = hexToRgba(CREAM, 0.25);
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(lockX, lockY - 2.5 * fs, 2.5 * fs, Math.PI, 0);
+      ctx.stroke();
+      ctx.fillStyle = hexToRgba(CREAM, 0.2);
+      ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
+      ctx.restore();
+    } else if (cleared) {
+      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
+    } else if (played) {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.45);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Colors preview dots
+    const dotR = 2 * fs;
+    const gap = dotR * 2.4;
+    const totalDots = cfg.colors.length;
+    const startDotX = viewportX + 155 * fs;
+    for (let c = 0; c < totalDots; c++) {
+      const key = cfg.colors[c];
+      const cx = startDotX + c * gap;
+      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.15 : 0.55);
+      ctx.beginPath();
+      ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Detail text: e.g. "Target Goal" vs "Clear All"
+    if (viewportW > 280 * fs) {
+      const detailPx = Math.round(9 * fs);
+      ctx.font = `400 ${detailPx}px ${SANS}`;
+      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
+      ctx.textAlign = 'left';
+      const goalText = cfg.goalType === 'clear-targets' ? "Target" : "Clear All";
+      ctx.fillText(goalText, viewportX + 205 * fs, rowY + rowHeight / 2);
+    }
+
+    // Best Score / Completed
+    const scorePx = Math.round(10 * fs);
+    ctx.font = `500 ${scorePx}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.15 : played ? 0.85 : 0.3);
+    ctx.textAlign = 'right';
+    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 18 : 12);
+    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, rowY + rowHeight / 2);
+
+    ctx.restore();
+
+    // Register hit target
+    if (!isLocked) {
+      menuState.hits.push({
+        x: viewportX,
+        y: rowY,
+        w: viewportW,
+        h: rowHeight,
+        action: 'pick-puzzle',
+        value: i
+      });
+    }
+  }
+  ctx.restore();
+
+  // Scrollbar
+  if (menuState.maxScrollY > 0) {
+    ctx.save();
+    const sbW = 3;
+    const sbX = viewportX + viewportW - sbW;
+    const trackH = viewportH;
+    const thumbH = Math.max(16, trackH * (viewportH / totalHeight));
+    const thumbY = viewportY + (trackH - thumbH) * (menuState.scrollY / menuState.maxScrollY);
+
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
     roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
     ctx.fill();
 

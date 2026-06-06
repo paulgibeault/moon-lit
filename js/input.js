@@ -18,7 +18,7 @@ const UI_SAFE_TOP_PX = 56;
 // cached and only refreshed on window resize / scroll.
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const {
-    onWinClick, onLossClick, onInteract, onStartLevel, onMenuChange, onToggleSpeed,
+    onWinClick, onLossClick, onInteract, onStartLevel, onStartPuzzle, onMenuChange, onToggleSpeed,
     onPrevClick, onRestartClick, onNextClick,
   } = callbacks;
   
@@ -31,6 +31,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
 
   const menuActions = {
     onStartLevel: (lv) => onStartLevel?.(lv),
+    onStartPuzzle: (pz) => onStartPuzzle?.(pz),
     onResume:     () => {},
     onToggleSpeed: (active) => onToggleSpeed?.(active),
     onInteract:   () => { bump(); fireMenuChange(); },

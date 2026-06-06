@@ -8,10 +8,12 @@ import {
   SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR,
   SPEED_MODE_FIRE_COOLDOWN,
+  ENV_PARAMS, MOON_OVERRIDE,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
-import { createBoard, populateInitial, descend, isCleared, addLantern } from './board.js';
+import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
+import { puzzleConfig } from './puzzles.js';
 
 function getActivePackId() {
   if (typeof Arcade !== 'undefined' && Arcade.state) {
@@ -58,24 +60,72 @@ const DROWN_BUBBLE_MAX_INT  = 0.5;
 const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
 const DROWN_END_PAUSE_SEC   = 0.3;
 
-export function createGame({ seed, layout, level = 1 } = {}) {
-  const config = levelConfig(level);
-  const colors = COLOR_KEYS.slice(0, config.colors);
-  // Each level gets a distinct deterministic seed unless one is passed in.
-  const effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
-  const rng = mulberry32(effectiveSeed);
-  const board = createBoard();
-  if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
-  const activePackId = getActivePackId();
-  const queueCurrent = pick(rng, colors);
-  const queueNext = pick(rng, colors);
-  const queueAfterNext = pick(rng, colors);
-  const currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
-  const nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
-  const afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1 } = {}) {
+  let config = null;
+  let colors = null;
+  let effectiveSeed = 0;
+  let rng = null;
+  let board = createBoard();
+  
+  let queueCurrent = null;
+  let queueNext = null;
+  let queueAfterNext = null;
+  let puzzleQueueIndex = 3;
+  let puzzleGoalType = 'clear-all';
+  let puzzleDescentType = 'none';
+  let isSpeedMode = false;
+  let descentTimeLimit = 0;
+  let descentShots = 0;
 
-  const isSpeedMode = !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('speedMode'));
-  const descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  if (isPuzzleMode) {
+    const pz = puzzleConfig(puzzleId);
+    colors = pz.colors;
+    effectiveSeed = (seed ?? (M3_DEFAULT_SEED + puzzleId * 997)) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    if (layout) populatePuzzle(board, layout, pz.board);
+    
+    queueCurrent = pz.queue[0] || null;
+    queueNext = pz.queue[1] || null;
+    queueAfterNext = pz.queue[2] || null;
+    puzzleQueueIndex = Math.min(3, pz.queue.length);
+    puzzleGoalType = pz.goalType || 'clear-all';
+    puzzleDescentType = pz.descentType || 'none';
+    
+    isSpeedMode = puzzleDescentType === 'time';
+    descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
+    descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
+
+    // Apply look & feel parameters (env and moon overrides)
+    if (pz.env) {
+      if (pz.env.windSpeed !== undefined) ENV_PARAMS.windSpeed = pz.env.windSpeed;
+      if (pz.env.windFrequency !== undefined) ENV_PARAMS.windFrequency = pz.env.windFrequency;
+      if (pz.env.glowIntensity !== undefined) ENV_PARAMS.glowIntensity = pz.env.glowIntensity;
+      if (pz.env.rippleSpeedScale !== undefined) ENV_PARAMS.rippleSpeedScale = pz.env.rippleSpeedScale;
+    }
+    if (pz.moon) {
+      if (pz.moon.phase !== undefined) MOON_OVERRIDE.phase = pz.moon.phase;
+      if (pz.moon.position !== undefined) MOON_OVERRIDE.position = pz.moon.position;
+    }
+  } else {
+    config = levelConfig(level);
+    colors = COLOR_KEYS.slice(0, config.colors);
+    effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
+    
+    queueCurrent = pick(rng, colors);
+    queueNext = pick(rng, colors);
+    queueAfterNext = pick(rng, colors);
+    
+    isSpeedMode = !!(typeof Arcade !== 'undefined' && Arcade.state && Arcade.state.get('speedMode'));
+    descentShots = config.descentShots;
+    descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  }
+
+  const activePackId = getActivePackId();
+  const currentDesign = (activePackId === 'random' && queueCurrent) ? getRandomDesignForColor(queueCurrent, rng) : null;
+  const nextDesign = (activePackId === 'random' && queueNext) ? getRandomDesignForColor(queueNext, rng) : null;
+  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? getRandomDesignForColor(queueAfterNext, rng) : null;
 
   return {
     rng,
@@ -109,11 +159,11 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     combo: 0,
     bestCombo: 0,
     moonPulse: { t: 0, life: 0 },
-    shotsUntilDescent: config.descentShots,
+    shotsUntilDescent: descentShots,
     pendingDescent: false,
     level,
     colors,
-    descentShots: config.descentShots,
+    descentShots,
     lastLaunchTime: 0,
     recoilTime: 0,
     lastQueueAdvanceTime: 0,
@@ -124,7 +174,14 @@ export function createGame({ seed, layout, level = 1 } = {}) {
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (level === 10),
+    showModeIntroCard: !isPuzzleMode && (level === 10),
+    
+    // Puzzle properties
+    isPuzzleMode,
+    puzzleId,
+    puzzleQueueIndex,
+    puzzleGoalType,
+    puzzleDescentType,
   };
 }
 
@@ -139,6 +196,7 @@ export function fire(game, layout) {
     : (game.phase === PHASE.AIMING);
   if (!allowed) return;
   if (game.isSpeedMode && game.fireCooldown > 0) return;
+  if (!game.queue.current) return;
 
   const origin = launcherTip(layout);
   const angle = game.aimAngle;
@@ -176,6 +234,19 @@ export function fire(game, layout) {
 
 export function step(game, dtSec, layout) {
   if (game.showModeIntroCard) return false;
+
+  if (game.phase === PHASE.AIMING && game.isPuzzleMode && game.queue.current === null) {
+    let pzWon = false;
+    if (game.puzzleGoalType === 'clear-targets') {
+      pzWon = !game.board.lanterns.some(l => l.isTarget);
+    } else {
+      pzWon = isCleared(game.board);
+    }
+    if (!pzWon && game.shots.length === 0) {
+      startDrowning(game);
+      return true;
+    }
+  }
 
   tickEffects(game, dtSec);
 
@@ -257,7 +328,18 @@ export function step(game, dtSec, layout) {
           advanceQueue(game);
         }
 
-        if (isCleared(game.board)) {
+        let puzzleWon = false;
+        if (game.isPuzzleMode) {
+          if (game.puzzleGoalType === 'clear-targets') {
+            puzzleWon = !game.board.lanterns.some(l => l.isTarget);
+          } else {
+            puzzleWon = isCleared(game.board);
+          }
+        } else {
+          puzzleWon = isCleared(game.board);
+        }
+
+        if (puzzleWon) {
           const bonus = clearBonus(game.isSpeedMode ? Math.ceil(game.timeUntilDescent) : game.shotsUntilDescent);
           game.score += bonus;
           game.breakdown.clear += bonus;
@@ -265,7 +347,7 @@ export function step(game, dtSec, layout) {
           return true;
         }
 
-        if (!game.isSpeedMode) {
+        if (!game.isSpeedMode && (!game.isPuzzleMode || game.puzzleDescentType !== 'none')) {
           game.shotsUntilDescent--;
           game.pendingDescent = game.shotsUntilDescent <= 0;
         }
@@ -419,6 +501,17 @@ function finishSettle(game, layout) {
     }
   } else {
     game.phase = PHASE.AIMING;
+    if (game.isPuzzleMode && game.queue.current === null) {
+      let pzWon = false;
+      if (game.puzzleGoalType === 'clear-targets') {
+        pzWon = !game.board.lanterns.some(l => l.isTarget);
+      } else {
+        pzWon = isCleared(game.board);
+      }
+      if (!pzWon && game.shots.length === 0) {
+        startDrowning(game);
+      }
+    }
   }
 }
 
@@ -459,6 +552,25 @@ function resolvePlacement(game, layout) {
 }
 
 function advanceQueue(game) {
+  if (game.isPuzzleMode) {
+    game.queue.current = game.queue.next;
+    game.queue.currentDesign = game.queue.nextDesign;
+    game.queue.next = game.queue.afterNext;
+    game.queue.nextDesign = game.queue.afterNextDesign;
+    
+    const pz = puzzleConfig(game.puzzleId);
+    if (game.puzzleQueueIndex < pz.queue.length) {
+      const nextColor = pz.queue[game.puzzleQueueIndex++];
+      game.queue.afterNext = nextColor;
+      game.queue.afterNextDesign = null;
+    } else {
+      game.queue.afterNext = null;
+      game.queue.afterNextDesign = null;
+    }
+    game.lastQueueAdvanceTime = performance.now() / 1000;
+    return;
+  }
+
   // Three-stage magazine: current fires, next promotes to current, afterNext
   // promotes to next (it rotated into the on-deck position during the firing
   // animation), and a fresh lantern is loaded into the afterNext slot (hidden
