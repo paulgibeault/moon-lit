@@ -29,18 +29,24 @@ descent of the trellis rather than kinetic chaos.
 
 ## Modes
 
+Pick a mode from the in-game menu (tap the menu / press **Space** to open it).
+Each mode keeps its own saved game and progress, so you can switch freely
+without losing your place.
+
 | Mode | What it is |
 | ---- | ---------- |
-| **Classic** | A faithful homage to the original *Bust-A-Move*. Six colors, hex grid, ceiling drop. |
-| **Festival** | Eight chapters, each introducing one signature twist — rotating gravity, ripening embers, color-shifting bamboo walls, and the Twin Lanterns power-up. |
-| **Endless** | Procedural board, infinite descent, one score chase. |
-| **Daily** | One seed per day. Same board for everyone, one attempt. |
-| **Master** | Replay any cleared Festival chapter with *all* twists active at once. |
+| **Campaign** | The default. Level-by-level progression with hand-tuned configs — colors, starting rows, descent pacing, and stencil packs all ramp up as you climb. Some later levels go timed. Your cleared level is remembered between sessions. |
+| **Zen** | Untimed. The trellis only creeps down as you shoot, never on a clock — float lanterns at your own pace. An optional **Fast Launch** toggle speeds up the projectile and settle animations for players who want flow without the timer. |
+| **Speed** | Timed. The trellis descends on a clock and shots fire on a short cooldown — a faster, higher-pressure take on the same board. Fast launch is always on. |
+| **Puzzle** | A set of hand-crafted teaser boards (currently 15). Each ships a fixed shot queue and a goal: **clear every lantern** or **clear the marked target lanterns**. Most are pure logic puzzles with no descent; a few add a time limit for extra bite. |
 
 ## Features
 
+- Four play modes — Campaign, Zen, Speed, and Puzzle — each with its own saved game and progress
 - Hex grid with snap-to-place physics and one-bounce aim assist
 - Shot-queue swap — the iconic *Bust-A-Move* "fix a bad shot" tap
+- Fast Launch option in Zen for quicker projectile and settle timing
+- Swappable lantern stencil packs (with a "random" pack that mixes designs per shot)
 - Deterministic seeds: same inputs always produce the same board
 - Daily leaderboard via the [Paul's Arcade SDK](https://paulgibeault.github.io/)
 
@@ -60,9 +66,9 @@ Then open `http://127.0.0.1:4791/` for the launcher, or
 
 ## Theme
 
-Festival mode opts out of `data-theme` and renders a fixed night palette;
-this is intentional per §5 of [GAME_INTEGRATION.md](../paulgibeault.github.io/GAME_INTEGRATION.md).
-Classic mode (when implemented) will respect `data-theme="light"` / `"dark"`.
+Moon Lit opts out of `data-theme` and renders a fixed night palette across all
+modes; this is intentional per §5 of
+[GAME_INTEGRATION.md](../paulgibeault.github.io/GAME_INTEGRATION.md).
 
 ## License
 
