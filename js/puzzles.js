@@ -15,7 +15,7 @@ export const DEFAULT_CHAR_MAP = Object.freeze({
   'X': { color: 'paper', isBlocker: true, designId: 'flowers_bamboo' },
   
   // Target / Spirit lanterns (must be cleared to win)
-  'T': { color: 'yellow', isTarget: true, designId: 'dragons_dragon_head' }
+  'T': { color: 'red', isTarget: true, designId: 'dragons_dragon_head' }
 });
 
 const HAND_CRAFTED_PUZZLES = [

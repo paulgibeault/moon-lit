@@ -993,21 +993,36 @@ export function drawLanternInventory(ctx, layout, game, settings) {
     const colorKey = list[i];
     const cx = startX + i * gap + lanternR;
     const cy = dotsY + lanternR;
+    const isActive = i === 0;
 
-    // Draw actual themed mini lantern
+    // Trailing lanterns recede — reduced alpha so they read as
+    // "waiting in line" rather than competing for attention.
+    if (!isActive) { ctx.save(); ctx.globalAlpha *= 0.4; }
+
     drawLantern(ctx, cx, cy, lanternR, colorKey, {
-      lit: i === 0, // Light up the current active lantern
-      intensity: i === 0 ? 0.75 : 0.0,
+      lit: isActive,
+      intensity: isActive ? 1.0 : 0.0,
       designId: null
     });
 
-    // Highlight current/active
-    if (i === 0) {
-      ctx.strokeStyle = '#E8B770'; // Moon gold
-      ctx.lineWidth = 1.2;
+    if (!isActive) { ctx.restore(); }
+
+    // Subtle warmth bleed for the active lantern — the same ember-halo
+    // language used by board lanterns, just at HUD scale. The warm glow
+    // bleeds slightly into its neighbors, selling "this one is alive."
+    if (isActive) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const glowR = lanternR * 2.2;
+      const grad = ctx.createRadialGradient(cx, cy, lanternR * 0.2, cx, cy, glowR);
+      grad.addColorStop(0,   'rgba(255, 220, 150, 0.18)');
+      grad.addColorStop(0.5, 'rgba(255, 175, 95, 0.06)');
+      grad.addColorStop(1,   'rgba(255, 140, 50, 0)');
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(cx, cy, lanternR * 1.35, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
   }
 

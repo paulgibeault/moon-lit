@@ -62,6 +62,7 @@ function verifyPuzzle(puzzleId) {
   const layout = fixtureLayout();
   const pz = puzzleConfig(puzzleId);
   const game = createGame({ layout, isPuzzleMode: true, puzzleId });
+  game.showModeIntroCard = false; // Dismiss intro so step() isn't blocked
 
   const queueLength = pz.queue.length;
   let maxDepth = Math.min(queueLength, 3);

@@ -1993,11 +1993,15 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
   const intensity = opts && opts.intensity != null ? opts.intensity : 1;
   const phase = opts && opts.phase != null ? opts.phase : 0;
   const boost = opts && opts.boost != null ? opts.boost : 0;
-  const level = lit ? emberLevel(phase, intensity, boost) : 0;
+  // Target lanterns burn permanently hotter — a spirit-fire intensity bump
+  // so they read as "alive with something different" next to normal lamps.
+  const targetBoost = (opts && opts.isTarget && !isBlocker) ? 0.35 : 0;
+  const level = lit ? emberLevel(phase, intensity, boost + targetBoost) : 0;
   const isReflection = opts && opts.isReflection;
   const designId = opts && opts.designId;
 
-  const sprite = getLanternSprite(colorKey, designId);
+  const isTarget = opts && opts.isTarget;
+  const sprite = getLanternSprite(colorKey, designId, isTarget);
   if (sprite) {
     // Fit the painted silhouette so its width fills 2*size (the cell width).
     // Height is proportional to the lamp's aspect ratio, so taller-than-wide
@@ -2068,14 +2072,24 @@ export function drawLantern(ctx, cx, cy, size, colorKey, opts) {
       drawFuelCore(ctx, cx, rimY, size);
     }
     
-    // Draw target marker (glowing golden circle) if target
-    if (opts && opts.isTarget) {
+    // Spirit glow for target lanterns — a soft, ethereal cream-white
+    // radiance that makes them burn visibly hotter than normal lanterns.
+    // Uses 'lighter' compositing so the glow brightens the paper and
+    // surrounding air without any hard geometric outline. Combined with
+    // the boosted ember level and golden stencil, targets read as
+    // "spirit lanterns" — unmistakably different from normal warm amber.
+    if (isTarget && lit) {
       ctx.save();
-      ctx.strokeStyle = '#E8B770'; // Auspicious gold/moonHalo
-      ctx.lineWidth = Math.max(1.5, size * 0.08);
+      ctx.globalCompositeOperation = 'lighter';
+      const spiritR = size * 1.6;
+      const spiritGrad = ctx.createRadialGradient(cx, cy, size * 0.1, cx, cy, spiritR);
+      spiritGrad.addColorStop(0,   `rgba(255, 248, 230, ${(0.18 * level).toFixed(3)})`);
+      spiritGrad.addColorStop(0.4, `rgba(255, 235, 200, ${(0.10 * level).toFixed(3)})`);
+      spiritGrad.addColorStop(1,    'rgba(255, 220, 180, 0)');
+      ctx.fillStyle = spiritGrad;
       ctx.beginPath();
-      ctx.arc(cx, cy, size * 1.12, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(cx, cy, spiritR, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
     return;

@@ -233,6 +233,20 @@ export async function loadLanterns() {
     );
   }
 
+  // Always load the target-lantern stencil so puzzle targets render their
+  // golden dragon-head design regardless of which stencil pack is active.
+  // The designId used by targets ('dragons_dragon_head') doesn't match the
+  // standard per-pack keying, so we load it explicitly under that exact key.
+  if (!stencilImages['dragons_dragon_head']) {
+    try {
+      stencilImages['dragons_dragon_head'] = await loadImage(
+        STENCIL_PACKS.dragons.sources.paper   // dragon_head.png
+      );
+    } catch (e) {
+      console.warn('[moon-lit] failed to load target stencil', e);
+    }
+  }
+
   await Promise.all(
     COLOR_KEYS.map(async (colorKey) => {
       plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
@@ -382,8 +396,20 @@ function rasterizeSingleLantern(colorKey, designId, isGolden) {
   const offsetY = 5 * RASTER_SCALE;
 
   const packId = designId.split('_')[0];
-  const opacity = packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY;
+  // Golden stencils (target lanterns) need high opacity so the gold ink
+  // shines prominently against any paper color — especially yellow, where
+  // the normal 0.55 makes gold-on-gold nearly invisible.
+  const opacity = isGolden ? 0.95 : (packId === 'flowers' ? 0.85 : BUG_STENCIL_OPACITY);
   ctx.globalAlpha = opacity;
+  // Drop shadow behind golden stencils — a soft dark halo that gives the
+  // gold ink depth and makes the dragon-head design legible against any
+  // paper color, even warm reds and yellows.
+  if (isGolden) {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 4 * RASTER_SCALE;
+    ctx.shadowOffsetX = 1 * RASTER_SCALE;
+    ctx.shadowOffsetY = 1 * RASTER_SCALE;
+  }
   ctx.drawImage(stencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
   ctx.restore();
 
