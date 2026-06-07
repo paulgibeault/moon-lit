@@ -781,6 +781,23 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
         ctx.restore();
       };
     }
+  } else {
+    if (game.level === 16) {
+      title = 'Stone Blockers Introduced';
+      lines = [
+        "Stone lanterns cannot be matched.",
+        "",
+        "To clear them, you must pop the normal lanterns",
+        "holding them up so they drop into the water!",
+        "",
+        "Plan your shots to break their anchors."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        drawLantern(ctx, 0, 0, 14 * fs, 'paper', { isBlocker: true });
+        ctx.restore();
+      };
+    }
   }
 
   // Title text
