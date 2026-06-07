@@ -344,6 +344,18 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   const cardX = (viewW - cardW) / 2;
   const cardY = (viewH - cardH) / 2;
 
+  // Close ✕ button hit area in top-right of the card
+  const closeBtnSize = 28 * fs;
+  const closeBtn = {
+    x: cardX + cardW - closeBtnSize - 16 * fs,
+    y: cardY + 16 * fs,
+    w: closeBtnSize,
+    h: closeBtnSize,
+    label: '✕',
+    action: 'dismiss',
+    enabled: true
+  };
+
   // Draw card background (deep indigo panel)
   const cardBg = 'rgba(20, 26, 50, 0.96)';
   ctx.fillStyle = cardBg;
@@ -360,6 +372,31 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.lineWidth = 1;
   roundedRectPath(ctx, cardX + 3 * fs, cardY + 3 * fs, cardW - 6 * fs, cardH - 6 * fs, 10);
   ctx.stroke();
+
+  // Render close button (✕)
+  ctx.save();
+  const ccx = closeBtn.x + closeBtn.w / 2;
+  const ccy = closeBtn.y + closeBtn.h / 2;
+  
+  // A subtle circular hover-like boundary to make it look premium
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.03)';
+  ctx.beginPath();
+  ctx.arc(ccx, ccy, closeBtnSize / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // The ✕ itself
+  ctx.strokeStyle = 'rgba(245, 233, 201, 0.7)';
+  ctx.lineWidth = 1.8 * fs;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const offset = 4.5 * fs;
+  ctx.moveTo(ccx - offset, ccy - offset); ctx.lineTo(ccx + offset, ccy + offset);
+  ctx.moveTo(ccx + offset, ccy - offset); ctx.lineTo(ccx - offset, ccy + offset);
+  ctx.stroke();
+  ctx.restore();
 
   const cx = viewW / 2;
   let y = cardY + 28 * fs;
@@ -577,9 +614,9 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     y: btnY,
     w: btnW,
     h: btnH,
-    label: 'Previous',
+    label: isPuzzle ? 'Puzzles' : 'Stages',
     action: 'prev',
-    enabled: isPuzzle ? game.puzzleId > 1 : game.level > 1,
+    enabled: true,
   };
 
   const restartBtn = {
@@ -603,7 +640,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   };
 
   // Push all to hit list so coordinates are checked on click
-  endOverlayHits.push(prevBtn, restartBtn, nextBtn);
+  endOverlayHits.push(prevBtn, restartBtn, nextBtn, closeBtn);
 
   // Render the buttons
   drawButton(ctx, prevBtn, /*isPrimary=*/false, fs);
@@ -741,6 +778,23 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
         ctx.lineTo(1 * fs, 0 * fs);
         ctx.closePath();
         ctx.fill();
+        ctx.restore();
+      };
+    }
+  } else {
+    if (game.level === 16) {
+      title = 'Stone Blockers Introduced';
+      lines = [
+        "Stone lanterns cannot be matched.",
+        "",
+        "To clear them, you must pop the normal lanterns",
+        "holding them up so they drop into the water!",
+        "",
+        "Plan your shots to break their anchors."
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        drawLantern(ctx, 0, 0, 14 * fs, 'paper', { isBlocker: true });
         ctx.restore();
       };
     }
@@ -1150,6 +1204,50 @@ export function drawQuickRestartButton(ctx, layout, game, settings) {
     ctx.textBaseline = 'bottom';
     ctx.fillText('tap again', cx, btn.y - 4);
   }
+
+  ctx.restore();
+}
+
+export function drawLoadingOverlay(ctx, layout, game, settings) {
+  if (!layout) return;
+  const { viewW, viewH } = layout;
+  const fs = fontScaleOf(settings);
+
+  ctx.save();
+  // Translucent dark backdrop
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.75)';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  const cx = viewW / 2;
+  const cy = viewH / 2;
+
+  // Pulse effect based on wall time
+  const time = performance.now() / 1000;
+  const pulse = Math.sin(time * 3) * 0.1 + 0.9; // 0.8 to 1.0 pulse
+
+  // Soft glowing core
+  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 40 * fs * pulse);
+  glowGrad.addColorStop(0, 'rgba(232, 183, 112, 0.25)');
+  glowGrad.addColorStop(1, 'rgba(232, 183, 112, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 40 * fs * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Golden ring representing a moon / lantern outline
+  ctx.strokeStyle = `rgba(232, 183, 112, ${0.4 + Math.sin(time * 3) * 0.15})`;
+  ctx.lineWidth = 2 * fs;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18 * fs, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Serif text aligned with the game style
+  const textPx = Math.max(14, Math.round(14 * fs));
+  ctx.font = `italic 500 ${textPx}px Georgia, serif`;
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText("Drawing lanterns...", cx, cy + 30 * fs);
 
   ctx.restore();
 }

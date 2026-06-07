@@ -117,3 +117,39 @@ test('descend seeds new top row staggered to mesh with the row below it', () => 
       `new top row lantern overlaps a neighbour: nearest=${nearest}, expected >= ${2 * r}`);
   }
 });
+
+test('level 16+ initial populate and descent generates blockers correctly', () => {
+  const layout = fixtureLayout();
+  
+  // Test populateInitial on level 16
+  const b1 = createBoard();
+  populateInitial(b1, layout, mulberry32(100), 5, undefined, 16);
+  
+  const blockers = b1.lanterns.filter(l => l.isBlocker);
+  assert.ok(blockers.length >= 1 && blockers.length <= 2, `Expected 1 or 2 initial blockers on level 16, got ${blockers.length}`);
+  
+  // Verify blockers are only on row >= 1
+  for (const b of blockers) {
+    const rowIdx = Math.round(b.ny / SQRT3);
+    assert.ok(rowIdx >= 1, `Blocker found on row ${rowIdx}, must be on row >= 1`);
+    assert.equal(b.color, 'paper');
+    assert.equal(b.designId, 'flowers_bamboo');
+  }
+
+  // Test descend on level 16 (probability is 2%)
+  // Run 100 descents to guarantee we get some blockers
+  let blockersSeenInDescents = 0;
+  for (let s = 0; s < 100; s++) {
+    const b2 = createBoard();
+    descend(b2, layout, mulberry32(s), undefined, 16);
+    const topRowBlockers = b2.lanterns.filter(l => l.isBlocker);
+    blockersSeenInDescents += topRowBlockers.length;
+    for (const b of topRowBlockers) {
+      assert.equal(b.color, 'paper');
+      assert.equal(b.designId, 'flowers_bamboo');
+    }
+  }
+  // Expected blockers in 100 descents (each has ~7 cells with 2% probability, so ~700 attempts: expected ~14 blockers)
+  assert.ok(blockersSeenInDescents > 0, 'Expected to generate at least one blocker in descents over 100 runs');
+  assert.ok(blockersSeenInDescents < 100, `Expected sparse blockers, but got ${blockersSeenInDescents}`);
+});

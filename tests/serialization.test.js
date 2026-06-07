@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { restoreGame, SAVE_VERSION } from '../js/serialization.js';
+import { serializeGame, restoreGame, SAVE_VERSION } from '../js/serialization.js';
 
 test('restore v5 (current version) save state succeeds with identical values', () => {
   const save = {
@@ -173,4 +173,23 @@ test('restore handles completely missing optional fields gracefully', () => {
   assert.deepEqual(game.counts, { popped: 0, dropped: 0 });
   assert.equal(game.combo, 0);
   assert.equal(game.bestCombo, 0);
+  assert.equal(game.endOverlayDismissed, false);
+});
+
+test('serialize and restore retains endOverlayDismissed property', () => {
+  const save = {
+    version: 5,
+    level: 1,
+    score: 100,
+    queue: { current: 'red', next: 'blue' },
+    board: { descentCount: 0, lanterns: [] },
+    endOverlayDismissed: true
+  };
+
+  const restored = restoreGame(save);
+  assert.ok(restored);
+  assert.equal(restored.endOverlayDismissed, true);
+
+  const serialized = serializeGame(restored);
+  assert.equal(serialized.endOverlayDismissed, true);
 });

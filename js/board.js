@@ -59,7 +59,7 @@ export function syncLanternPixels(board, layout) {
 // Place `rows` rows of lanterns close-packed against the trellis. Even rows
 // span `cols` lanterns, odd rows are offset by one radius (and one fewer
 // lantern, so the right edge stays aligned). Used for fresh-game seeding.
-export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS) {
+export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS, level = 1) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   const activePackId = getActivePackId();
@@ -76,12 +76,41 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows, col
       board.lanterns.push({ x, y, nx, ny, color, designId });
     }
   }
+
+  // Blocker placement for level >= 16
+  if (level >= 16) {
+    const eligible = board.lanterns.filter(l => Math.round(l.ny / SQRT3) >= 1);
+    if (eligible.length > 0) {
+      let numBlockers = 0;
+      const roll = rng();
+      if (level <= 25) {
+        numBlockers = roll < 0.5 ? 1 : 2;
+      } else if (level <= 40) {
+        numBlockers = roll < 0.4 ? 2 : 3;
+      } else {
+        numBlockers = roll < 0.3 ? 2 : (roll < 0.8 ? 3 : 4);
+      }
+
+      const tempEligible = [...eligible];
+      const countToPlace = Math.min(numBlockers, tempEligible.length);
+      const chosen = [];
+      for (let k = 0; k < countToPlace; k++) {
+        const idx = Math.floor(rng() * tempEligible.length);
+        chosen.push(tempEligible.splice(idx, 1)[0]);
+      }
+      for (const l of chosen) {
+        l.isBlocker = true;
+        l.color = 'paper';
+        l.designId = 'flowers_bamboo';
+      }
+    }
+  }
 }
 
 // Shift every lantern down by one packed-row height and seed a fresh top row
 // touching the trellis. Returns false (treated as a loss by the caller) if
 // any lantern would be pushed past the dead line.
-export function descend(board, layout, rng, colors = COLOR_KEYS) {
+export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   const limitY = layout.deadLineY - r;
@@ -97,14 +126,25 @@ export function descend(board, layout, rng, colors = COLOR_KEYS) {
   const oddStagger = (board.descentCount & 1) === 0 ? 1 : 0;
   const count = layout.cols - oddStagger;
   const activePackId = getActivePackId();
+
+  // Calculate blocker probability per top-row cell
+  let blockerProb = 0;
+  if (level >= 16) {
+    blockerProb = Math.min(0.08, 0.02 + (level - 16) * 0.0015);
+  }
+
   for (let i = 0; i < count; i++) {
     const nx = i * 2 + oddStagger;
     const ny = 0;
     const x = layout.originX + nx * r;
     const y = layout.trellisY + r;
-    const color = pick(rng, colors);
-    const designId = activePackId === 'random' ? getRandomDesignForColor(color, rng) : null;
-    board.lanterns.push({ x, y, nx, ny, color, designId });
+
+    // Check if this lantern should be a blocker
+    const isBlocker = (level >= 16 && rng() < blockerProb);
+    const color = isBlocker ? 'paper' : pick(rng, colors);
+    const designId = isBlocker ? 'flowers_bamboo' : (activePackId === 'random' ? getRandomDesignForColor(color, rng) : null);
+
+    board.lanterns.push({ x, y, nx, ny, color, designId, isBlocker: !!isBlocker });
   }
   board.descentCount++;
   return true;

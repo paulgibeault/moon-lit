@@ -107,7 +107,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     colors = COLOR_KEYS.slice(0, config.colors);
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
     rng = mulberry32(effectiveSeed);
-    if (layout) populateInitial(board, layout, rng, config.initialRows, colors);
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, level);
     
     queueCurrent = pick(rng, colors);
     queueNext = pick(rng, colors);
@@ -195,7 +195,8 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (!isPuzzle && level === 10) || (isPuzzle && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
+    showModeIntroCard: (!isPuzzle && (level === 10 || level === 16)) || (isPuzzle && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
+    endOverlayDismissed: false,
     
     // Puzzle properties
     isPuzzleMode: isPuzzle,
@@ -502,9 +503,10 @@ function finishSettle(game, layout) {
     game.pendingDescent = false;
     // Pull the new top row only from colors currently in play, so a descent
     // can't re-introduce a color the player has already cleared from the board.
-    const live = new Set(game.board.lanterns.map(l => l.color));
+    // Filter out blockers so their colors do not pollute the live color set.
+    const live = new Set(game.board.lanterns.filter(l => !l.isBlocker).map(l => l.color));
     const palette = game.colors.filter(c => live.has(c));
-    const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors);
+    const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level);
     if (!ok) {
       startDrowning(game);
       return;
@@ -598,8 +600,9 @@ function advanceQueue(game) {
   game.queue.nextDesign = game.queue.afterNextDesign;
   // The freshly-loaded lantern (the future on-deck) should never reintroduce
   // a color the board no longer contains. Already-visible lanterns keep
-  // whatever color they were drawn with.
-  const live = new Set(game.board.lanterns.map(l => l.color));
+  // whatever color they were drawn with. Exclude blockers so their colors
+  // do not pollute the live colors pool.
+  const live = new Set(game.board.lanterns.filter(l => !l.isBlocker).map(l => l.color));
   if (game.shots) {
     for (const s of game.shots) {
       live.add(s.color);
