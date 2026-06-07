@@ -336,6 +336,11 @@ function resize() {
 // On stage transition we save the new resume point — eviction or a refresh
 // after this point will restore the player to the new stage.
 async function loadAndStartLevel(level, keepCurrentSettings = false) {
+  if (game) {
+    game.loading = true;
+    game.endOverlayDismissed = true;
+    forceRequestFrame();
+  }
   const cfg = levelConfig(level);
   const gameMode = Arcade.state.get('gameMode') || 'campaign';
   
@@ -363,6 +368,11 @@ async function loadAndStartLevel(level, keepCurrentSettings = false) {
 }
 
 async function loadAndStartPuzzle(puzzleId) {
+  if (game) {
+    game.loading = true;
+    game.endOverlayDismissed = true;
+    forceRequestFrame();
+  }
   const id = Math.max(1, Math.min(50, puzzleId | 0));
   const cfg = puzzleConfig(id);
   
@@ -483,6 +493,7 @@ function recordOutcome(g, won) {
 
 function isQuiescent() {
   if (!game || !layout) return false;
+  if (game.loading) return false;
   if (game.showModeIntroCard) return false;
   if (game.isPuzzleMode && game.queue.current === null && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER) return false;
   if (isMenuPanelOpen()) {

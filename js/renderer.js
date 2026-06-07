@@ -12,6 +12,7 @@ import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
+  drawLoadingOverlay,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -50,6 +51,9 @@ export function render(ctx, layout, game, settings, stats, scores) {
   }
   if (game.showModeIntroCard) {
     drawModeIntroCard(ctx, layout, game, settings);
+  }
+  if (game.loading) {
+    drawLoadingOverlay(ctx, layout, game, settings);
   }
   // Menu (button + panels) draws last so it sits above the end-overlay too —
   // the player can open the stage selector from a game-over screen to pick a

@@ -107,6 +107,17 @@ let plainBboxes = {};
 let stencilImages = {};
 let stencilCache = {};
 
+let lastLoadedPackId = null;
+let lastLoadedRandomMapping = null;
+const loadedImageCache = {};
+
+async function getCachedImage(src) {
+  if (!loadedImageCache[src]) {
+    loadedImageCache[src] = await loadImage(src);
+  }
+  return loadedImageCache[src];
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -178,17 +189,26 @@ export async function loadLanterns() {
   const h = LANTERN_SVG_VIEWBOX.h * RASTER_SCALE;
 
   const activePackId = getActivePackId();
+  const randomMapping = Arcade.state.get('randomMapping');
+
+  // If the stencil pack hasn't changed (and if random, the mapping hasn't changed),
+  // we can completely skip loading and rasterization!
+  if (lastLoadedPackId === activePackId && (activePackId !== 'random' || lastLoadedRandomMapping === randomMapping)) {
+    return;
+  }
+
+  lastLoadedPackId = activePackId;
+  lastLoadedRandomMapping = randomMapping;
+
   const pack = STENCIL_PACKS[activePackId] || STENCIL_PACKS.bugs;
   
-  // Clear old cached sprites and stencil/canvas caches
+  // Clear old cached sprites (excluding launcher_wheel and stone_blocker)
   for (const key of Object.keys(sprites)) {
-    if (key !== 'launcher_wheel') {
+    if (key !== 'launcher_wheel' && key !== 'stone_blocker') {
       delete sprites[key];
     }
   }
   stencilImages = {};
-  plainCanvases = {};
-  plainBboxes = {};
   stencilCache = {};
   
   // Collect all designs from bugs, flowers, dragons packs
@@ -208,12 +228,12 @@ export async function loadLanterns() {
     }
   }
 
-  // Load stencil images
+  // Load stencil images from cache
   if (activePackId === 'random') {
     await Promise.all(
       allDesigns.map(async (d) => {
         try {
-          stencilImages[d.designId] = await loadImage(d.src);
+          stencilImages[d.designId] = await getCachedImage(d.src);
         } catch (e) {
           console.warn(`[moon-lit] failed to load stencil ${d.src} for ${d.designId}`, e);
         }
@@ -225,7 +245,7 @@ export async function loadLanterns() {
       Object.entries(stencilSources).map(async ([color, src]) => {
         if (!src) return; // skip plain paper / no stencil
         try {
-          stencilImages[color] = await loadImage(src);
+          stencilImages[color] = await getCachedImage(src);
         } catch (e) {
           console.warn(`[moon-lit] failed to load stencil ${src} for ${color}`, e);
         }
@@ -235,11 +255,9 @@ export async function loadLanterns() {
 
   // Always load the target-lantern stencil so puzzle targets render their
   // golden dragon-head design regardless of which stencil pack is active.
-  // The designId used by targets ('dragons_dragon_head') doesn't match the
-  // standard per-pack keying, so we load it explicitly under that exact key.
   if (!stencilImages['dragons_dragon_head']) {
     try {
-      stencilImages['dragons_dragon_head'] = await loadImage(
+      stencilImages['dragons_dragon_head'] = await getCachedImage(
         STENCIL_PACKS.dragons.sources.paper   // dragon_head.png
       );
     } catch (e) {
@@ -250,7 +268,7 @@ export async function loadLanterns() {
   // Always load the moth stencil so the stone blocker can render its embossed moth design
   if (!stencilImages['bugs_moth']) {
     try {
-      stencilImages['bugs_moth'] = await loadImage(
+      stencilImages['bugs_moth'] = await getCachedImage(
         STENCIL_PACKS.bugs.sources.paper      // moth.png
       );
     } catch (e) {
@@ -258,53 +276,59 @@ export async function loadLanterns() {
     }
   }
 
-  await Promise.all(
-    COLOR_KEYS.map(async (colorKey) => {
-      plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
-      plainBboxes[colorKey] = measureBbox(plainCanvases[colorKey]);
-    })
-  );
+  // Only rasterize base paper SVGs once
+  const plainColorKeys = COLOR_KEYS.filter(colorKey => !plainCanvases[colorKey]);
+  if (plainColorKeys.length > 0) {
+    await Promise.all(
+      plainColorKeys.map(async (colorKey) => {
+        plainCanvases[colorKey] = await rasterizeSvg(buildLanternSvg(colorKey), w, h);
+        plainBboxes[colorKey] = measureBbox(plainCanvases[colorKey]);
+      })
+    );
+  }
 
-  // Rasterize and register the stone blocker lantern
-  try {
-    const stoneCanvas = await rasterizeSvg(buildLanternSvg('stone_blocker'), w, h);
-    plainCanvases['stone_blocker'] = stoneCanvas;
-    plainBboxes['stone_blocker'] = measureBbox(stoneCanvas);
+  // Rasterize and register the stone blocker lantern once
+  if (!plainCanvases['stone_blocker']) {
+    try {
+      const stoneCanvas = await rasterizeSvg(buildLanternSvg('stone_blocker'), w, h);
+      plainCanvases['stone_blocker'] = stoneCanvas;
+      plainBboxes['stone_blocker'] = measureBbox(stoneCanvas);
 
-    // Apply the embossed moth stencil onto the white/grey stone blocker
-    const mothImg = stencilImages['bugs_moth'];
-    if (mothImg) {
-      const shadowStencil = getStencil('bugs_moth', mothImg, 'black');
-      const highlightStencil = getStencil('bugs_moth', mothImg, 'white');
-      const ctx = stoneCanvas.getContext('2d');
-      
-      ctx.save();
-      ctx.globalCompositeOperation = 'source-atop'; // only draw inside the stone lantern shape
+      // Apply the embossed moth stencil onto the white/grey stone blocker
+      const mothImg = stencilImages['bugs_moth'];
+      if (mothImg) {
+        const shadowStencil = getStencil('bugs_moth', mothImg, 'black');
+        const highlightStencil = getStencil('bugs_moth', mothImg, 'white');
+        const ctx = stoneCanvas.getContext('2d');
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'source-atop'; // only draw inside the stone lantern shape
 
-      const cx = 50 * RASTER_SCALE;
-      const cy = 65 * RASTER_SCALE;
-      const dSize = 56 * RASTER_SCALE;
-      const offsetY = 5 * RASTER_SCALE;
-      const shift = 0.8 * RASTER_SCALE;
+        const cx = 50 * RASTER_SCALE;
+        const cy = 65 * RASTER_SCALE;
+        const dSize = 56 * RASTER_SCALE;
+        const offsetY = 5 * RASTER_SCALE;
+        const shift = 0.8 * RASTER_SCALE;
 
-      // 1. Recessed engraving base shadow (subtle dark tint inside the chiseled lines)
-      ctx.globalAlpha = 0.15;
-      ctx.drawImage(shadowStencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
+        // 1. Recessed engraving base shadow (subtle dark tint inside the chiseled lines)
+        ctx.globalAlpha = 0.15;
+        ctx.drawImage(shadowStencil, cx - dSize/2, cy - dSize/2 + offsetY, dSize, dSize);
 
-      // 2. Chiseled offset shadow (shifted top-left)
-      ctx.globalAlpha = 0.40;
-      ctx.drawImage(shadowStencil, cx - dSize/2 - shift, cy - dSize/2 + offsetY - shift, dSize, dSize);
+        // 2. Chiseled offset shadow (shifted top-left)
+        ctx.globalAlpha = 0.40;
+        ctx.drawImage(shadowStencil, cx - dSize/2 - shift, cy - dSize/2 + offsetY - shift, dSize, dSize);
 
-      // 3. Chiseled offset highlight (shifted bottom-right)
-      ctx.globalAlpha = 0.50;
-      ctx.drawImage(highlightStencil, cx - dSize/2 + shift, cy - dSize/2 + offsetY + shift, dSize, dSize);
+        // 3. Chiseled offset highlight (shifted bottom-right)
+        ctx.globalAlpha = 0.50;
+        ctx.drawImage(highlightStencil, cx - dSize/2 + shift, cy - dSize/2 + offsetY + shift, dSize, dSize);
 
-      ctx.restore();
+        ctx.restore();
+      }
+
+      record('stone_blocker', stoneCanvas, plainBboxes['stone_blocker']);
+    } catch (e) {
+      console.warn('[moon-lit] failed to load stone blocker lantern', e);
     }
-
-    record('stone_blocker', stoneCanvas, plainBboxes['stone_blocker']);
-  } catch (e) {
-    console.warn('[moon-lit] failed to load stone blocker lantern', e);
   }
 
   function copyCanvas(srcCanvas) {
@@ -390,43 +414,51 @@ export async function loadLanterns() {
       }
     }
   }
-  try {
-    const img = await loadImage(BURST_SRC);
-    const frameSize = img.naturalHeight || img.height;
-    const frames = Math.max(1, Math.round((img.naturalWidth || img.width) / frameSize));
-    burstSheet = { image: img, frameSize, frames };
-  } catch (e) {
-    burstSheet = null;
-  }
-  try {
-    const img = await loadImage(FLAME_SRC);
-    const sheetW = img.naturalWidth  || img.width;
-    const sheetH = img.naturalHeight || img.height;
-    // Source PNG paints flames on a solid black field. Luminance-key it: each
-    // pixel's brightest channel becomes its alpha, so black → transparent and
-    // the painter's bronze/cream gradients keep their full hue when drawn with
-    // ordinary source-over (no 'lighter' wash, no grey AA halo bleeding onto
-    // the wheel). Done once at load; per-frame draws stay as plain drawImage.
-    const baked = document.createElement('canvas');
-    baked.width = sheetW;
-    baked.height = sheetH;
-    const bctx = baked.getContext('2d');
-    bctx.drawImage(img, 0, 0);
-    const px = bctx.getImageData(0, 0, sheetW, sheetH);
-    const d = px.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      d[i + 3] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+
+  // Load and process burst sheet only once
+  if (!burstSheet) {
+    try {
+      const img = await getCachedImage(BURST_SRC);
+      const frameSize = img.naturalHeight || img.height;
+      const frames = Math.max(1, Math.round((img.naturalWidth || img.width) / frameSize));
+      burstSheet = { image: img, frameSize, frames };
+    } catch (e) {
+      burstSheet = null;
     }
-    bctx.putImageData(px, 0, 0);
-    flameSheet = {
-      image: baked,
-      frames: FLAME_FRAMES,
-      frameW: sheetW / FLAME_FRAMES,
-      frameH: sheetH,
-    };
-  } catch (e) {
-    flameSheet = null;
+  }
+
+  // Load and bake flame sheet only once
+  if (!flameSheet) {
+    try {
+      const img = await getCachedImage(FLAME_SRC);
+      const sheetW = img.naturalWidth  || img.width;
+      const sheetH = img.naturalHeight || img.height;
+      // Source PNG paints flames on a solid black field. Luminance-key it: each
+      // pixel's brightest channel becomes its alpha, so black → transparent and
+      // the painter's bronze/cream gradients keep their full hue when drawn with
+      // ordinary source-over (no 'lighter' wash, no grey AA halo bleeding onto
+      // the wheel). Done once at load; per-frame draws stay as plain drawImage.
+      const baked = document.createElement('canvas');
+      baked.width = sheetW;
+      baked.height = sheetH;
+      const bctx = baked.getContext('2d');
+      bctx.drawImage(img, 0, 0);
+      const px = bctx.getImageData(0, 0, sheetW, sheetH);
+      const d = px.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        d[i + 3] = r > g ? (r > b ? r : b) : (g > b ? g : b);
+      }
+      bctx.putImageData(px, 0, 0);
+      flameSheet = {
+        image: baked,
+        frames: FLAME_FRAMES,
+        frameW: sheetW / FLAME_FRAMES,
+        frameH: sheetH,
+      };
+    } catch (e) {
+      flameSheet = null;
+    }
   }
 }
 

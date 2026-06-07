@@ -1190,3 +1190,47 @@ export function drawQuickRestartButton(ctx, layout, game, settings) {
 
   ctx.restore();
 }
+
+export function drawLoadingOverlay(ctx, layout, game, settings) {
+  if (!layout) return;
+  const { viewW, viewH } = layout;
+  const fs = fontScaleOf(settings);
+
+  ctx.save();
+  // Translucent dark backdrop
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.75)';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  const cx = viewW / 2;
+  const cy = viewH / 2;
+
+  // Pulse effect based on wall time
+  const time = performance.now() / 1000;
+  const pulse = Math.sin(time * 3) * 0.1 + 0.9; // 0.8 to 1.0 pulse
+
+  // Soft glowing core
+  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 40 * fs * pulse);
+  glowGrad.addColorStop(0, 'rgba(232, 183, 112, 0.25)');
+  glowGrad.addColorStop(1, 'rgba(232, 183, 112, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 40 * fs * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Golden ring representing a moon / lantern outline
+  ctx.strokeStyle = `rgba(232, 183, 112, ${0.4 + Math.sin(time * 3) * 0.15})`;
+  ctx.lineWidth = 2 * fs;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18 * fs, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Serif text aligned with the game style
+  const textPx = Math.max(14, Math.round(14 * fs));
+  ctx.font = `italic 500 ${textPx}px Georgia, serif`;
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText("Drawing lanterns...", cx, cy + 30 * fs);
+
+  ctx.restore();
+}
