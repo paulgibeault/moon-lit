@@ -42,6 +42,8 @@ const menuState = {
   maxScrollY: 0,
   viewportY: 0,
   viewportH: 0,
+  pointerDownActive: false,
+  cameFromRoot: false,
 };
 
 if (typeof window !== 'undefined') {
@@ -63,16 +65,30 @@ export function openMenu() {
   menuState.fadeTarget = 1;
   menuState.scrollY = 0;
   menuState.isDragging = false;
+  menuState.needsScrollToCurrent = false;
+  menuState.cameFromRoot = false;
 }
 export function closeMenu() {
   menuState.fadeTarget = 0;
 }
 export function setMenuPanel(panel) {
   if (panel === 'hidden') { closeMenu(); return; }
+  if (menuState.panel === 'root') {
+    menuState.cameFromRoot = true;
+  }
   menuState.panel = panel;
   menuState.fadeTarget = 1;
   menuState.scrollY = 0;
   menuState.isDragging = false;
+  menuState.needsScrollToCurrent = false;
+}
+export function openMenuToLevelSelector(game) {
+  const isPuzzle = !!game?.isPuzzleMode;
+  menuState.panel = isPuzzle ? 'puzzles' : 'stages';
+  menuState.fadeTarget = 1;
+  menuState.isDragging = false;
+  menuState.needsScrollToCurrent = true;
+  menuState.cameFromRoot = false;
 }
 
 // Per-frame tick. Easing is a fixed step per call — main.js drives this from
@@ -100,13 +116,18 @@ export function handleMenuPointerDown(x, y, clientY) {
   if (btn && pointIn(x, y, btn)) {
     if (isMenuPanelOpen()) closeMenu();
     else openMenu();
+    menuState.pointerDownActive = true;
     return true;
   }
-  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
+  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) {
+    menuState.pointerDownActive = false;
+    return false;
+  }
 
   const card = menuState.cardRect;
   // If we press outside the card, it is a scrim click, so don't drag-scroll
   if (card && !pointIn(x, y, card)) {
+    menuState.pointerDownActive = true;
     return true;
   }
 
@@ -115,6 +136,7 @@ export function handleMenuPointerDown(x, y, clientY) {
   menuState.dragStartY = clientY;
   menuState.dragStartScrollY = menuState.scrollY;
   menuState.dragMoved = false;
+  menuState.pointerDownActive = true;
   return true;
 }
 
@@ -134,6 +156,8 @@ export function handleMenuPointerMove(x, y, clientY) {
 
 export function handleMenuPointerUp(x, y, actions, game) {
   if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
+  if (!menuState.pointerDownActive) return false;
+  menuState.pointerDownActive = false;
 
   const btn = menuState.buttonRect;
   if (btn && pointIn(x, y, btn)) {
@@ -159,11 +183,26 @@ export function handleMenuPointerUp(x, y, actions, game) {
     }
   };
 
+  const handleDismiss = () => {
+    closeMenu();
+    const currentIsPuzzle = !!game?.isPuzzleMode;
+    const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+    Arcade.state.set('gameMode', currentMode);
+    actions?.onResume?.();
+  };
+
   // Check buttons / hits
   for (const h of menuState.hits) {
     if (!pointIn(x, y, h)) continue;
     switch (h.action) {
-      case 'show-root':    setMenuPanel('root'); return true;
+      case 'show-root': {
+        if (menuState.cameFromRoot) {
+          setMenuPanel('root');
+        } else {
+          handleDismiss();
+        }
+        return true;
+      }
       case 'show-stages':  setMenuPanel('stages'); return true;
       case 'show-puzzles': setMenuPanel('puzzles'); return true;
       case 'show-options': setMenuPanel('options'); return true;
@@ -193,7 +232,8 @@ export function handleMenuPointerUp(x, y, actions, game) {
         actions?.onToggleFastLaunch?.(target);
         return true;
       }
-      case 'close':        handleClose(); return true;
+      case 'close':        handleDismiss(); return true;
+      case 'play-confirm': handleClose(); return true;
       case 'pick-stage':   closeMenu(); actions?.onStartLevel?.(h.value); return true;
       case 'pick-puzzle':  closeMenu(); actions?.onStartPuzzle?.(h.value); return true;
     }
@@ -202,7 +242,7 @@ export function handleMenuPointerUp(x, y, actions, game) {
   // Tap fell inside the scrim but outside the card - dismiss
   const card = menuState.cardRect;
   if (card && !pointIn(x, y, card)) {
-    handleClose();
+    handleDismiss();
     return true;
   }
 
@@ -228,7 +268,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
 
   ctx.save();
   ctx.globalAlpha = fade;
-  if (menuState.panel === 'root')         drawRootPanel(ctx, layout, settings);
+  if (menuState.panel === 'root')         drawRootPanel(ctx, layout, game, settings);
   else if (menuState.panel === 'records') drawRecordsPanel(ctx, layout, settings, stats, scores);
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
   else if (menuState.panel === 'puzzles') drawPuzzlesPanel(ctx, layout, game, settings, stats);
@@ -391,12 +431,37 @@ function drawDashedRule(ctx, x, y, w) {
 
 // ─── Root panel ─────────────────────────────────────────────────────────────
 
-function drawRootPanel(ctx, layout, settings) {
+function drawRootPanel(ctx, layout, game, settings) {
   const fs = fontScaleOf(settings);
   const gameMode = Arcade.state.get('gameMode') || 'campaign';
   
+  const currentIsPuzzle = !!game?.isPuzzleMode;
+  const currentMode = game?.gameMode || (currentIsPuzzle ? 'puzzle' : 'campaign');
+  const isSameMode = (gameMode === currentMode);
+
+  let targetLevel = 1;
+  if (isSameMode && game) {
+    targetLevel = game.isPuzzleMode ? game.puzzleId : game.level;
+  } else {
+    const progress = Arcade.state.get('progress_' + gameMode);
+    targetLevel = (progress && progress.level) | 0 || 1;
+  }
+
+  let playLabel = '';
+  let playSub = '';
+  const actionWord = isSameMode ? 'resume' : 'start';
+
+  if (gameMode === 'puzzle') {
+    playLabel = `Play Puzzle ${targetLevel}`;
+    playSub = `${actionWord} puzzle ${targetLevel}`;
+  } else {
+    playLabel = `Play Stage ${targetLevel}`;
+    const modeName = gameMode === 'campaign' ? 'campaign' : gameMode === 'zen' ? 'zen' : 'speed';
+    playSub = `${actionWord} ${modeName} stage ${targetLevel}`;
+  }
+
   const items = [];
-  items.push({ label: 'Play', sub: 'resume game from last level', action: 'close', glyph: 'play' });
+  items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
   if (gameMode === 'puzzle') {
     items.push({ label: 'Puzzles', sub: '50 brain-teaser challenges', action: 'show-puzzles', glyph: 'puzzles' });
   } else {
@@ -785,7 +850,13 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   menuState.viewportY = viewportY;
   menuState.viewportH = viewportH;
   menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
-  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+  if (menuState.needsScrollToCurrent) {
+    menuState.needsScrollToCurrent = false;
+    const targetY = (game.level - 1) * rowHeight;
+    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, targetY - viewportH / 2 + rowHeight / 2));
+  } else {
+    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+  }
 
   // Content Area
   ctx.save();
@@ -988,7 +1059,13 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
   menuState.viewportY = viewportY;
   menuState.viewportH = viewportH;
   menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
-  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+  if (menuState.needsScrollToCurrent) {
+    menuState.needsScrollToCurrent = false;
+    const targetY = (game.puzzleId - 1) * rowHeight;
+    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, targetY - viewportH / 2 + rowHeight / 2));
+  } else {
+    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+  }
 
   // Content Area
   ctx.save();

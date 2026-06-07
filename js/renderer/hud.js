@@ -344,6 +344,18 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   const cardX = (viewW - cardW) / 2;
   const cardY = (viewH - cardH) / 2;
 
+  // Close ✕ button hit area in top-right of the card
+  const closeBtnSize = 28 * fs;
+  const closeBtn = {
+    x: cardX + cardW - closeBtnSize - 16 * fs,
+    y: cardY + 16 * fs,
+    w: closeBtnSize,
+    h: closeBtnSize,
+    label: '✕',
+    action: 'dismiss',
+    enabled: true
+  };
+
   // Draw card background (deep indigo panel)
   const cardBg = 'rgba(20, 26, 50, 0.96)';
   ctx.fillStyle = cardBg;
@@ -360,6 +372,31 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.lineWidth = 1;
   roundedRectPath(ctx, cardX + 3 * fs, cardY + 3 * fs, cardW - 6 * fs, cardH - 6 * fs, 10);
   ctx.stroke();
+
+  // Render close button (✕)
+  ctx.save();
+  const ccx = closeBtn.x + closeBtn.w / 2;
+  const ccy = closeBtn.y + closeBtn.h / 2;
+  
+  // A subtle circular hover-like boundary to make it look premium
+  ctx.fillStyle = 'rgba(245, 233, 201, 0.03)';
+  ctx.beginPath();
+  ctx.arc(ccx, ccy, closeBtnSize / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(232, 183, 112, 0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // The ✕ itself
+  ctx.strokeStyle = 'rgba(245, 233, 201, 0.7)';
+  ctx.lineWidth = 1.8 * fs;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const offset = 4.5 * fs;
+  ctx.moveTo(ccx - offset, ccy - offset); ctx.lineTo(ccx + offset, ccy + offset);
+  ctx.moveTo(ccx + offset, ccy - offset); ctx.lineTo(ccx - offset, ccy + offset);
+  ctx.stroke();
+  ctx.restore();
 
   const cx = viewW / 2;
   let y = cardY + 28 * fs;
@@ -577,9 +614,9 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     y: btnY,
     w: btnW,
     h: btnH,
-    label: 'Previous',
+    label: isPuzzle ? 'Puzzles' : 'Stages',
     action: 'prev',
-    enabled: isPuzzle ? game.puzzleId > 1 : game.level > 1,
+    enabled: true,
   };
 
   const restartBtn = {
@@ -603,7 +640,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   };
 
   // Push all to hit list so coordinates are checked on click
-  endOverlayHits.push(prevBtn, restartBtn, nextBtn);
+  endOverlayHits.push(prevBtn, restartBtn, nextBtn, closeBtn);
 
   // Render the buttons
   drawButton(ctx, prevBtn, /*isPrimary=*/false, fs);

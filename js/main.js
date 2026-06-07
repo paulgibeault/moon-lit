@@ -11,7 +11,7 @@ import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import {
-  isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu,
+  isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
 } from './renderer/menu.js';
 
 await Arcade.ready;
@@ -659,11 +659,7 @@ attachInput(canvas, () => game, () => layout, {
   onPrevClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    if (game.isPuzzleMode) {
-      loadAndStartPuzzle(game.puzzleId - 1);
-    } else {
-      loadAndStartLevel(game.level - 1);
-    }
+    openMenuToLevelSelector(game);
   },
   onRestartClick: () => {
     const won = game.phase === PHASE.WIN;
@@ -682,6 +678,16 @@ attachInput(canvas, () => game, () => layout, {
     } else {
       loadAndStartLevel(game.level + 1);
     }
+  },
+  onDismissClick: () => {
+    game.endOverlayDismissed = true;
+    saveGameState(game);
+    requestFrame();
+  },
+  onRestoreClick: () => {
+    game.endOverlayDismissed = false;
+    saveGameState(game);
+    requestFrame();
   },
   onInteract: bumpInteraction,
   onStartLevel: startLevel,

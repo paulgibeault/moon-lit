@@ -45,7 +45,7 @@ export function render(ctx, layout, game, settings, stats, scores) {
   drawDescentMeter(ctx, layout, game, settings);
   drawLanternInventory(ctx, layout, game, settings);
   drawQuickRestartButton(ctx, layout, game, settings);
-  if (game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) {
+  if ((game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) && !game.endOverlayDismissed) {
     drawEndOverlay(ctx, layout, game, settings, stats);
   }
   if (game.showModeIntroCard) {

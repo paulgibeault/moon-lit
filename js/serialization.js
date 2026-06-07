@@ -60,6 +60,7 @@ export function serializeGame(g) {
     timeUntilDescent: g.timeUntilDescent,
     descentTimeLimit: g.descentTimeLimit,
     showModeIntroCard: g.showModeIntroCard,
+    endOverlayDismissed: g.endOverlayDismissed,
     shots: (g.shots || []).map(s => ({
       x: s.x,
       y: s.y,
@@ -278,6 +279,7 @@ export function restoreGame(saved) {
   descentTimeLimit = migrated.descentTimeLimit ?? descentTimeLimit;
   const timeUntilDescent = migrated.timeUntilDescent ?? descentTimeLimit;
   const showModeIntroCard = !!migrated.showModeIntroCard;
+  const endOverlayDismissed = !!migrated.endOverlayDismissed;
   const shots = (migrated.shots || []).map(s => ({
     x: s.x,
     y: s.y,
@@ -342,6 +344,7 @@ export function restoreGame(saved) {
     timeUntilDescent,
     fireCooldown: 0,
     showModeIntroCard,
+    endOverlayDismissed,
     
     // Puzzle Mode properties
     isPuzzleMode,

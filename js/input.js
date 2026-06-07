@@ -19,7 +19,7 @@ const UI_SAFE_TOP_PX = 56;
 export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   const {
     onWinClick, onLossClick, onInteract, onStartLevel, onStartPuzzle, onMenuChange, onToggleSpeed,
-    onPrevClick, onRestartClick, onNextClick,
+    onPrevClick, onRestartClick, onNextClick, onDismissClick, onRestoreClick,
     onChangeGameMode, onToggleFastLaunch,
   } = callbacks;
   
@@ -63,6 +63,8 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       onRestartClick?.();
     } else if (action === 'next') {
       onNextClick?.();
+    } else if (action === 'dismiss') {
+      onDismissClick?.();
     }
   };
 
@@ -121,6 +123,11 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
       return;
     }
     if (isGameOver(game)) {
+      if (game.endOverlayDismissed) {
+        onRestoreClick?.();
+        e.preventDefault();
+        return;
+      }
       handleEndClick(game, localX, localY);
       e.preventDefault();
       return;
