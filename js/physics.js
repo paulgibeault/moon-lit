@@ -2,7 +2,7 @@ import {
   SETTLE_HOPS, SETTLE_ITERATIONS, SETTLE_MIN_PEN_PX,
 } from './constants.js';
 import { normalizePos } from './board.js';
-import { anchorBandPx, forEachLanternWithinSq } from './geometry.js';
+import { anchorBandPx, effectiveTrellisY, forEachLanternWithinSq } from './geometry.js';
 
 // Local positional-relaxation settle. When a lantern lands, we let the
 // nearby cluster slide a bit so the board "absorbs" the new arrival.
@@ -38,7 +38,8 @@ export function settleAround(board, layout, newLantern, opts = {}) {
     if (!frontier.length) break;
   }
 
-  const anchorY = layout.trellisY + anchorBandPx(layout);
+  const trellisY = effectiveTrellisY(board, layout);
+  const anchorY = trellisY + anchorBandPx(layout);
   const pinned = new Set();
   for (const l of movable) {
     if (l.y - r <= anchorY) pinned.add(l);
@@ -76,7 +77,7 @@ export function settleAround(board, layout, newLantern, opts = {}) {
       }
       if (a.x < layout.wallLeft + r) a.x = layout.wallLeft + r;
       if (a.x > layout.wallRight - r) a.x = layout.wallRight - r;
-      if (a.y < layout.trellisY + r) a.y = layout.trellisY + r;
+      if (a.y < trellisY + r) a.y = trellisY + r;
     }
     if (maxPen < minPen) break;
   }

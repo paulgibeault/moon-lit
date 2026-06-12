@@ -708,7 +708,7 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
   };
 
   if (game.isPuzzleMode) {
-    if (game.puzzleId === 6) {
+    if (game.puzzleIntroCard === 'targets') {
       title = 'Target Mode Introduced';
       lines = [
         "Your goal is to clear the golden target lanterns.",
@@ -736,7 +736,7 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
         ctx.fill();
         ctx.restore();
       };
-    } else if (game.puzzleId === 7) {
+    } else if (game.puzzleIntroCard === 'blockers') {
       title = 'Stone Blockers Introduced';
       lines = [
         "Stone lanterns cannot be matched.",
@@ -751,16 +751,16 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
         drawLantern(ctx, 0, 0, 14 * fs, 'paper', { isBlocker: true });
         ctx.restore();
       };
-    } else if (game.puzzleId === 14) {
+    } else if (game.puzzleIntroCard === 'timed') {
       title = 'Timed Descent Introduced';
       lines = [
         "The river flows faster now.",
-        "Under the speed of the rising moon, the trellis",
-        "descends automatically over time instead",
-        "of counting your shots.",
+        "The trellis descends automatically",
+        "over time — the whole board sinks",
+        "toward the water.",
         "",
-        "Aim quickly and clear the lanterns",
-        "before they touch the water!"
+        "Aim quickly and finish the puzzle",
+        "before the lanterns touch the water!"
       ];
       drawIcon = (ctx) => {
         ctx.save();
@@ -778,6 +778,33 @@ export function drawModeIntroCard(ctx, layout, game, settings) {
         ctx.lineTo(1 * fs, 0 * fs);
         ctx.closePath();
         ctx.fill();
+        ctx.restore();
+      };
+    } else if (game.puzzleIntroCard === 'sinking') {
+      title = 'Sinking Trellis Introduced';
+      lines = [
+        "The trellis slips as you launch.",
+        "Every few shots, the whole board",
+        "sinks one row toward the water.",
+        "",
+        "Waste no lanterns — solve the puzzle",
+        "before the trellis reaches the river!"
+      ];
+      drawIcon = (ctx) => {
+        ctx.save();
+        ctx.strokeStyle = '#E8B770';
+        ctx.lineWidth = 3 * fs;
+        ctx.lineCap = 'round';
+        // Three descending chevrons
+        for (let i = 0; i < 3; i++) {
+          const yy = (-12 + i * 9) * fs;
+          ctx.globalAlpha = 0.4 + i * 0.3;
+          ctx.beginPath();
+          ctx.moveTo(-10 * fs, yy);
+          ctx.lineTo(0, yy + 6 * fs);
+          ctx.lineTo(10 * fs, yy);
+          ctx.stroke();
+        }
         ctx.restore();
       };
     }

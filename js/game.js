@@ -81,6 +81,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   let puzzleQueueIndex = 3;
   let puzzleGoalType = 'clear-all';
   let puzzleDescentType = 'none';
+  let puzzleIntroCard = null;
   let isSpeedMode = false;
   let descentTimeLimit = 0;
   let descentShots = 0;
@@ -91,16 +92,17 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + puzzleId * 997)) >>> 0;
     rng = mulberry32(effectiveSeed);
     if (layout) populatePuzzle(board, layout, pz.board, pz);
-    
+
     queueCurrent = pz.queue[0] || null;
     queueNext = pz.queue[1] || null;
     queueAfterNext = pz.queue[2] || null;
     puzzleQueueIndex = Math.min(3, pz.queue.length);
     puzzleGoalType = pz.goalType || 'clear-all';
     puzzleDescentType = pz.descentType || 'none';
-    
+    puzzleIntroCard = pz.introCard || null;
+
     isSpeedMode = puzzleDescentType === 'time';
-    descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
+    descentShots = puzzleDescentType === 'shot' ? (pz.descentEvery || 2) : 0;
     descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
   } else {
     config = levelConfig(level);
@@ -195,7 +197,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (!isPuzzle && (level === 10 || level === 16)) || (isPuzzle && (puzzleId === 6 || puzzleId === 7 || puzzleId === 14)),
+    showModeIntroCard: (!isPuzzle && (level === 10 || level === 16)) || (isPuzzle && !!puzzleIntroCard),
     endOverlayDismissed: false,
     
     // Puzzle properties
@@ -206,6 +208,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     puzzleQueueIndex,
     puzzleGoalType,
     puzzleDescentType,
+    puzzleIntroCard,
   };
 }
 
@@ -506,7 +509,8 @@ function finishSettle(game, layout) {
     // Filter out blockers so their colors do not pollute the live color set.
     const live = new Set(game.board.lanterns.filter(l => !l.isBlocker).map(l => l.color));
     const palette = game.colors.filter(c => live.has(c));
-    const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level);
+    const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level,
+      { seedRow: !game.isPuzzleMode });
     if (!ok) {
       startDrowning(game);
       return;

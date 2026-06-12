@@ -4,7 +4,7 @@
 // `layout`; lantern positions live in `board.lanterns`.
 
 import { SETTLE_NUDGE_RAD, COLLISION_TOLERANCE } from './constants.js';
-import { forEachLanternWithinSq } from './geometry.js';
+import { effectiveTrellisY, forEachLanternWithinSq } from './geometry.js';
 
 // Center of the launcher tip — origin of every shot.
 export function launcherTip(layout) {
@@ -101,6 +101,7 @@ function twoCircleContact(A, B, r, hint) {
 // within the arc, return the original contact point unchanged.
 function nudgeIntoPocket(layout, board, hit, contact, vx, vy) {
   const r = layout.size;
+  const trellisY = effectiveTrellisY(board, layout);
   const cx = hit.x, cy = hit.y;
   const ringR = 2 * r;
   const dx0 = contact.x - cx, dy0 = contact.y - cy;
@@ -117,14 +118,14 @@ function nudgeIntoPocket(layout, board, hit, contact, vx, vy) {
     const px = cx + ringR * Math.cos(theta);
     const py = cy + ringR * Math.sin(theta);
 
-    if (py - r <= layout.trellisY) {
-      const dyT = (layout.trellisY + r) - cy;
+    if (py - r <= trellisY) {
+      const dyT = (trellisY + r) - cy;
       if (Math.abs(dyT) <= ringR) {
         const dxT = Math.sqrt(ringR * ringR - dyT * dyT);
         const sideX = px >= cx ? cx + dxT : cx - dxT;
-        return { x: sideX, y: layout.trellisY + r };
+        return { x: sideX, y: trellisY + r };
       }
-      return { x: px, y: layout.trellisY + r };
+      return { x: px, y: trellisY + r };
     }
     if (px - r < layout.wallLeft || px + r > layout.wallRight) {
       return contact;
@@ -162,6 +163,7 @@ function stepRay(layout, x, y, vx, vy, stepSize) {
 // { settled: false, x, y, vx, vy, flightT } to keep flying.
 export function traceFromShot(layout, board, shot, distance, dtSec) {
   const r = layout.size;
+  const trellisY = effectiveTrellisY(board, layout);
   const stepSize = Math.max(1, r * 0.25);
 
   let x = shot.x, y = shot.y, vx = shot.vx, vy = shot.vy;
@@ -174,14 +176,14 @@ export function traceFromShot(layout, board, shot, distance, dtSec) {
     vx = step.vx; vy = step.vy;
 
     const hit = lanternCollision(board, nx, ny, r);
-    const trellisHit = ny - r <= layout.trellisY;
-    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
+    const trellisHit = ny - r <= trellisY;
+    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, trellisY))) {
       const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
       const settled = nudgeIntoPocket(layout, board, hit, contact, vx, vy);
       return { settled: true, x: settled.x, y: settled.y };
     }
     if (trellisHit) {
-      return { settled: true, x: nx, y: layout.trellisY + r };
+      return { settled: true, x: nx, y: trellisY + r };
     }
 
     x = nx; y = ny;
@@ -197,6 +199,7 @@ export function traceFromShot(layout, board, shot, distance, dtSec) {
 export function traceAimLine(layout, board, angle, maxBounces = 1) {
   const origin = launcherTip(layout);
   const r = layout.size;
+  const trellisY = effectiveTrellisY(board, layout);
   const stepSize = Math.max(1, r * 0.25);
   const maxSteps = 4000;
 
@@ -219,8 +222,8 @@ export function traceAimLine(layout, board, angle, maxBounces = 1) {
     }
 
     const hit = lanternCollision(board, nx, ny, r);
-    const trellisHit = ny - r <= layout.trellisY;
-    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, layout.trellisY))) {
+    const trellisHit = ny - r <= trellisY;
+    if (hit && (!trellisHit || hitsBeforeTrellis(x, y, nx, ny, hit, r, trellisY))) {
       const contact = backupSegmentToCircle(x, y, nx, ny, hit.x, hit.y, 2 * r);
       const settled = nudgeIntoPocket(layout, board, hit, contact, vx, vy);
       points.push({ x: contact.x, y: contact.y });
@@ -228,7 +231,7 @@ export function traceAimLine(layout, board, angle, maxBounces = 1) {
     }
     if (trellisHit) {
       points.push({ x: nx, y: ny });
-      return { points, settle: { x: nx, y: layout.trellisY + r } };
+      return { points, settle: { x: nx, y: trellisY + r } };
     }
     x = nx; y = ny;
   }

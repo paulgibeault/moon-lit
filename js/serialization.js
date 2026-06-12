@@ -75,6 +75,7 @@ export function serializeGame(g) {
     })),
     board: {
       descentCount: g.board.descentCount,
+      anchorOffsetRows: g.board.anchorOffsetRows || 0,
       lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker })),
     },
     rngState: g.rng.getState(),
@@ -200,13 +201,15 @@ export function restoreGame(saved) {
   let descentTimeLimit = 0;
   let puzzleGoalType = 'clear-all';
   let puzzleDescentType = 'none';
+  let puzzleIntroCard = null;
 
   if (isPuzzleMode) {
     const pz = puzzleConfig(puzzleId);
     colors = pz.colors;
     puzzleGoalType = migrated.puzzleGoalType || pz.goalType || 'clear-all';
     puzzleDescentType = migrated.puzzleDescentType || pz.descentType || 'none';
-    descentShots = puzzleDescentType === 'shot' ? pz.queue.length : 0;
+    puzzleIntroCard = pz.introCard || null;
+    descentShots = puzzleDescentType === 'shot' ? (pz.descentEvery || 2) : 0;
     descentTimeLimit = puzzleDescentType === 'time' ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
   } else {
     config = levelConfig(level);
@@ -223,6 +226,7 @@ export function restoreGame(saved) {
   const board = createBoard();
   if (migrated.board) {
     board.descentCount = (migrated.board.descentCount || 0) | 0;
+    board.anchorOffsetRows = (migrated.board.anchorOffsetRows || 0) | 0;
     
     // Safety check color mapping to current active palette
     const VALID_COLORS = new Set(COLOR_KEYS);
@@ -352,6 +356,7 @@ export function restoreGame(saved) {
     puzzleQueueIndex: migrated.puzzleQueueIndex !== undefined ? migrated.puzzleQueueIndex : 3,
     puzzleGoalType,
     puzzleDescentType,
+    puzzleIntroCard,
   };
 }
 

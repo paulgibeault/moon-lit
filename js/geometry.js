@@ -33,3 +33,12 @@ export function forEachLanternWithinSq(board, x, y, radiusSq, cb, exclude = null
 export function anchorBandPx(layout) {
   return layout.size * 0.6;
 }
+
+// The trellis itself sinks in puzzle mode: each seedless descent lowers the
+// physical ceiling (collision, anchoring, settle pinning) by one packed-row
+// height. Campaign/zen/speed boards never set anchorOffsetRows, so this is
+// layout.trellisY verbatim for them.
+export function effectiveTrellisY(board, layout) {
+  const rows = (board && board.anchorOffsetRows) || 0;
+  return layout.trellisY + rows * SQRT3 * layout.size;
+}
