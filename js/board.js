@@ -25,6 +25,9 @@ export function createBoard() {
     lanterns: [],
     descentAnimY: 0,
     descentCount: 0,
+    // Rows the trellis itself has sunk (puzzle-mode seedless descents). The
+    // physical ceiling and anchor band follow it — see effectiveTrellisY().
+    anchorOffsetRows: 0,
   };
 }
 
@@ -110,7 +113,12 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows, col
 // Shift every lantern down by one packed-row height and seed a fresh top row
 // touching the trellis. Returns false (treated as a loss by the caller) if
 // any lantern would be pushed past the dead line.
-export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1) {
+//
+// opts.seedRow=false (puzzle mode) skips the fresh top row: a puzzle descent
+// is deterministic pressure — the hand-crafted board sinks toward the water —
+// rather than a stream of new random lanterns, which would break the puzzle's
+// fixed shot-queue logic.
+export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts = {}) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   const limitY = layout.deadLineY - r;
@@ -120,6 +128,13 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1) {
   for (const l of board.lanterns) {
     l.y += rowH;
     l.ny += SQRT3;
+  }
+  if (opts.seedRow === false) {
+    // No fresh top row: the trellis sinks with the board, keeping the same
+    // lanterns anchored (anchor band + ceiling follow via effectiveTrellisY).
+    board.anchorOffsetRows = (board.anchorOffsetRows || 0) + 1;
+    board.descentCount++;
+    return true;
   }
   // Stagger the new top row opposite to whichever row sits directly below it,
   // so the two interlock at exactly 2r center-distance instead of overlapping.
@@ -150,7 +165,10 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1) {
   return true;
 }
 
-export function isCleared(board) {
+export function isCleared(board, { ignoreBlockers = false } = {}) {
+  // With ignoreBlockers, a board holding only stone blockers counts as
+  // cleared — there is nothing matchable left, only waiting for a descent.
+  if (ignoreBlockers) return board.lanterns.every(l => l.isBlocker);
   return board.lanterns.length === 0;
 }
 
@@ -164,7 +182,16 @@ export function addLantern(board, x, y, color, layout, designId = null) {
 export function populatePuzzle(board, layout, pattern, pz = null) {
   const r = layout.size;
   const rowH = SQRT3 * r;
-  
+
+  // Leading blank rows sink the whole puzzle (and its trellis) toward the
+  // water: the anchor band and physical ceiling start at the first real row.
+  // Used by pressure puzzles that begin low with little room to descend.
+  let leadingBlank = 0;
+  while (leadingBlank < pattern.length && !/[A-Za-z]/.test(pattern[leadingBlank])) {
+    leadingBlank++;
+  }
+  board.anchorOffsetRows = (board.anchorOffsetRows || 0) + leadingBlank;
+
   const charToKey = {
     'R': 'red',
     'O': 'orange',
@@ -176,7 +203,9 @@ export function populatePuzzle(board, layout, pattern, pz = null) {
 
   for (let row = 0; row < pattern.length; row++) {
     const odd = row & 1;
-    const rowStr = pattern[row];
+    // Trim before tokenizing: odd rows are often written with a leading space
+    // for visual hex alignment, which must not shift their tokens a column.
+    const rowStr = pattern[row].trim();
     const tokens = rowStr.includes(' ') ? rowStr.split(/\s+/) : rowStr.split('');
     const count = Math.min(layout.cols - odd, tokens.length);
     

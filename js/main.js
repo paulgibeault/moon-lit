@@ -1,6 +1,6 @@
 import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, ENV_PARAMS, MOON_OVERRIDE } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
-import { puzzleConfig } from './puzzles.js';
+import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
 import { computeLayout } from './layout.js';
 import { render, resetHudState, isHudSettled } from './renderer.js';
@@ -298,7 +298,8 @@ function bootstrapGame() {
     startGame(restored);
   } else {
     if (gameMode === 'puzzle') {
-      startGame(createGame({ layout, isPuzzleMode: true, puzzleId: loadProgressLevel('puzzle'), gameMode: 'puzzle' }));
+      const savedPuzzleId = Math.max(1, Math.min(PUZZLE_COUNT, loadProgressLevel('puzzle') | 0));
+      startGame(createGame({ layout, isPuzzleMode: true, puzzleId: savedPuzzleId, gameMode: 'puzzle' }));
     } else {
       startGame(createGame({ layout, level: loadProgressLevel(gameMode), gameMode }));
     }
@@ -373,7 +374,7 @@ async function loadAndStartPuzzle(puzzleId) {
     game.endOverlayDismissed = true;
     forceRequestFrame();
   }
-  const id = Math.max(1, Math.min(50, puzzleId | 0));
+  const id = Math.max(1, Math.min(PUZZLE_COUNT, puzzleId | 0));
   const cfg = puzzleConfig(id);
   
   // Automatically switch gameMode to puzzle

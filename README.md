@@ -38,7 +38,7 @@ without losing your place.
 | **Campaign** | The default. Level-by-level progression with hand-tuned configs — colors, starting rows, descent pacing, and stencil packs all ramp up as you climb. Some later levels go timed. Your cleared level is remembered between sessions. |
 | **Zen** | Untimed. The trellis only creeps down as you shoot, never on a clock — float lanterns at your own pace. An optional **Fast Launch** toggle speeds up the projectile and settle animations for players who want flow without the timer. |
 | **Speed** | Timed. The trellis descends on a clock and shots fire on a short cooldown — a faster, higher-pressure take on the same board. Fast launch is always on. |
-| **Puzzle** | A set of hand-crafted teaser boards (currently 15). Each ships a fixed shot queue and a goal: **clear every lantern** or **clear the marked target lanterns**. Most are pure logic puzzles with no descent; a few add a time limit for extra bite. |
+| **Puzzle** | 50 hand-crafted teaser boards in seven chapters, each introducing a mechanic — anchor-cut drops, golden targets, stone blockers, multi-step logic, pressure finales where the trellis itself sinks toward the water, a master set of composed traps, and a final cruelty chapter of orphans, poisoned seats, and nested locks. Each puzzle ships a fixed shot queue and a goal: **clear every lantern** or **clear the marked target lanterns**. Every board is machine-verified solvable with forgiving aim windows (`node tools/test-puzzles.js`), and difficulty is tuned against a blind-luck win-probability meter (`node tools/measure-difficulty.js`). |
 
 ## Features
 

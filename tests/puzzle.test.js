@@ -54,8 +54,8 @@ test('blocker lanterns ignore color matching', () => {
 
 test('puzzle clear-targets win condition triggers when targets are gone', () => {
   const layout = fixtureLayout();
-  // Puzzle 6 is a clear-targets puzzle
-  const game = createGame({ layout, isPuzzleMode: true, puzzleId: 6 });
+  // Puzzle 7 ("Spirit Lights") is a clear-targets puzzle
+  const game = createGame({ layout, isPuzzleMode: true, puzzleId: 7 });
   assert.equal(game.puzzleGoalType, 'clear-targets');
   
   // Force clear only the targets
@@ -88,18 +88,18 @@ test('puzzle queue depletion triggers loss when goals are not met', () => {
 
 test('serialize and restore retains puzzle target and blocker properties', () => {
   const layout = fixtureLayout();
-  const game = createGame({ layout, isPuzzleMode: true, puzzleId: 6 });
-  
+  const game = createGame({ layout, isPuzzleMode: true, puzzleId: 7 });
+
   // Find at least one target and make sure we have a blocker on the board
-  // Puzzle 6 doesn't have blockers by default, let's mark one lantern as a blocker manually
-  assert.ok(game.board.lanterns.some(l => l.isTarget), 'expected targets on puzzle 6');
+  // Puzzle 7 doesn't have blockers by default, let's mark one lantern as a blocker manually
+  assert.ok(game.board.lanterns.some(l => l.isTarget), 'expected targets on puzzle 7');
   game.board.lanterns[0].isBlocker = true;
-  
+
   const snapshot = serializeGame(game);
   const restored = restoreGame(snapshot);
-  
+
   assert.equal(restored.isPuzzleMode, true);
-  assert.equal(restored.puzzleId, 6);
+  assert.equal(restored.puzzleId, 7);
   assert.equal(restored.board.lanterns[0].isBlocker, true);
   assert.equal(restored.board.lanterns[1].isTarget, game.board.lanterns[1].isTarget);
 });

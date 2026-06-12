@@ -1,5 +1,5 @@
 import { ADJACENCY_TOLERANCE } from './constants.js';
-import { anchorBandPx, forEachLanternWithinSq } from './geometry.js';
+import { anchorBandPx, effectiveTrellisY, forEachLanternWithinSq } from './geometry.js';
 
 const MIN_MATCH = 3;
 
@@ -53,7 +53,7 @@ export function popMatches(board, seed, layout) {
 // touches falls. Mutates the board; returns the dropped lanterns.
 export function dropFloating(board, layout) {
   const r = layout.size;
-  const anchorY = layout.trellisY + anchorBandPx(layout);
+  const anchorY = effectiveTrellisY(board, layout) + anchorBandPx(layout);
   const thresholdSq = adjThresholdSq(layout);
   const seen = new Set();
   const queue = [];

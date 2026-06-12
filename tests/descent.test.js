@@ -82,6 +82,15 @@ test('isCleared reflects the lantern list emptiness', () => {
   assert.equal(isCleared(b), true);
 });
 
+test('isCleared with ignoreBlockers treats a stones-only board as cleared', () => {
+  const b = createBoard();
+  b.lanterns.push({ x: 0, y: 0, color: 'paper', isBlocker: true });
+  assert.equal(isCleared(b), false);
+  assert.equal(isCleared(b, { ignoreBlockers: true }), true);
+  b.lanterns.push({ x: 40, y: 0, color: 'red' });
+  assert.equal(isCleared(b, { ignoreBlockers: true }), false);
+});
+
 test('populateInitial close-packs N rows so each row touches the next', () => {
   const layout = fixtureLayout();
   const b = createBoard();

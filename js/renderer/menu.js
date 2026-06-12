@@ -14,7 +14,7 @@ import {
 } from './style.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
 import { changeStencilPack } from '../assets.js';
-import { puzzleConfig } from '../puzzles.js';
+import { puzzleConfig, PUZZLE_COUNT } from '../puzzles.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -463,7 +463,7 @@ function drawRootPanel(ctx, layout, game, settings) {
   const items = [];
   items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
   if (gameMode === 'puzzle') {
-    items.push({ label: 'Puzzles', sub: '50 brain-teaser challenges', action: 'show-puzzles', glyph: 'puzzles' });
+    items.push({ label: 'Puzzles', sub: `${PUZZLE_COUNT} brain-teaser challenges`, action: 'show-puzzles', glyph: 'puzzles' });
   } else {
     items.push({ label: 'Stages', sub: 'select or revisit a stage', action: 'show-stages', glyph: 'stages' });
   }
@@ -1027,13 +1027,13 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
   // Determine how many puzzles are unlocked
   let maxCleared = 0;
   if (stats && stats.puzzles) {
-    for (let i = 1; i <= 50; i++) {
+    for (let i = 1; i <= PUZZLE_COUNT; i++) {
       if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
         maxCleared = Math.max(maxCleared, i);
       }
     }
   }
-  const unlockedCount = 50; // temporarily unlocked for testing
+  const unlockedCount = PUZZLE_COUNT; // temporarily unlocked for testing
 
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();
@@ -1054,7 +1054,7 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
   const viewportH = rect.y + rect.h - viewportY - 16;
 
   const rowHeight = Math.round(44 * fs);
-  const totalHeight = 50 * rowHeight;
+  const totalHeight = PUZZLE_COUNT * rowHeight;
 
   menuState.viewportY = viewportY;
   menuState.viewportH = viewportH;
@@ -1073,7 +1073,7 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
   ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
   ctx.clip();
 
-  for (let i = 1; i <= 50; i++) {
+  for (let i = 1; i <= PUZZLE_COUNT; i++) {
     const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
 
     // Viewport cull
