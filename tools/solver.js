@@ -38,7 +38,7 @@ const ANGLE_MIN = -84.5;
 const ANGLE_MAX = 84.5;
 const ANGLE_STEP = 0.5;
 
-function cloneBoard(board) {
+export function cloneBoard(board) {
   return {
     lanterns: board.lanterns.map(l => ({
       x: l.x, y: l.y, nx: l.nx, ny: l.ny, color: l.color,
@@ -77,7 +77,7 @@ export function simulateLanding(layout, board, angleDeg, { fast = false, maxBoun
 }
 
 // Mirror of game.js resolvePlacement(), minus scoring and effects.
-function applyShot(board, layout, x, y, color) {
+export function applyShot(board, layout, x, y, color) {
   const placed = addLantern(board, x, y, color, layout);
   const popped = popMatches(board, placed, layout);
   if (popped.length === 0) {
@@ -87,14 +87,14 @@ function applyShot(board, layout, x, y, color) {
   return { popped, dropped, placed };
 }
 
-function isWon(board, goalType) {
+export function isWon(board, goalType) {
   if (goalType === 'clear-targets') return !board.lanterns.some(l => l.isTarget);
   return board.lanterns.length === 0;
 }
 
 // Deterministic puzzle descent: shift everything one packed row toward the
 // water (puzzle mode never seeds new rows — see board.js descend()).
-function applyPuzzleDescent(board, layout) {
+export function applyPuzzleDescent(board, layout) {
   const rowH = SQRT3 * layout.size;
   const limitY = layout.deadLineY - layout.size;
   for (const l of board.lanterns) {
@@ -109,7 +109,7 @@ function applyPuzzleDescent(board, layout) {
   return true;
 }
 
-function stateKey(board, queueIndex) {
+export function stateKey(board, queueIndex) {
   const parts = board.lanterns.map(l =>
     `${Math.round(l.nx * 4)},${Math.round(l.ny * 4)},${l.color}${l.isTarget ? 'T' : ''}${l.isBlocker ? 'X' : ''}`
   );

@@ -28,6 +28,26 @@
 //     pixel-perfect trellis needle. Never require it.
 //   - In clear-all, a wasted shot parked on an anchored lantern is a loss;
 //     parked on a doomed (hanging) structure it sinks with it.
+//
+// Difficulty is tuned with tools/measure-difficulty.js, which reports each
+// puzzle's blind-luck win probability (random fair pocket every shot) and
+// per-shot viable-opening counts. Chapter 6 targets luck <= ~8%; the campaign
+// chapters sit anywhere up to 100% (tutorials should be forgiving).
+//
+// More solver-taught geometry (learned tuning Chapter 6):
+//   - A shot's flight path is blocked by any lantern within 2 radii of the
+//     line. Hangers spaced 4 columns apart leave a zero-width slit: pockets
+//     behind them are pixel shots. Fair corridors need a 6-column mouth.
+//   - Ceiling landings stick at the shot's own x, NOT snapped to grid
+//     columns — a lantern can rest on the trellis touching nothing. Top-row
+//     gap cells are therefore unreliable seats; never require one.
+//   - In clear-all, popping a hanging structure can never strand anything —
+//     drops only help. Strands come from popping ANCHORED families out of
+//     order, so traps must be built from anchored bait.
+//   - Parking on anything that eventually pops or drops is always safe; a
+//     park only loses if it rests anchored (top row) or seals a needed lane.
+//     "Find the one safe park" puzzles therefore don't exist; "spend every
+//     shot productively" (zero-slack) puzzles do.
 
 import { COLOR_KEYS, COLORS } from './constants.js';
 
@@ -536,6 +556,203 @@ const HAND_CRAFTED_PUZZLES = [
       ' . . Y Y . . . ',
       '. . R R R . . .',
       ' X X . . . . . ',
+    ],
+  },
+
+  // ── Chapter 6 · The Weaver's Knots — every lantern has one true home ──────
+  //
+  // The master set. No new mechanics — only composition: bridges that must be
+  // taken in order, baits that pop big and lose bigger, parks with exactly one
+  // safe bed, and queues with zero slack. Read the whole board, then shoot.
+
+  {
+    id: 31,
+    name: 'Three Birds',
+    description: 'Two families, one tail, one shot. Five wrong pops and one right one.',
+    colors: ['yellow', 'paper'],
+    queue: ['yellow'],
+    stencilPack: 'plain',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // A (left pair) and B (right L) bridge only at the center seam. Each
+    // family carries a paper-and-yellow tail — popping either side alone
+    // strands the other, and both dangling passengers are 2-cluster decoys.
+    board: [
+      '. . Y Y . Y . .',
+      ' . P . . Y . . ',
+      '. Y . . . P Y .',
+    ],
+  },
+  {
+    id: 32,
+    name: 'False Feast',
+    description: 'The lowest fruit is the bait. Cut the branch it grew from.',
+    colors: ['red', 'paper'],
+    queue: ['red', 'red'],
+    stencilPack: 'bugs',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // The fat red triangle at the bottom begs to be popped — and popping it
+    // wastes the stone above it. Pop the anchor pair instead and the whole
+    // chain sinks; the right pair and its stones need the other shot.
+    board: [
+      '. R R . . . R R',
+      ' . . X . . . X ',
+      '. . R R . . . X',
+      ' . . R . . . . ',
+    ],
+  },
+  {
+    id: 33,
+    name: 'Toll Gate',
+    description: 'The spare coin must rest on the stones — and off the road.',
+    colors: ['red', 'paper'],
+    queue: ['paper', 'red'],
+    stencilPack: 'flowers',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // The paper spare has to bed on the doomed stone tail without sealing
+    // either flank seat of the red pair.
+    board: [
+      '. . . R R . . .',
+      ' . . . X . . . ',
+      '. . . . X . . .',
+    ],
+  },
+  {
+    id: 34,
+    name: 'The Ferry Returns',
+    description: 'The same crossing, but the river has grown stones.',
+    colors: ['green', 'blue', 'paper'],
+    queue: ['blue', 'green', 'green', 'blue'],
+    stencilPack: 'plain',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // Ferry Crossing with stone ballast under each shield: the stones sink
+    // with their shields, but they wall off the low pockets, and every shot
+    // still has exactly one productive use.
+    board: [
+      '. G G . . B B .',
+      ' B B B . G G G ',
+      '. X . . . . X .',
+    ],
+  },
+  {
+    id: 35,
+    name: 'The Keyhole',
+    description: 'A fortress with one red cork. Pull it, then thread the lock.',
+    colors: ['red', 'green', 'paper'],
+    queue: ['red', 'green'],
+    stencilPack: 'dragons',
+    descentType: 'none',
+    goalType: 'clear-targets',
+    targetColor: 'green',
+    // The spirits hang in a sealed vault: paper above, paper cheeks beside,
+    // and a red cork wearing a paper skirt plugging the only shaft. Pull the
+    // cork — the skirt falls with it — then send the green up the shaft.
+    board: [
+      'P P P P P P P P',
+      ' P P T T P P P ',
+      '. P . . P . . .',
+      ' . R R R . . . ',
+      '. P P P . . . .',
+    ],
+  },
+  {
+    id: 36,
+    name: 'Cold Hearth',
+    description: 'Three flames, three hearths — and the middle hearth is walled in.',
+    colors: ['blue', 'green', 'paper'],
+    queue: ['blue', 'green', 'blue'],
+    stencilPack: 'bugs',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // The right blue pair is sealed behind the green wall, so the first blue
+    // must burn the far bait and sink its stone. Green opens the hearth, and
+    // the last blue takes it. Zero slack: every park is a loss.
+    board: [
+      '. B B . G B B .',
+      ' . X . . G G G ',
+    ],
+  },
+  {
+    id: 37,
+    name: 'The Procession',
+    description: 'Three shrines, three veils, six lanterns. One order of service.',
+    colors: ['red', 'green', 'blue'],
+    queue: ['green', 'blue', 'red', 'red', 'green', 'blue'],
+    stencilPack: 'plain',
+    descentType: 'none',
+    goalType: 'clear-all',
+    // A triple ferry: each anchored pair wears a veil of the next color.
+    // Every shot in the queue has exactly one shrine it can serve.
+    board: [
+      'R R . G G . B B',
+      ' G G . B B R R ',
+    ],
+  },
+  {
+    id: 38,
+    name: 'Hungry Ghosts',
+    description: 'Two spirits, two perches, and a feast laid out to tempt you.',
+    colors: ['green', 'yellow'],
+    queue: ['green', 'yellow'],
+    stencilPack: 'flowers',
+    descentType: 'none',
+    goalType: 'clear-targets',
+    targetColor: 'yellow',
+    // Two green pairs — only the right one carries a spirit. The yellow pair
+    // under the left perch is a feast for wasted shots: the second spirit
+    // pops only with its corner companion.
+    board: [
+      'Y . G G . . G G',
+      ' T . Y Y . T . ',
+    ],
+  },
+  {
+    id: 39,
+    name: 'The Ninth Wave',
+    description: 'Park, pull, thread — one row above the rising water.',
+    colors: ['yellow', 'red', 'paper'],
+    queue: ['paper', 'red', 'yellow'],
+    stencilPack: 'random',
+    descentType: 'shot',
+    descentEvery: 1,
+    goalType: 'clear-all',
+    env: { glowIntensity: 2.0, windSpeed: 1.3 },
+    moon: { phase: 0.12, position: 0.6 },
+    // The red pair corks the needle between the yellow families and carries
+    // the stone. Park low and the descent drowns you; park high and the
+    // trellis keeps your coin forever.
+    board: [
+      ...SUNK(14),
+      '. . Y Y . Y Y .',
+      ' . . . R R . . ',
+      '. . . . X . . .',
+    ],
+  },
+  {
+    id: 40,
+    name: "The Weaver's Knot",
+    description: 'Four shots, four duties, and a single seam holding the night together.',
+    colors: ['yellow', 'blue', 'red', 'paper'],
+    queue: ['paper', 'blue', 'red', 'yellow'],
+    stencilPack: 'random',
+    descentType: 'shot',
+    descentEvery: 2,
+    goalType: 'clear-all',
+    env: { glowIntensity: 2.2, windSpeed: 1.4 },
+    moon: { phase: 0.04, position: 0.5 },
+    // Everything at once: the paper beds on the hanging stone, the blue
+    // clears the wall, the red pulls the cork out of the one seam that joins
+    // both yellow families, and the last yellow takes the vacated seat.
+    // One true home per shot.
+    board: [
+      ...SUNK(12),
+      '. . Y Y . Y Y .',
+      ' . B B R Y . . ',
+      '. . . . R . . .',
+      ' . . . . X . . ',
     ],
   },
 ];
