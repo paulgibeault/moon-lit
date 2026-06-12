@@ -357,7 +357,9 @@ export function step(game, dtSec, layout) {
             puzzleWon = isCleared(game.board);
           }
         } else {
-          puzzleWon = isCleared(game.board);
+          // Campaign / Zen / Speed: leftover stone blockers are unmatchable,
+          // so a board holding only stones is as cleared as it can get.
+          puzzleWon = isCleared(game.board, { ignoreBlockers: true });
         }
 
         if (puzzleWon) {

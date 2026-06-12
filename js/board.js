@@ -165,7 +165,10 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts
   return true;
 }
 
-export function isCleared(board) {
+export function isCleared(board, { ignoreBlockers = false } = {}) {
+  // With ignoreBlockers, a board holding only stone blockers counts as
+  // cleared — there is nothing matchable left, only waiting for a descent.
+  if (ignoreBlockers) return board.lanterns.every(l => l.isBlocker);
   return board.lanterns.length === 0;
 }
 
