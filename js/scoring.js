@@ -68,3 +68,11 @@ export function clearBonus(shotsRemaining) {
 export function crossedMilestone(prevScore, nextScore) {
   return Math.floor(nextScore / MILESTONE_STEP) > Math.floor(prevScore / MILESTONE_STEP);
 }
+
+// True when a counter ticked past a fresh multiple of `step` (and is non-zero).
+// The combo increments by 1 per scoring shot, so this fires exactly on the
+// shot that reaches a Moonburst milestone (×5, ×10, …).
+export function crossedMultiple(prev, next, step) {
+  if (next <= 0) return false;
+  return Math.floor(next / step) > Math.floor(prev / step);
+}

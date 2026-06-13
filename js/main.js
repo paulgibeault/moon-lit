@@ -528,6 +528,7 @@ function frame(now) {
     game.phase === PHASE.FLYING ||
     game.phase === PHASE.DESCENDING ||
     game.phase === PHASE.SETTLING ||
+    game.phase === PHASE.MOONRISE ||
     game.phase === PHASE.DROWNING;
   const shotsInFlight = game.shots && game.shots.length > 0;
   const needsStep = phaseAnimating || shotsInFlight || hasActiveEffects(game) || (game.isSpeedMode && game.phase === PHASE.AIMING) || (game.isPuzzleMode && game.queue.current === null && game.phase === PHASE.AIMING);

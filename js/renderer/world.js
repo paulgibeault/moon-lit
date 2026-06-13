@@ -474,6 +474,12 @@ export function drawMoon(ctx, layout, game, settings) {
   // brief offscreen portion of the cycle skips rendering altogether.
   if (cy - r * 4 > horizonY) return;
   const combo = game.combo | 0;
+  // Smoothed combo bloom (0..1). effects.js eases game.moonGlow toward the
+  // current combo tier so the halo swells and recedes instead of snapping;
+  // fall back to the raw combo for any caller that hasn't ticked it yet.
+  const glow = game.moonGlow != null ? game.moonGlow : Math.min(1, combo / 6);
+  // Quantized for the offscreen-glow cache key in the non-PERF path below.
+  const glowBucket = Math.round(glow * 20);
   const t = reducedMotion ? 0 : performance.now() / 1000;
 
   // Slow breath: ±6% radius, ±15% alpha, ~12s period. Even without combo
@@ -513,10 +519,10 @@ export function drawMoon(ctx, layout, game, settings) {
     ctx.fill();
 
     // Inner halo — tighter, hotter ring riding on the combo lift + breath.
-    const comboLift = Math.min(1, combo / 6) * 0.55;
+    const comboLift = glow * 0.7;
     const haloBaseR = r * (1.1 + 1.1 * k + comboLift);
     const haloR = haloBaseR * (reducedMotion ? 1 : breathR);
-    const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
+    const baseAlpha = 0x44 + Math.round(0x55 * glow);
     const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA) * ENV_PARAMS.glowIntensity)));
     const rgbHalo = hexToRgb(PALETTE.moonHalo);
     const stop0Alpha = (haloAlpha / 255).toFixed(3);
@@ -566,7 +572,7 @@ export function drawMoon(ctx, layout, game, settings) {
     const breathBucket = Math.round(breath * 60);
     const pulseBucket = pulseActive ? Math.round((pulse.t / pulse.life) * 90) : -1;
     const handed = (layout && layout.handedness === 'left') ? 'L' : 'R';
-    const key = `${Math.round(cx)}|${Math.round(cy)}|${Math.round(r)}|${phase01.toFixed(4)}|${combo}|${breathBucket}|${pulseBucket}|${reducedMotion ? 1 : 0}|${ENV_PARAMS.glowIntensity}|${handed}|${layout.viewW}|${layout.viewH}|${dpr}`;
+    const key = `${Math.round(cx)}|${Math.round(cy)}|${Math.round(r)}|${phase01.toFixed(4)}|${glowBucket}|${breathBucket}|${pulseBucket}|${reducedMotion ? 1 : 0}|${ENV_PARAMS.glowIntensity}|${handed}|${layout.viewW}|${layout.viewH}|${dpr}`;
 
     if (cache.key !== key) {
       gCtx.clearRect(0, 0, layout.viewW, layout.viewH);
@@ -591,10 +597,10 @@ export function drawMoon(ctx, layout, game, settings) {
       gCtx.fill();
 
       // Inner halo — tighter, hotter ring riding on the combo lift + breath.
-      const comboLift = Math.min(1, combo / 6) * 0.55;
+      const comboLift = glow * 0.7;
       const haloBaseR = r * (1.1 + 1.1 * k + comboLift);
       const haloR = haloBaseR * (reducedMotion ? 1 : breathR);
-      const baseAlpha = 0x44 + Math.round(0x40 * Math.min(1, combo / 6));
+      const baseAlpha = 0x44 + Math.round(0x55 * glow);
       const haloAlpha = Math.max(0, Math.min(255, Math.round(baseAlpha * phaseGlowMod * (reducedMotion ? 1 : breathA) * ENV_PARAMS.glowIntensity)));
       const rgbHalo = hexToRgb(PALETTE.moonHalo);
       const stop0Alpha = (haloAlpha / 255).toFixed(3);
@@ -2556,14 +2562,20 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
       const loadedVisible =
         game.phase === PHASE.AIMING ||
         game.phase === PHASE.SETTLING ||
-        game.phase === PHASE.DESCENDING;
+        game.phase === PHASE.DESCENDING ||
+        game.phase === PHASE.MOONRISE;
       if (loadedVisible) {
         ctx.save();
         ctx.translate(0, -d_hinge_lantern);
         ctx.rotate(-activeAim); // Keep lantern visually upright
         
-        // Lantern is lit — fuel pellet was ignited by the pilot flame
+        // Lantern is lit — fuel pellet was ignited by the pilot flame. When a
+        // Moonburst is armed, the loaded lamp wears a fireball aura so the
+        // player sees their next shot is the special before they fire it.
         const litVal = !isReflection;
+        if (game.moonburstReady && !isReflection) {
+          drawFireballAura(ctx, 0, 0, r, tSec);
+        }
         drawLantern(ctx, 0, 0, r, game.queue.current, {
           lit: litVal,
           intensity: 0.40 + 0.12 * Math.sin(tSec * 4.0),
@@ -2862,6 +2874,25 @@ export function drawAimLine(ctx, layout, game) {
   }
 }
 
+// Additive flickering fireball glow used to mark a Moonburst — on the loaded
+// shot (so the player sees it's armed) and on the projectile in flight (so the
+// incoming clear reads as a fireball). Warm amber core fading to ember red.
+function drawFireballAura(ctx, cx, cy, r, tSec) {
+  const flick = 1 + 0.16 * Math.sin(tSec * 18) + 0.08 * Math.cos(tSec * 27);
+  const R = r * 2.0 * flick;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+  g.addColorStop(0,    'rgba(255, 236, 180, 0.85)');
+  g.addColorStop(0.45, 'rgba(255, 150, 60, 0.45)');
+  g.addColorStop(1,    'rgba(255, 90, 30, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // Seconds for a freshly-launched lamp to ramp from dark to a full flicker.
 const IGNITE_SEC = 0.35;
 
@@ -2876,6 +2907,9 @@ export function drawProjectile(ctx, shot, layout) {
   const drawX = shot.x + (-shot.vy) * wobble;
   const drawY = shot.y + ( shot.vx) * wobble;
   const ignite = Math.min(1, t / IGNITE_SEC);
+  if (shot.moonburst) {
+    drawFireballAura(ctx, drawX, drawY, layout.size, performance.now() / 1000);
+  }
   drawLantern(ctx, drawX, drawY, layout.size, shot.color,
     { lit: true, intensity: ignite, phase, designId: shot.designId });
 }
