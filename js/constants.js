@@ -241,7 +241,10 @@ export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
 //   where it lands (color-blind, blockers included), blowing a hole in a
 //   cramped board.
 export const COMBO_POWERS = Object.freeze({
-  moonriseFull: 45,        // combo-units of meter to bank one Moonrise charge
+  moonriseFull: 80,        // meter units to bank one Moonrise charge
+  moonriseScoreDivisor: 12, // each scoring shot adds combo + total/this, so a
+                            // big cluster or drop charges far faster than a
+                            // string of small pops
   moonriseMaxCharges: 3,
   moonriseDangerRows: 4,   // auto-spend a charge to cancel a descent only when
                            // the lowest lantern is within this many rows of water

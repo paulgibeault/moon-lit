@@ -231,12 +231,12 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   };
 }
 
-// Combo powers (Moonrise meter + Moonburst shots) only run in standard
-// shot-based play. Puzzles are hand-tuned for a fixed shot queue and a luck
-// target, and speed/fast modes have their own cadence — injecting power-ups
-// into either would break their balance, so both opt out.
+// Combo powers (Moonrise meter + Moonburst shots) run in every freeplay mode —
+// campaign, zen, and speed (where the time pressure makes the relief most
+// valuable). Only puzzles opt out: they're hand-tuned for a fixed shot queue
+// and a luck target, so injecting power-ups would break their balance.
 export function comboPowersActive(game) {
-  return !game.isPuzzleMode && !game.isSpeedMode && !game.isFastLaunch;
+  return !game.isPuzzleMode;
 }
 
 export function setAim(game, angleRad) {
@@ -552,7 +552,7 @@ function stepMoonrise(game, dtSec, layout) {
   const fx = game.moonriseFx;
   if (!fx) {                         // defensive: e.g. restored mid-animation
     game.board.descentAnimY = 0;
-    game.shotsUntilDescent = game.descentShots;  // the descent was cancelled
+    resetDescentCounter(game);       // the descent was cancelled
     game.phase = PHASE.AIMING;
     return true;
   }
@@ -583,10 +583,20 @@ function stepMoonrise(game, dtSec, layout) {
   if (u >= 1) {
     game.board.descentAnimY = 0;
     game.moonriseFx = null;
-    game.shotsUntilDescent = game.descentShots;
+    resetDescentCounter(game);
     game.phase = PHASE.AIMING;
   }
   return true;
+}
+
+// Reset whichever descent clock the current mode uses after a cancelled
+// descent: speed mode counts down time, every other mode counts down shots.
+function resetDescentCounter(game) {
+  if (game.isSpeedMode) {
+    game.timeUntilDescent = game.descentTimeLimit;
+  } else {
+    game.shotsUntilDescent = game.descentShots;
+  }
 }
 
 function finishSettle(game, layout) {
@@ -707,7 +717,10 @@ function updateComboPowers(game, prevCombo, breakdown, lantern, layout) {
   const combo = breakdown.combo | 0;
   if (combo <= 0) return;  // whiff: multiplier already reset; meter persists
 
-  game.moonMeter += combo;
+  // Charge scales with the shot's score, so a fat cluster or a big drop fills
+  // the meter far faster than a string of minimum pops — while the flat combo
+  // term keeps a steady streak rewarding even when each pop is small.
+  game.moonMeter += combo + breakdown.total / COMBO_POWERS.moonriseScoreDivisor;
   const FULL = COMBO_POWERS.moonriseFull;
   while (game.moonMeter >= FULL && game.moonriseCharges < COMBO_POWERS.moonriseMaxCharges) {
     game.moonMeter -= FULL;
