@@ -4,7 +4,7 @@ import { PHASE, comboPowersActive } from '../game.js';
 import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
-  formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
+  formatScore, hudPx, fontScaleOf, hexToRgba, easeOut, PERF_MODE,
 } from './style.js';
 import { getMoonState, drawPhaseShadow, drawLantern } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
@@ -332,6 +332,44 @@ function drawSparkle(ctx, cx, cy, r, color) {
   ctx.fill();
 }
 
+// Last-drawn pip geometry (screen space), published by drawComboPowers so the
+// spent-charge flight can launch from the exact slot it left.
+let comboPowerGeom = null;
+
+// Bright departure flash on a just-spent Moonrise pip. `fp` is flight progress
+// 0→1. A hot white core (brightest at ignition) inside a warm bloom, plus an
+// expanding shockwave ring — punchy enough to catch the eye even though the
+// pip itself is tiny. Additive so it reads as light, not paint.
+function drawPipFlash(ctx, cx, cy, pipR, fp) {
+  const k = Math.max(0, 1 - fp);            // overall brightness 1 → 0
+  const e = 1 - (1 - fp) * (1 - fp);        // ease-out expansion 0 → 1
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // Warm bloom.
+  const R = pipR * (1.6 + e * 3.0);
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+  g.addColorStop(0,   `rgba(255, 248, 230, ${(0.95 * k).toFixed(3)})`);
+  g.addColorStop(0.4, `rgba(248, 206, 140, ${(0.55 * k).toFixed(3)})`);
+  g.addColorStop(1,   'rgba(248, 206, 140, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+  // Hot white core — peaks hard at ignition, gone by mid-flight.
+  ctx.fillStyle = `rgba(255, 255, 252, ${(0.9 * k * k).toFixed(3)})`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pipR * (0.9 + 0.4 * k), 0, Math.PI * 2);
+  ctx.fill();
+  // Expanding shockwave ring.
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.strokeStyle = `rgba(255, 244, 214, ${(0.85 * k).toFixed(3)})`;
+  ctx.lineWidth = 2.2 * k + 0.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pipR * (1 + e * 2.4), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 // Combo-power readout: the Moonrise charge pips + filling meter, then a
 // Moonburst-ready sparkle. Drawn only in modes that run the powers, and only
 // once there's something to show, so it stays invisible during early/quiet
@@ -341,7 +379,12 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   const charges = game.moonriseCharges | 0;
   const meter = game.moonMeter || 0;
   const ready = !!game.moonburstReady;
-  if (charges === 0 && meter <= 0 && !ready) return;
+  const spend = game.moonriseSpend;
+  const spendActive = !!(spend && spend.t < spend.life);
+  const labelActive = !!(game.moonriseLabel && game.moonriseLabel.t < game.moonriseLabel.life);
+  // Keep the row up while a charge is flying out or the "tide held" label is
+  // showing, so the readout doesn't blink away under its own callout.
+  if (charges === 0 && meter <= 0 && !ready && !spendActive && !labelActive) return;
 
   const px = hudPx(layout, 0.52, 10, settings);
   const maxCharges = COMBO_POWERS.moonriseMaxCharges;
@@ -349,13 +392,20 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   const pipR = px * 0.34;
   const gap = px * 0.5;
   const cy = y + px * 0.5;
-  let cx = x + pipR;
+  const pipX0 = x + pipR;
+  const pipStep = pipR * 2 + gap * 0.5;
+  // Publish pip geometry so drawMoonriseSpend can launch the spent charge from
+  // exactly the right slot.
+  comboPowerGeom = { pipX0, pipStep, pipR, cy };
+  let cx = pipX0;
 
   ctx.save();
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'left';
 
   // Charge pips — a filled crescent per banked Moonrise, faint ring for empty.
+  // The just-emptied slot during a spend gets a bright flash (drawPipFlash) so
+  // the eye is unmistakably drawn to where the charge departed.
   for (let i = 0; i < maxCharges; i++) {
     if (i < charges) {
       drawCrescent(ctx, cx, cy, pipR, PALETTE.moonHalo, true);
@@ -365,8 +415,11 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
       ctx.beginPath();
       ctx.arc(cx, cy, pipR, 0, Math.PI * 2);
       ctx.stroke();
+      if (spendActive && i === spend.pipIndex) {
+        drawPipFlash(ctx, cx, cy, pipR, spend.t / spend.life);
+      }
     }
-    cx += pipR * 2 + gap * 0.5;
+    cx += pipStep;
   }
 
   // Meter bar — fills toward the next charge, tinting moon→halo as it nears full.
@@ -394,6 +447,79 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
     ctx.fillStyle = hexToRgba(PALETTE.moonHalo, HUD_OPACITY.strong * tt);
     ctx.fillText('burst', cx + pipR * 2.6, cy);
   }
+  ctx.restore();
+}
+
+// The spent Moonrise charge in flight: a haloed crescent arcing from its HUD
+// pip up into the moon, arriving as the moon flares to lift the board. Makes
+// the rescue legibly "cost" an earned charge. Reads comboPowerGeom (the pip it
+// left) and the live moon position as its endpoints.
+export function drawMoonriseSpend(ctx, layout, game, settings) {
+  const s = game.moonriseSpend;
+  if (!s || !comboPowerGeom) return;
+  const u = Math.min(1, s.t / s.life);
+  const e = easeOut(u);
+
+  const sx = comboPowerGeom.pipX0 + s.pipIndex * comboPowerGeom.pipStep;
+  const sy = comboPowerGeom.cy;
+  const m = getMoonState(layout, settings);
+
+  // Arc the path upward so the charge sweeps into the sky rather than sliding
+  // in a straight line — the sine bump peaks mid-flight.
+  const px = sx + (m.cx - sx) * e;
+  const py = sy + (m.cy - sy) * e - Math.sin(u * Math.PI) * layout.size * 2.5;
+  const r = comboPowerGeom.pipR * (1 + e * 1.4);
+  // Fade out over the final stretch as it merges into the moon's glow.
+  const fade = u < 0.82 ? 1 : Math.max(0, 1 - (u - 0.82) / 0.18);
+
+  ctx.save();
+  // Comet glow trail.
+  ctx.globalCompositeOperation = 'lighter';
+  const glow = ctx.createRadialGradient(px, py, 0, px, py, r * 3.2);
+  glow.addColorStop(0, hexToRgba(PALETTE.moonHalo, 0.55 * fade));
+  glow.addColorStop(1, hexToRgba(PALETTE.moonHalo, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(px, py, r * 3.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = fade;
+  drawCrescent(ctx, px, py, r, PALETTE.moon, true);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// "moonrise — tide held" callout, drawn next to the combo-power readout (the
+// meter that paid for the rescue) rather than at the waterline. Rises and
+// fades like a score float but anchored in HUD space beneath the pip row.
+export function drawMoonriseLabel(ctx, layout, game, settings) {
+  const lab = game.moonriseLabel;
+  if (!lab || lab.t >= lab.life) return;
+  const geom = comboPowerGeom;
+  const ax = geom ? geom.pipX0 - geom.pipR : MENU_RESERVE_PX;
+  const rowY = geom ? geom.cy : hudPx(layout, 0.95, 14, settings) * 3.2;
+  const pipR = geom ? geom.pipR : hudPx(layout, 0.52, 10, settings) * 0.34;
+
+  const tt = lab.t / lab.life;
+  const px = hudPx(layout, 0.66, 12, settings);
+  const rise = settings.reducedMotion ? 0 : px * 1.4 * easeOut(tt);
+  const fadeIn = Math.min(1, tt / 0.12);
+  const fadeOut = Math.min(1, (1 - tt) / 0.32);
+  const alpha = Math.min(fadeIn, fadeOut);
+
+  // Sit just below the pip row and drift upward toward it as it fades.
+  const y = rowY + pipR + px * 0.9 - rise;
+
+  ctx.save();
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `italic 700 ${px}px ${SERIF}`;
+  if (!settings.reducedMotion && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+    ctx.shadowColor = PALETTE.moonHalo;
+    ctx.shadowBlur = 8;
+  }
+  ctx.fillStyle = hexToRgba(PALETTE.moonHalo, 0.96 * alpha);
+  ctx.fillText('moonrise — tide held', ax, y);
   ctx.restore();
 }
 

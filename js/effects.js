@@ -27,6 +27,8 @@ export function hasActiveEffects(game) {
   if (game.floats && game.floats.length > 0) return true;
   if (game.ripples && game.ripples.length > 0) return true;
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) return true;
+  if (game.moonriseSpend) return true;
+  if (game.moonriseLabel) return true;
   return false;
 }
 
@@ -57,6 +59,16 @@ export function tickEffects(game, dtSec) {
   }
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) {
     game.moonPulse.t += dtSec;
+  }
+  // Spent-charge flight: a banked Moonrise pip travelling from the HUD up to
+  // the moon. The renderer reads its t/life; we just advance and retire it.
+  if (game.moonriseSpend) {
+    game.moonriseSpend.t += dtSec;
+    if (game.moonriseSpend.t >= game.moonriseSpend.life) game.moonriseSpend = null;
+  }
+  if (game.moonriseLabel) {
+    game.moonriseLabel.t += dtSec;
+    if (game.moonriseLabel.t >= game.moonriseLabel.life) game.moonriseLabel = null;
   }
   // Smoothly chase the moon-bloom toward the current combo tier so the halo
   // swells as a streak builds and eases back down when it breaks. Exponential

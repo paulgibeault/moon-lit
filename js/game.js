@@ -197,6 +197,8 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     moonriseCharges: 0,
     moonburstReady: false,
     moonGlow: 0,
+    moonriseSpend: null,
+    moonriseLabel: null,
     moonPulse: { t: 0, life: 0 },
     shotsUntilDescent: descentShots,
     pendingDescent: false,
@@ -568,7 +570,9 @@ function stepMoonrise(game, dtSec, layout) {
       pulseMoon(game);
       const cx = launcherTip(layout).x;
       spawnRipple(game, cx, layout.deadLineY, layout, { strength: 1.0, reach: 18 });
-      spawnPowerFloat(game, 'moonrise', 'moonrise — tide held', cx, layout.deadLineY, layout);
+      // The "tide held" callout is drawn by the HUD next to the combo-power
+      // readout (the meter that paid for the rescue), not at the waterline.
+      game.moonriseLabel = { t: 0, life: 1.6 };
     }
     return true;
   }
@@ -595,6 +599,10 @@ function finishSettle(game, layout) {
     // so the relief lands exactly in the end game where it matters.
     if (comboPowersActive(game) && game.moonriseCharges > 0 && fieldInDanger(game, layout)) {
       game.moonriseCharges--;
+      // The pip that just emptied (now the highest index) flies up to the moon
+      // over the dip, arriving as the moon flares — so the rescue visibly
+      // consumes an earned charge. pipIndex is the post-decrement count.
+      game.moonriseSpend = { t: 0, life: MOONRISE_DIP_SEC, pipIndex: game.moonriseCharges };
       startMoonrise(game, layout);
       return;
     }

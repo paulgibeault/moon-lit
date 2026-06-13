@@ -12,7 +12,7 @@ import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
-  drawLoadingOverlay,
+  drawLoadingOverlay, drawMoonriseSpend, drawMoonriseLabel,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -44,6 +44,10 @@ export function render(ctx, layout, game, settings, stats, scores) {
   drawFloats(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
+  // After drawScoreHud (which draws the combo-power pips and publishes their
+  // geometry) so the spent charge and "tide held" label anchor to the meter.
+  drawMoonriseSpend(ctx, layout, game, settings);
+  drawMoonriseLabel(ctx, layout, game, settings);
   drawLanternInventory(ctx, layout, game, settings);
   drawQuickRestartButton(ctx, layout, game, settings);
   if ((game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) && !game.endOverlayDismissed) {
