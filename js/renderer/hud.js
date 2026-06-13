@@ -1,6 +1,6 @@
-import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS } from '../constants.js';
+import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS, COMBO_POWERS } from '../constants.js';
 import { STENCIL_PACKS } from '../stencil-packs.js';
-import { PHASE } from '../game.js';
+import { PHASE, comboPowersActive } from '../game.js';
 import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
@@ -202,7 +202,12 @@ export function drawScoreHud(ctx, layout, game, settings) {
   // Combo badge — silent until the player is actually chaining. When the
   // chain ends, the badge disappears with the next render and the celebration
   // lives entirely in the world-side "combo ×N" float.
-  drawComboBadge(ctx, layout, game, settings, subX, 8 + fontPx + subPx + 6, align);
+  const comboY = 8 + fontPx + subPx + 6;
+  drawComboBadge(ctx, layout, game, settings, subX, comboY, align);
+  // Combo-power readout (Moonrise meter + charges, Moonburst-ready) sits a
+  // line below the combo badge. Persists after a chain breaks — banked
+  // charges and a loaded burst outlive the combo that earned them.
+  drawComboPowers(ctx, layout, game, settings, subX, comboY + hudPx(layout, 0.62, 12, settings) * 1.3, align);
 
   // Best-flash glow: a soft moonHalo ring under the score for ~1.5s after a
   // new best lands. Honors reduced motion via tweenHud's instant-clear.
@@ -325,6 +330,82 @@ function drawSparkle(ctx, cx, cy, r, color) {
   ctx.quadraticCurveTo(cx - r * 0.18, cy + r * 0.18, cx - r, cy);
   ctx.quadraticCurveTo(cx - r * 0.18, cy - r * 0.18, cx, cy - r);
   ctx.fill();
+}
+
+// Combo-power readout: the Moonrise charge pips + filling meter, then a
+// Moonburst-ready sparkle. Drawn only in modes that run the powers, and only
+// once there's something to show, so it stays invisible during early/quiet
+// play. Left-anchored to match the score panel.
+function drawComboPowers(ctx, layout, game, settings, x, y, align) {
+  if (!comboPowersActive(game)) return;
+  const charges = game.moonriseCharges | 0;
+  const meter = game.moonMeter || 0;
+  const ready = !!game.moonburstReady;
+  if (charges === 0 && meter <= 0 && !ready) return;
+
+  const px = hudPx(layout, 0.52, 10, settings);
+  const maxCharges = COMBO_POWERS.moonriseMaxCharges;
+  const frac = charges >= maxCharges ? 1 : Math.max(0, Math.min(1, meter / COMBO_POWERS.moonriseFull));
+  const pipR = px * 0.34;
+  const gap = px * 0.5;
+  const cy = y + px * 0.5;
+  let cx = x + pipR;
+
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+
+  // Charge pips — a filled crescent per banked Moonrise, faint ring for empty.
+  for (let i = 0; i < maxCharges; i++) {
+    if (i < charges) {
+      drawCrescent(ctx, cx, cy, pipR, PALETTE.moonHalo, true);
+    } else {
+      ctx.strokeStyle = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, pipR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    cx += pipR * 2 + gap * 0.5;
+  }
+
+  // Meter bar — fills toward the next charge, tinting moon→halo as it nears full.
+  cx += gap * 0.3;
+  const barW = px * 4.2;
+  const barH = px * 0.42;
+  const barY = cy - barH / 2;
+  ctx.fillStyle = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
+  roundRectPath(ctx, cx, barY, barW, barH, barH / 2);
+  ctx.fill();
+  if (frac > 0) {
+    ctx.fillStyle = hexLerpRgba(PALETTE.moon, PALETTE.moonHalo, frac, HUD_OPACITY.strong);
+    roundRectPath(ctx, cx, barY, Math.max(barH, barW * frac), barH, barH / 2);
+    ctx.fill();
+  }
+  cx += barW + gap;
+
+  // Moonburst-ready sparkle — a soft pulse so it reads as "armed, fire when ready".
+  if (ready) {
+    const tt = settings.reducedMotion ? 1 : 0.65 + 0.35 * Math.sin(performance.now() / 1000 * 4);
+    ctx.globalAlpha = tt;
+    drawSparkle(ctx, cx + pipR, cy, pipR * 1.6, PALETTE.moonHalo);
+    ctx.globalAlpha = 1;
+    ctx.font = `italic 600 ${px}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(PALETTE.moonHalo, HUD_OPACITY.strong * tt);
+    ctx.fillText('burst', cx + pipR * 2.6, cy);
+  }
+  ctx.restore();
+}
+
+// Rounded-rectangle path helper for the meter bar. Falls back to a plain rect
+// where roundRect isn't available.
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(x, y, w, h, r);
+  } else {
+    ctx.rect(x, y, w, h);
+  }
 }
 
 // Stage-clear / game-over panel. Shows a tween-counted score, the per-component

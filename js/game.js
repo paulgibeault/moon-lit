@@ -10,20 +10,21 @@ import {
   SPEED_MODE_FIRE_COOLDOWN,
   ENV_PARAMS, MOON_OVERRIDE,
   getActivePackId,
+  COMBO_POWERS,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
-import { popMatches, dropFloating } from './match.js';
-import { resolveShot, clearBonus, crossedMilestone } from './scoring.js';
+import { popMatches, dropFloating, clearRadius } from './match.js';
+import { resolveShot, clearBonus, crossedMilestone, crossedMultiple } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
-import { clamp, SQRT3 } from './geometry.js';
+import { clamp, easeOut, SQRT3 } from './geometry.js';
 import { traceFromShot, launcherTip } from './projectile.js';
 import {
   emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, spawnRipple,
-  tickEffects,
+  spawnFireball, spawnPowerFloat, tickEffects,
 } from './effects.js';
 
 export const PHASE = Object.freeze({
@@ -31,6 +32,7 @@ export const PHASE = Object.freeze({
   FLYING: 'flying',
   SETTLING: 'settling',
   DESCENDING: 'descending',
+  MOONRISE: 'moonrise',
   DROWNING: 'drowning',
   WIN: 'win',
   GAME_OVER: 'gameOver',
@@ -54,6 +56,13 @@ const DROWN_BUBBLE_MIN_INT  = 0.18; // seconds between bubble ripples (per lamp)
 const DROWN_BUBBLE_MAX_INT  = 0.5;
 const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
 const DROWN_END_PAUSE_SEC   = 0.3;
+
+// Moonrise rescue cinematic. The board first sinks a full packed-row (the
+// descent the trellis was about to take), then — as the moon flares — springs
+// back up into place. Dip accelerates (a fall beginning); lift decelerates (a
+// gentle catch), so the moon reads as intercepting the descent.
+const MOONRISE_DIP_SEC  = 0.34;
+const MOONRISE_LIFT_SEC = 0.52;
 
 export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
   // Determine gameMode
@@ -180,6 +189,14 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     counts: { popped: 0, dropped: 0 },
     combo: 0,
     bestCombo: 0,
+    // Combo powers (campaign/zen only — see comboPowersActive). moonMeter
+    // charges toward a banked Moonrise charge; moonburstReady flags that the
+    // next shot fired is a radius-clearing Moonburst. moonGlow is the smoothed
+    // 0..1 bloom the moon renders.
+    moonMeter: 0,
+    moonriseCharges: 0,
+    moonburstReady: false,
+    moonGlow: 0,
     moonPulse: { t: 0, life: 0 },
     shotsUntilDescent: descentShots,
     pendingDescent: false,
@@ -212,6 +229,14 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   };
 }
 
+// Combo powers (Moonrise meter + Moonburst shots) only run in standard
+// shot-based play. Puzzles are hand-tuned for a fixed shot queue and a luck
+// target, and speed/fast modes have their own cadence — injecting power-ups
+// into either would break their balance, so both opt out.
+export function comboPowersActive(game) {
+  return !game.isPuzzleMode && !game.isSpeedMode && !game.isFastLaunch;
+}
+
 export function setAim(game, angleRad) {
   if (game.phase !== PHASE.AIMING) return;
   game.aimAngle = clamp(angleRad, AIM_MIN_ANGLE, AIM_MAX_ANGLE);
@@ -232,6 +257,9 @@ export function fire(game, layout) {
   const swayAmp = game.isFastLaunch ? 0 : (SHOT_SWAY_AMP_MIN +
     game.rng() * (SHOT_SWAY_AMP_MAX - SHOT_SWAY_AMP_MIN));
 
+  // A loaded Moonburst rides out on this shot and is consumed on fire.
+  const moonburst = comboPowersActive(game) && game.moonburstReady;
+
   const newShot = {
     x: origin.x,
     y: origin.y,
@@ -243,6 +271,7 @@ export function fire(game, layout) {
     swayPhase: game.rng() * Math.PI * 2,
     swayFreq,
     swayAmp,
+    moonburst,
   };
 
   if (game.isFastLaunch) {
@@ -253,6 +282,7 @@ export function fire(game, layout) {
     game.shots = [newShot];
     game.phase = PHASE.FLYING;
   }
+  if (moonburst) game.moonburstReady = false;
 
   const tSec = performance.now() / 1000;
   game.lastLaunchTime = tSec;
@@ -322,6 +352,10 @@ export function step(game, dtSec, layout) {
     }
   }
 
+  if (game.phase === PHASE.MOONRISE) {
+    return stepMoonrise(game, dtSec, layout);
+  }
+
   if (game.phase === PHASE.DROWNING) {
     return stepDrowning(game, dtSec, layout);
   }
@@ -343,7 +377,7 @@ export function step(game, dtSec, layout) {
           return true;
         }
 
-        resolvePlacement(game, layout);
+        resolvePlacement(game, layout, { moonburst: !!shot.moonburst });
 
         if (!game.isFastLaunch) {
           advanceQueue(game);
@@ -503,9 +537,67 @@ function stepDrowning(game, dtSec, layout) {
   return true;
 }
 
+// Kick off the Moonrise rescue: the board is about to descend, so animate it
+// dipping a row and then being lifted back. Drives board.descentAnimY (the
+// same offset a real descent rides), which the renderer already applies.
+function startMoonrise(game, layout) {
+  game.moonriseFx = { t: 0, stage: 'dip', rowH: SQRT3 * layout.size };
+  game.board.descentAnimY = 0;
+  game.phase = PHASE.MOONRISE;
+}
+
+function stepMoonrise(game, dtSec, layout) {
+  const fx = game.moonriseFx;
+  if (!fx) {                         // defensive: e.g. restored mid-animation
+    game.board.descentAnimY = 0;
+    game.shotsUntilDescent = game.descentShots;  // the descent was cancelled
+    game.phase = PHASE.AIMING;
+    return true;
+  }
+  fx.t += dtSec;
+
+  if (fx.stage === 'dip') {
+    // Accelerating fall: the board sinks the row the trellis meant to take.
+    const u = Math.min(1, fx.t / MOONRISE_DIP_SEC);
+    game.board.descentAnimY = fx.rowH * (u * u);
+    if (u >= 1) {
+      // Bottom of the dip — the moon intercedes. A flare plus a bright ripple
+      // sweeping up from the waterline sells "the moon lifted it back."
+      fx.stage = 'lift';
+      fx.t = 0;
+      pulseMoon(game);
+      const cx = launcherTip(layout).x;
+      spawnRipple(game, cx, layout.deadLineY, layout, { strength: 1.0, reach: 18 });
+      spawnPowerFloat(game, 'moonrise', 'moonrise — tide held', cx, layout.deadLineY, layout);
+    }
+    return true;
+  }
+
+  // Decelerating lift back into place.
+  const u = Math.min(1, fx.t / MOONRISE_LIFT_SEC);
+  game.board.descentAnimY = fx.rowH * (1 - easeOut(u));
+  if (u >= 1) {
+    game.board.descentAnimY = 0;
+    game.moonriseFx = null;
+    game.shotsUntilDescent = game.descentShots;
+    game.phase = PHASE.AIMING;
+  }
+  return true;
+}
+
 function finishSettle(game, layout) {
   if (game.pendingDescent) {
     game.pendingDescent = false;
+    // Moonrise lifeline: once the field has sunk into the danger band, a
+    // banked charge is spent to hold the line — the descent is cancelled and
+    // the shot counter resets, buying a full cycle to clear. Outside the
+    // danger band charges are kept (the descent just adds a harmless top row),
+    // so the relief lands exactly in the end game where it matters.
+    if (comboPowersActive(game) && game.moonriseCharges > 0 && fieldInDanger(game, layout)) {
+      game.moonriseCharges--;
+      startMoonrise(game, layout);
+      return;
+    }
     // Pull the new top row only from colors currently in play, so a descent
     // can't re-introduce a color the player has already cleared from the board.
     // Filter out blockers so their colors do not pollute the live color set.
@@ -540,20 +632,26 @@ function finishSettle(game, layout) {
   }
 }
 
-function resolvePlacement(game, layout) {
+function resolvePlacement(game, layout, opts = {}) {
+  const moonburst = !!opts.moonburst;
   const lantern = game.board.lanterns[game.board.lanterns.length - 1];
   // Match against the placement position. Running settleAround first can
   // drift the new lantern off its same-color anchors past the tight 1.04
   // adjacency tolerance, silently failing visually-valid matches. Settle
   // is only meaningful when the new lantern stays on the board.
-  const popped = popMatches(game.board, lantern, layout);
-  if (popped.length === 0) {
+  //
+  // A Moonburst ignores color entirely: it clears a radius around impact.
+  const popped = moonburst
+    ? clearRadius(game.board, lantern, layout)
+    : popMatches(game.board, lantern, layout);
+  if (popped.length === 0 && !moonburst) {
     settleAround(game.board, layout, lantern);
   }
   const dropped = dropFloating(game.board, layout);
   const breakdown = resolveShot(popped, dropped, game.combo);
 
   const prevScore = game.score;
+  const prevCombo = game.combo;
   game.score += breakdown.total;
   game.combo = breakdown.combo;
   if (game.combo > game.bestCombo) game.bestCombo = game.combo;
@@ -573,7 +671,66 @@ function resolvePlacement(game, layout) {
 
   if (crossedMilestone(prevScore, game.score)) pulseMoon(game);
 
+  if (moonburst) {
+    // A fireball spanning the cleared zone (the per-lantern bursts above give
+    // the cluster-tearing-apart texture underneath it), plus an outward shock
+    // ripple and a moon flare.
+    spawnFireball(game, lantern.x, lantern.y, COMBO_POWERS.moonburstRadius * 1.1);
+    spawnPowerFloat(game, 'moonburst', 'moonburst!', lantern.x, lantern.y, layout);
+    spawnRipple(game, lantern.x, lantern.y, layout, { strength: 1.0, reach: 12 });
+    pulseMoon(game);
+  }
+
+  if (comboPowersActive(game)) {
+    updateComboPowers(game, prevCombo, breakdown, lantern, layout);
+  }
+
   game.lastResolution = { popped, dropped, breakdown };
+}
+
+// Charge the two combo powers off this shot's result. Called only in modes
+// where comboPowersActive(game) is true.
+//   * Moonrise meter accrues the combo magnitude of each scoring shot; each
+//     fill banks a charge (capped). A broken combo holds the meter where it
+//     is rather than draining it — the easy mid-game funds the end game.
+//   * Moonburst loads on every COMBO_POWERS.moonburstStep-th consecutive
+//     scoring shot, unless one is already held.
+function updateComboPowers(game, prevCombo, breakdown, lantern, layout) {
+  const combo = breakdown.combo | 0;
+  if (combo <= 0) return;  // whiff: multiplier already reset; meter persists
+
+  game.moonMeter += combo;
+  const FULL = COMBO_POWERS.moonriseFull;
+  while (game.moonMeter >= FULL && game.moonriseCharges < COMBO_POWERS.moonriseMaxCharges) {
+    game.moonMeter -= FULL;
+    game.moonriseCharges++;
+    spawnPowerFloat(game, 'moonrise', 'moonrise charged', lantern.x, lantern.y, layout);
+    pulseMoon(game);
+  }
+  // Hold the meter visibly full once every charge is banked rather than
+  // letting it run away past the cap.
+  if (game.moonriseCharges >= COMBO_POWERS.moonriseMaxCharges) {
+    game.moonMeter = Math.min(game.moonMeter, FULL);
+  }
+
+  if (!game.moonburstReady &&
+      crossedMultiple(prevCombo, combo, COMBO_POWERS.moonburstStep)) {
+    game.moonburstReady = true;
+    spawnPowerFloat(game, 'moonburst', 'moonburst ready', lantern.x, lantern.y, layout);
+    pulseMoon(game);
+  }
+}
+
+// The field is "in danger" once its lowest lantern has sunk within
+// COMBO_POWERS.moonriseDangerRows packed-rows of the waterline — the band
+// where a banked Moonrise charge is worth spending to cancel a descent.
+function fieldInDanger(game, layout) {
+  const rowH = SQRT3 * layout.size;
+  let maxY = -Infinity;
+  for (const l of game.board.lanterns) {
+    if (l.y > maxY) maxY = l.y;
+  }
+  return maxY >= layout.deadLineY - COMBO_POWERS.moonriseDangerRows * rowH;
 }
 
 function advanceQueue(game) {

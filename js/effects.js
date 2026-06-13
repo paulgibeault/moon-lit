@@ -3,17 +3,24 @@
 // draws them — this module is the model side: spawn, tick, and decide when
 // they're done.
 
-import { BURST_DURATION_SEC, ENV_PARAMS } from './constants.js';
+import { BURST_DURATION_SEC, COMBO_POWERS, ENV_PARAMS } from './constants.js';
 
 // Per-kind presentation tuning for floating score labels. Vertical rise and
 // life come from here; the renderer reads each kind's text/x/y/t/life.
 const FLOAT_STYLES = Object.freeze({
-  pop:     { offsetR: 0.4, life: 1.1 },
-  cluster: { offsetR: 1.2, life: 1.4 },
-  drop:    { offsetR: 0.6, life: 1.6 },
-  chain:   { offsetR: 2.0, life: 1.7 },
-  combo:   { offsetR: 2.6, life: 1.8 },
+  pop:       { offsetR: 0.4, life: 1.1 },
+  cluster:   { offsetR: 1.2, life: 1.4 },
+  drop:      { offsetR: 0.6, life: 1.6 },
+  chain:     { offsetR: 2.0, life: 1.7 },
+  combo:     { offsetR: 2.6, life: 1.8 },
+  moonburst: { offsetR: 3.0, life: 1.9 },
+  moonrise:  { offsetR: 3.4, life: 2.0 },
 });
+
+// Time constant (seconds) for easing the moon-bloom toward the current combo
+// tier. Small enough to feel responsive, large enough that a combo reset
+// fades the glow out gracefully rather than snapping it off.
+const MOON_GLOW_TAU = 0.18;
 
 export function hasActiveEffects(game) {
   if (game.effects && game.effects.length > 0) return true;
@@ -51,10 +58,28 @@ export function tickEffects(game, dtSec) {
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) {
     game.moonPulse.t += dtSec;
   }
+  // Smoothly chase the moon-bloom toward the current combo tier so the halo
+  // swells as a streak builds and eases back down when it breaks. Exponential
+  // approach is framerate-independent.
+  const target = Math.min(1, (game.combo | 0) / COMBO_POWERS.moonGlowTiers);
+  const prev = game.moonGlow || 0;
+  game.moonGlow = prev + (target - prev) * (1 - Math.exp(-dtSec / MOON_GLOW_TAU));
 }
 
-export function spawnBurst(game, x, y) {
-  game.effects.push({ x, y, t: 0, life: BURST_DURATION_SEC });
+export function spawnBurst(game, x, y, opts = {}) {
+  game.effects.push({
+    x, y, t: 0,
+    life: opts.life || BURST_DURATION_SEC,
+    scale: opts.scale || 1,
+  });
+}
+
+// A Moonburst detonation: one big, slightly longer-lived burst using the same
+// lantern-clear flipbook, scaled up to span the cleared zone. The per-lantern
+// bursts still fire underneath it, so the area reads as a fireball blowing the
+// cluster apart rather than a lone enlarged pop.
+export function spawnFireball(game, x, y, scale = 3) {
+  game.effects.push({ x, y, t: 0, life: BURST_DURATION_SEC * 1.7, scale });
 }
 
 export function pulseMoon(game) {
@@ -133,6 +158,13 @@ function pushFloat(game, kind, text, x, y, r) {
   const s = FLOAT_STYLES[kind];
   const life = game.isSpeedMode ? 0.3 : s.life;
   game.floats.push({ kind, text, x, y: y - r * s.offsetR, t: 0, life });
+}
+
+// Announce a combo-power event (Moonburst loaded, Moonrise banked/spent) with
+// a floating label at a board position. Thin wrapper so game.js doesn't reach
+// into the float internals.
+export function spawnPowerFloat(game, kind, text, x, y, layout) {
+  pushFloat(game, kind, text, x, y, layout.size);
 }
 
 // Stamp positions, kinds, and lifetimes for one shot's bonus callouts.

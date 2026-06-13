@@ -225,6 +225,31 @@ export const SPEED_MODE_SETTLE_ANIM_SEC = 0.03;
 export const SPEED_MODE_DESCENT_TIME_FACTOR = 1.5;
 export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
 
+// ─── Combo powers (campaign/zen) ─────────────────────────────────────────────
+// Two combo-fed resources that turn the combo counter from a vanity number
+// into the late-game's relief valve. Both are gated to standard shot-based
+// modes (not puzzle, not speed/fast) so hand-tuned puzzles stay pristine.
+//
+//   Moonrise — a meter charged by the combo magnitude of each scoring shot.
+//   Filling it banks a charge (cap moonriseMaxCharges). A banked charge is
+//   spent automatically to CANCEL a descent, but only once the field has sunk
+//   into the danger band near the water — so charges earned in the easy
+//   mid-game become the lifeline that holds the line in the end game.
+//
+//   Moonburst — every moonburstStep consecutive scoring shots loads a special
+//   shot. The next shot fired clears every lantern within moonburstRadius of
+//   where it lands (color-blind, blockers included), blowing a hole in a
+//   cramped board.
+export const COMBO_POWERS = Object.freeze({
+  moonriseFull: 45,        // combo-units of meter to bank one Moonrise charge
+  moonriseMaxCharges: 3,
+  moonriseDangerRows: 4,   // auto-spend a charge to cancel a descent only when
+                           // the lowest lantern is within this many rows of water
+  moonburstStep: 5,        // every Nth combo loads a Moonburst shot
+  moonburstRadius: 2.6,    // clear radius, in lantern-diameters, around impact
+  moonGlowTiers: 10,       // combo at which the moon-bloom celebration saturates
+});
+
 // Performance and rendering optimizations configuration.
 export const PERF_CONFIG = {
   // Controls whether hardware canvas shadowBlur is disabled on mobile/touch screens (pointer: coarse).

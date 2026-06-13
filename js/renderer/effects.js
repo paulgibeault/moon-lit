@@ -11,6 +11,10 @@ const FLOAT_STYLES = Object.freeze({
   drop:    { color: '232, 183, 112', weight: 600, size: 0.95, italic: false, riseFactor: 2.2 },
   chain:   { color: '245, 233, 201', weight: 600, size: 0.85, italic: false, riseFactor: 2.2 },
   combo:   { color: '232, 183, 112', weight: 700, size: 0.95, italic: false, riseFactor: 2.2 },
+  // Combo-power callouts — brighter cream, larger, rising farther so the
+  // "you earned something" beat reads above the ordinary score floats.
+  moonburst: { color: '255, 240, 205', weight: 700, size: 1.15, italic: false, riseFactor: 2.6 },
+  moonrise:  { color: '248, 206, 140', weight: 700, size: 1.05, italic: true,  riseFactor: 2.8 },
 });
 
 // Match-pop bursts: a flipbook drawn additively so the sheet's black
@@ -23,13 +27,14 @@ export function drawBursts(ctx, layout, game, settings) {
   if (!sheet) return;
   const frameSize = sheet.frameSize;
   const totalFrames = sheet.frames;
-  const dw = layout.size * 2 * BURST_SCALE;
+  const baseDw = layout.size * 2 * BURST_SCALE;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   for (const fx of game.effects) {
     const tt = fx.t / fx.life;
     if (tt < 0 || tt >= 1) continue;
     const frame = Math.min(totalFrames - 1, Math.floor(tt * totalFrames));
+    const dw = baseDw * (fx.scale || 1);
     ctx.drawImage(
       sheet.image,
       frame * frameSize, 0, frameSize, frameSize,

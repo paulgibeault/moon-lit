@@ -1,4 +1,4 @@
-import { ADJACENCY_TOLERANCE } from './constants.js';
+import { ADJACENCY_TOLERANCE, COMBO_POWERS } from './constants.js';
 import { anchorBandPx, effectiveTrellisY, forEachLanternWithinSq } from './geometry.js';
 
 const MIN_MATCH = 3;
@@ -46,6 +46,25 @@ export function popMatches(board, seed, layout) {
   const set = new Set(cluster);
   board.lanterns = board.lanterns.filter(l => !set.has(l));
   return cluster;
+}
+
+// Moonburst clear: remove every lantern (any color, blockers included) whose
+// center lies within COMBO_POWERS.moonburstRadius lantern-diameters of `seed`.
+// Color-blind by design — the burst's job is to blow a hole in a cramped
+// board, not to reward a match. Returns the cleared lanterns (includes seed).
+export function clearRadius(board, seed, layout) {
+  const reach = COMBO_POWERS.moonburstRadius * 2 * layout.size;
+  const reachSq = reach * reach;
+  const cleared = [];
+  const kept = [];
+  for (const l of board.lanterns) {
+    const dx = l.x - seed.x;
+    const dy = l.y - seed.y;
+    if (dx * dx + dy * dy <= reachSq) cleared.push(l);
+    else kept.push(l);
+  }
+  board.lanterns = kept;
+  return cleared;
 }
 
 // A lantern is "anchored" when its top edge is within the trellis anchor
