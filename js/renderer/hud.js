@@ -1331,28 +1331,25 @@ export function drawLanternInventory(ctx, layout, game, settings) {
   ctx.restore();
 }
 
+// Padding (px) added around the visible button when hit-testing taps, so a
+// thumb that lands just shy of the glyph still restarts instead of falling
+// through to the aim path and firing a lantern. See input.js.
+export const QUICK_RESTART_HIT_PAD = 14;
+
 export function getQuickRestartButtonRect(layout) {
   const size = layout.size;
-  const btnSize = size * 1.2;
+  // Lantern-relative, but never smaller than a comfortable thumb target —
+  // on small viewports size*1.2 collapsed to ~20px, which was hard to hit.
+  const btnSize = Math.max(size * 1.2, 48);
+  const margin = size * 0.6;
   const handedness = layout.handedness || 'right';
+  const y = layout.viewH - margin - btnSize;
+  // Place opposite the player's aiming hand.
+  const x = handedness === 'left'
+    ? layout.viewW - margin - btnSize  // bottom-right
+    : margin;                          // bottom-left
 
-  if (handedness === 'left') {
-    // Bottom-right corner (opposite of left handedness)
-    return {
-      x: layout.viewW - size * 1.8,
-      y: layout.viewH - size * 1.8,
-      w: btnSize,
-      h: btnSize
-    };
-  } else {
-    // Bottom-left corner (opposite of right handedness)
-    return {
-      x: size * 0.6,
-      y: layout.viewH - size * 1.8,
-      w: btnSize,
-      h: btnSize
-    };
-  }
+  return { x, y, w: btnSize, h: btnSize };
 }
 
 export function drawQuickRestartButton(ctx, layout, game, settings) {

@@ -3,7 +3,7 @@ import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
   openMenu, closeMenu,
 } from './renderer/menu.js';
-import { getEndOverlayHit, getQuickRestartButtonRect } from './renderer/hud.js';
+import { getEndOverlayHit, getQuickRestartButtonRect, QUICK_RESTART_HIT_PAD } from './renderer/hud.js';
 
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
@@ -132,7 +132,11 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     const layout = getLayout();
     if (game && layout && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER && !game.showModeIntroCard) {
       const btn = getQuickRestartButtonRect(layout);
-      if (localX >= btn.x && localX <= btn.x + btn.w && localY >= btn.y && localY <= btn.y + btn.h) {
+      // Inflate the hit area so a near-miss restarts rather than falling through
+      // to the aim path and accidentally launching a lantern on touchscreens.
+      const pad = QUICK_RESTART_HIT_PAD;
+      if (localX >= btn.x - pad && localX <= btn.x + btn.w + pad &&
+          localY >= btn.y - pad && localY <= btn.y + btn.h + pad) {
         const now = performance.now();
         if (!game.quickRestartArmed || (now - game.quickRestartArmedTime > 3000)) {
           game.quickRestartArmed = true;
