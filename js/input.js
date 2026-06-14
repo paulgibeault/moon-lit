@@ -3,7 +3,7 @@ import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
   openMenu, closeMenu,
 } from './renderer/menu.js';
-import { getEndOverlayHit, getQuickRestartButtonRect } from './renderer/hud.js';
+import { getEndOverlayHit, getQuickRestartButtonRect, QUICK_RESTART_HIT_PAD } from './renderer/hud.js';
 
 
 // Top-of-canvas dead-zone for taps. The launcher's topbar (menu, quit, etc.)
@@ -43,13 +43,43 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   let rect = canvas.getBoundingClientRect();
   const refreshRect = () => { rect = canvas.getBoundingClientRect(); };
 
-  const aimAt = (clientX, clientY) => {
+  // Release latch (touch/pen only). As a thumb leaves the glass it tends to
+  // roll, firing a burst of pointermove events that swing the aim off the line
+  // the player was actually holding — the classic "my shot went sideways the
+  // instant I lifted" frustration on phones. We keep a short timestamped
+  // history of aim angles and, on a touch release, fire using the angle as it
+  // was RELEASE_LATCH_MS before lift — discarding the involuntary roll without
+  // touching the live aim line, so rapid-fire and responsiveness are untouched.
+  // Mouse is precise and left exactly as-is.
+  const RELEASE_LATCH_MS = 70;
+  let aimHistory = [];
+
+  const angleAt = (clientX, clientY) => {
     const layout = getLayout();
-    if (!layout) return;
+    if (!layout) return null;
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     const tip = launcherTip(layout);
-    setAim(getGame(), Math.atan2(x - tip.x, tip.y - y));
+    return Math.atan2(x - tip.x, tip.y - y);
+  };
+
+  const aimAt = (clientX, clientY) => {
+    const a = angleAt(clientX, clientY);
+    if (a == null) return;
+    setAim(getGame(), a);
+    aimHistory.push({ t: performance.now(), angle: a });
+    if (aimHistory.length > 32) aimHistory.shift();
+  };
+
+  // The aim a beat before release: walk back to the most recent sample at least
+  // RELEASE_LATCH_MS old, falling back to the oldest sample in the gesture.
+  const latchedAngle = () => {
+    if (!aimHistory.length) return null;
+    const cutoff = performance.now() - RELEASE_LATCH_MS;
+    for (let i = aimHistory.length - 1; i >= 0; i--) {
+      if (aimHistory[i].t <= cutoff) return aimHistory[i].angle;
+    }
+    return aimHistory[0].angle;
   };
 
   const isGameOver = (g) => g.phase === PHASE.WIN || g.phase === PHASE.GAME_OVER;
@@ -102,7 +132,11 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     const layout = getLayout();
     if (game && layout && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER && !game.showModeIntroCard) {
       const btn = getQuickRestartButtonRect(layout);
-      if (localX >= btn.x && localX <= btn.x + btn.w && localY >= btn.y && localY <= btn.y + btn.h) {
+      // Inflate the hit area so a near-miss restarts rather than falling through
+      // to the aim path and accidentally launching a lantern on touchscreens.
+      const pad = QUICK_RESTART_HIT_PAD;
+      if (localX >= btn.x - pad && localX <= btn.x + btn.w + pad &&
+          localY >= btn.y - pad && localY <= btn.y + btn.h + pad) {
         const now = performance.now();
         if (!game.quickRestartArmed || (now - game.quickRestartArmedTime > 3000)) {
           game.quickRestartArmed = true;
@@ -135,6 +169,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     if (inSafeZone(e.clientY)) return;
     aimingPointerId = e.pointerId;
     canvas.setPointerCapture?.(e.pointerId);
+    aimHistory = [];   // fresh gesture: don't latch onto a previous shot's aim
     aimAt(e.clientX, e.clientY);
     e.preventDefault();
   };
@@ -159,7 +194,14 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     aimingPointerId = null;
     const game = getGame();
     if (isGameOver(game)) return;
-    aimAt(e.clientX, e.clientY);
+    if (e.pointerType === 'mouse') {
+      // Desktop is precise — commit exactly where the cursor sits.
+      aimAt(e.clientX, e.clientY);
+    } else {
+      // Touch/pen — ignore the lift position and the roll just before it.
+      const a = latchedAngle();
+      if (a != null) setAim(game, a);
+    }
     if (game.phase === PHASE.AIMING) {
       fire(game, getLayout());
     }

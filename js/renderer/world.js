@@ -373,6 +373,39 @@ export function getMoonState(layout, settings) {
   return moonState(layout, settings, Date.now());
 }
 
+// Moonlight wash for the Moonrise rescue: a smooth bath of moonlight over the
+// whole frame, brightest at the moon and spreading down across the board, its
+// strength driven by moonriseFx.wash (quick rise → linger → fade). Additive so
+// it reads as light flooding in, not paint laid on top. Drawn over the world
+// but under the HUD so the chrome stays legible.
+export function drawMoonriseWash(ctx, layout, game, settings) {
+  const fx = game.moonriseFx;
+  if (!fx || !(fx.wash > 0)) return;
+  const reducedMotion = !!(settings && settings.reducedMotion);
+  const { viewW: w, viewH: h } = layout;
+  const env = Math.max(0, Math.min(1, fx.wash));
+  const peak = reducedMotion ? 0.10 : 0.20;
+  const m = getMoonState(layout, settings);
+  const rgb = hexToRgb(PALETTE.moon);
+  const halo = hexToRgb(PALETTE.moonHalo);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // Wide radial centred on the moon — the source of the flood.
+  const R = Math.hypot(w, h) * 0.95;
+  const g = ctx.createRadialGradient(m.cx, m.cy, 0, m.cx, m.cy, R);
+  g.addColorStop(0,    `rgba(${rgb}, ${(peak * env).toFixed(3)})`);
+  g.addColorStop(0.45, `rgba(${halo}, ${(peak * 0.55 * env).toFixed(3)})`);
+  g.addColorStop(1,    `rgba(${halo}, 0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  // A faint even tint so the corners the radial misses still lift — the whole
+  // screen bathes, not just the moon's cone.
+  ctx.fillStyle = `rgba(${rgb}, ${(peak * 0.28 * env).toFixed(3)})`;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
 // Trace the unlit portion of the disc as a Path2D and fill it with a deep
 // indigo. The terminator (lit/dark boundary) is a half-ellipse with vertical
 // semi-axis r and horizontal semi-axis r * |1 - 2k|, where k is the
@@ -477,7 +510,12 @@ export function drawMoon(ctx, layout, game, settings) {
   // Smoothed combo bloom (0..1). effects.js eases game.moonGlow toward the
   // current combo tier so the halo swells and recedes instead of snapping;
   // fall back to the raw combo for any caller that hasn't ticked it yet.
-  const glow = game.moonGlow != null ? game.moonGlow : Math.min(1, combo / 6);
+  let glow = game.moonGlow != null ? game.moonGlow : Math.min(1, combo / 6);
+  // During the Moonrise rescue the moon is the source of the light bathing the
+  // screen, so its halo swells in step with the wash — this is how the spent
+  // charge reads now that the flying sprite is gone: the moon itself answers.
+  const mrWash = (game.moonriseFx && game.moonriseFx.wash) || 0;
+  if (mrWash > 0) glow = Math.min(1, glow + 0.85 * mrWash);
   // Quantized for the offscreen-glow cache key in the non-PERF path below.
   const glowBucket = Math.round(glow * 20);
   const t = reducedMotion ? 0 : performance.now() / 1000;
@@ -1893,13 +1931,11 @@ function ambientWindSway(l, layout, tSec) {
   };
 }
 
-function descentJitter(l, layout, board, tSec) {
-  const animY = board.descentAnimY || 0;
-  if (animY === 0) return null;
-  const progress = 1 + animY / (DESCENT_TOTAL_NY * layout.size);
-  if (progress <= 0 || progress >= 1) return null;
-  const env = Math.sin(Math.PI * progress);
-
+// Raw organic sway for a single lantern, before any envelope. The compound
+// incommensurate frequencies (3.1, 4.2, 5.3, 6.9) and the nx/ny couplings make
+// the motion travel across the field like a connected system rather than every
+// lantern dancing solo. Shared by the descent jitter and the moonrise jiggle.
+function swaySample(l, tSec) {
   const phase = phaseOf(l);
   const nx = l.nx || 0;
   const ny = l.ny || 0;
@@ -1907,12 +1943,33 @@ function descentJitter(l, layout, board, tSec) {
               + Math.sin(tSec * 5.3 + phase * 1.7 + nx * 0.43) * 0.45;
   const swayY = Math.sin(tSec * 4.2 + phase * 0.9 + nx * 0.31) * 0.55
               + Math.cos(tSec * 6.9 + phase * 1.3 + ny * 0.9) * 0.40;
+  // Horizontal sway is more pronounced (lanterns hang freely on their cords);
+  // vertical bobble is smaller (the cord resists stretching).
+  return { swayX, swayY };
+}
+
+function descentJitter(l, layout, board, tSec) {
+  const animY = board.descentAnimY || 0;
+  if (animY === 0) return null;
+  const progress = 1 + animY / (DESCENT_TOTAL_NY * layout.size);
+  if (progress <= 0 || progress >= 1) return null;
+  const env = Math.sin(Math.PI * progress);
+  const { swayX, swayY } = swaySample(l, tSec);
   const r = layout.size;
   return {
-    // Horizontal sway is more pronounced (lanterns hang freely on their cords);
-    // vertical bobble is smaller (the cord resists stretching).
     dx: swayX * r * 0.14 * env,
     dy: swayY * r * 0.07 * env,
+  };
+}
+
+// Moonrise jiggle: the same hanging-cord sway, scaled by the cinematic's decay
+// envelope so the field shivers as the moon holds the tide, then settles.
+function moonriseJiggle(l, layout, env, tSec) {
+  const { swayX, swayY } = swaySample(l, tSec);
+  const r = layout.size;
+  return {
+    dx: swayX * r * 0.16 * env,
+    dy: swayY * r * 0.08 * env,
   };
 }
 
@@ -1938,7 +1995,11 @@ export function drawBoard(ctx, layout, game, settings) {
       lit = !l.drown.extinguished;
       spin = l.drown.spin;
     }
-    if (animY !== 0 && !reducedMotion && !l.drown) {
+    const mrJiggle = game.moonriseFx && game.moonriseFx.jiggle || 0;
+    if (mrJiggle > 0 && !reducedMotion && !l.drown) {
+      const j = moonriseJiggle(l, layout, mrJiggle, tSec);
+      dx += j.dx; dy += j.dy;
+    } else if (animY !== 0 && !reducedMotion && !l.drown) {
       const j = descentJitter(l, layout, board, tSec);
       if (j) { dx += j.dx; dy += j.dy; }
     } else if (!reducedMotion && !l.drown && ENV_PARAMS.windSpeed > 0) {

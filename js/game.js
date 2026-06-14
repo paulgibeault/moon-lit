@@ -20,11 +20,11 @@ import { puzzleConfig } from './puzzles.js';
 import { popMatches, dropFloating, clearRadius } from './match.js';
 import { resolveShot, clearBonus, crossedMilestone, crossedMultiple } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
-import { clamp, easeOut, SQRT3 } from './geometry.js';
+import { clamp, SQRT3 } from './geometry.js';
 import { traceFromShot, launcherTip } from './projectile.js';
 import {
   emitFloats, emitRipple, hasActiveEffects, pulseMoon, spawnBurst, spawnRipple,
-  spawnFireball, spawnPowerFloat, tickEffects,
+  spawnFireball, announceStatus, tickEffects,
 } from './effects.js';
 
 export const PHASE = Object.freeze({
@@ -57,12 +57,15 @@ const DROWN_BUBBLE_MAX_INT  = 0.5;
 const DROWN_BUBBLE_DEPTH    = 10.0; // radii past waterline at which bubbles stop
 const DROWN_END_PAUSE_SEC   = 0.3;
 
-// Moonrise rescue cinematic. The board first sinks a full packed-row (the
-// descent the trellis was about to take), then — as the moon flares — springs
-// back up into place. Dip accelerates (a fall beginning); lift decelerates (a
-// gentle catch), so the moon reads as intercepting the descent.
-const MOONRISE_DIP_SEC  = 0.34;
-const MOONRISE_LIFT_SEC = 0.52;
+// Moonrise rescue cinematic. Rather than yanking the whole field down a full
+// row and snapping it back — which read as a jarring lurch — the moon "holds
+// the tide": the board gives a gentle damped bob, the lanterns jiggle on their
+// cords (renderer reads moonriseFx.jiggle), and a wash of moonlight bathes the
+// screen (moonriseFx.wash) as the moon flares and the spent charge merges into
+// it. Smooth and elegant, not kinetic.
+const MOONRISE_DUR       = 1.5;   // total cinematic length, seconds
+const MOONRISE_BOB_FRAC  = 0.14;  // peak board bob, as a fraction of one row
+const MOONRISE_SPEND_SEC = 0.6;   // spent-charge flight; lands as the moon flares
 
 export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
   // Determine gameMode
@@ -198,7 +201,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     moonburstReady: false,
     moonGlow: 0,
     moonriseSpend: null,
-    moonriseLabel: null,
+    statusMsg: null,
     moonPulse: { t: 0, life: 0 },
     shotsUntilDescent: descentShots,
     pendingDescent: false,
@@ -543,7 +546,14 @@ function stepDrowning(game, dtSec, layout) {
 // dipping a row and then being lifted back. Drives board.descentAnimY (the
 // same offset a real descent rides), which the renderer already applies.
 function startMoonrise(game, layout) {
-  game.moonriseFx = { t: 0, stage: 'dip', rowH: SQRT3 * layout.size };
+  game.moonriseFx = {
+    t: 0,
+    dur: MOONRISE_DUR,
+    rowH: SQRT3 * layout.size,
+    jiggle: 0,   // per-lantern jiggle envelope, read by the renderer
+    wash: 0,     // full-screen moonlight wash envelope, read by the renderer
+    flared: false,
+  };
   game.board.descentAnimY = 0;
   game.phase = PHASE.MOONRISE;
 }
@@ -557,29 +567,29 @@ function stepMoonrise(game, dtSec, layout) {
     return true;
   }
   fx.t += dtSec;
+  const u = Math.min(1, fx.t / fx.dur);
 
-  if (fx.stage === 'dip') {
-    // Accelerating fall: the board sinks the row the trellis meant to take.
-    const u = Math.min(1, fx.t / MOONRISE_DIP_SEC);
-    game.board.descentAnimY = fx.rowH * (u * u);
-    if (u >= 1) {
-      // Bottom of the dip — the moon intercedes. A flare plus a bright ripple
-      // sweeping up from the waterline sells "the moon lifted it back."
-      fx.stage = 'lift';
-      fx.t = 0;
-      pulseMoon(game);
-      const cx = launcherTip(layout).x;
-      spawnRipple(game, cx, layout.deadLineY, layout, { strength: 1.0, reach: 18 });
-      // The "tide held" callout is drawn by the HUD next to the combo-power
-      // readout (the meter that paid for the rescue), not at the waterline.
-      game.moonriseLabel = { t: 0, life: 1.6 };
-    }
-    return true;
+  // Damped board bob: a soft downward tug that springs back through a couple of
+  // decaying wobbles — the whole field settling on its cords, not a row drop.
+  const bob = Math.sin(u * Math.PI * 3) * Math.exp(-3.0 * u);
+  game.board.descentAnimY = fx.rowH * MOONRISE_BOB_FRAC * bob;
+
+  // Per-lantern jiggle: strongest at the tug, easing to nothing as it settles.
+  fx.jiggle = Math.exp(-2.4 * u) * (1 - u);
+  // Moonlight wash: rises quickly, lingers, then fades out by the end.
+  fx.wash = u < 0.22 ? (u / 0.22) : Math.max(0, 1 - (u - 0.22) / 0.78);
+
+  // The moon flares once, mid-cinematic, as the spent charge merges into it —
+  // a bright ripple sweeps up from the waterline and the "tide held" callout
+  // is armed (the HUD draws it next to the meter that paid for the rescue).
+  if (!fx.flared && u >= 0.4) {
+    fx.flared = true;
+    pulseMoon(game);
+    const cx = launcherTip(layout).x;
+    spawnRipple(game, cx, layout.deadLineY, layout, { strength: 1.0, reach: 18 });
+    announceStatus(game, 'moonrise — tide held', 'moonrise');
   }
 
-  // Decelerating lift back into place.
-  const u = Math.min(1, fx.t / MOONRISE_LIFT_SEC);
-  game.board.descentAnimY = fx.rowH * (1 - easeOut(u));
   if (u >= 1) {
     game.board.descentAnimY = 0;
     game.moonriseFx = null;
@@ -612,7 +622,7 @@ function finishSettle(game, layout) {
       // The pip that just emptied (now the highest index) flies up to the moon
       // over the dip, arriving as the moon flares — so the rescue visibly
       // consumes an earned charge. pipIndex is the post-decrement count.
-      game.moonriseSpend = { t: 0, life: MOONRISE_DIP_SEC, pipIndex: game.moonriseCharges };
+      game.moonriseSpend = { t: 0, life: MOONRISE_SPEND_SEC, pipIndex: game.moonriseCharges };
       startMoonrise(game, layout);
       return;
     }
@@ -694,7 +704,7 @@ function resolvePlacement(game, layout, opts = {}) {
     // the cluster-tearing-apart texture underneath it), plus an outward shock
     // ripple and a moon flare.
     spawnFireball(game, lantern.x, lantern.y, COMBO_POWERS.moonburstRadius * 1.1);
-    spawnPowerFloat(game, 'moonburst', 'moonburst!', lantern.x, lantern.y, layout);
+    announceStatus(game, 'moonburst!', 'moonburst');
     spawnRipple(game, lantern.x, lantern.y, layout, { strength: 1.0, reach: 12 });
     pulseMoon(game);
   }
@@ -720,12 +730,18 @@ function updateComboPowers(game, prevCombo, breakdown, lantern, layout) {
   // Charge scales with the shot's score, so a fat cluster or a big drop fills
   // the meter far faster than a string of minimum pops — while the flat combo
   // term keeps a steady streak rewarding even when each pop is small.
-  game.moonMeter += combo + breakdown.total / COMBO_POWERS.moonriseScoreDivisor;
+  //
+  // Capped at one charge per shot: the drop term is quadratic (20·m², ×1.5 when
+  // chained), so a single big drop would otherwise dump several charges' worth
+  // into the meter and bank the whole reserve at once. The cap keeps big plays
+  // fast-charging without letting one monster shot fill every pip.
   const FULL = COMBO_POWERS.moonriseFull;
+  const rawGain = combo + breakdown.total / COMBO_POWERS.moonriseScoreDivisor;
+  game.moonMeter += Math.min(rawGain, FULL);
   while (game.moonMeter >= FULL && game.moonriseCharges < COMBO_POWERS.moonriseMaxCharges) {
     game.moonMeter -= FULL;
     game.moonriseCharges++;
-    spawnPowerFloat(game, 'moonrise', 'moonrise charged', lantern.x, lantern.y, layout);
+    announceStatus(game, 'moonrise charged', 'moonrise');
     pulseMoon(game);
   }
   // Hold the meter visibly full once every charge is banked rather than
@@ -737,7 +753,7 @@ function updateComboPowers(game, prevCombo, breakdown, lantern, layout) {
   if (!game.moonburstReady &&
       crossedMultiple(prevCombo, combo, COMBO_POWERS.moonburstStep)) {
     game.moonburstReady = true;
-    spawnPowerFloat(game, 'moonburst', 'moonburst ready', lantern.x, lantern.y, layout);
+    announceStatus(game, 'moonburst ready', 'moonburst');
     pulseMoon(game);
   }
 }

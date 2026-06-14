@@ -4,7 +4,7 @@ import { PHASE, comboPowersActive } from '../game.js';
 import { puzzleConfig } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
-  formatScore, hudPx, fontScaleOf, hexToRgba, easeOut, PERF_MODE,
+  formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
 } from './style.js';
 import { getMoonState, drawPhaseShadow, drawLantern } from './world.js';
 import { MENU_RESERVE_PX } from './menu.js';
@@ -64,22 +64,20 @@ export function tweenHud(game, settings) {
   }
 }
 
-// Descent meter — a small visual countdown rather than text. A trellis bar
-// at the top slides down toward a faint waterline as shots tick away; the
-// number sits between them and tints cream → ember as the descent approaches.
-// Anchored opposite the score panel so the chrome reads as two clusters with
-// the river in between.
-const DESCENT_ICON_W = 44;
+// Descent meter — a right-anchored row of little moons, one extinguishing as
+// each shot (or second) ticks away. The lit moons tint cream → amber as the
+// row empties and throb toward ember in the final beat; the exact count sits
+// subtly beneath, present but never shifting the layout. Anchored opposite the
+// score panel so the chrome reads as two clusters with the river in between.
 const DESCENT_BAR_TOP = 10;
-const DESCENT_LINE_Y = 44;
-const DESCENT_BAR_W = 24;
+const DESCENT_MAX_PIPS = 8;
 
 export function drawDescentMeter(ctx, layout, game, settings) {
   if (game.isPuzzleMode && game.puzzleDescentType === 'none') {
     return;
   }
   const isSpeed = !!game.isSpeedMode;
-  
+
   if (isSpeed) {
     if (game.timeUntilDescent == null) return;
   } else {
@@ -87,63 +85,105 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   }
 
   const n = isSpeed ? Math.ceil(game.timeUntilDescent) : (game.shotsUntilDescent | 0);
-  const cap = isSpeed ? game.descentTimeLimit : ((game.descentShots | 0) || 8);
-  const progress = Math.max(0, Math.min(1, (cap - (isSpeed ? game.timeUntilDescent : n)) / cap));
+  const cap = (isSpeed ? game.descentTimeLimit : (game.descentShots | 0)) || 8;
+  const remaining = isSpeed ? game.timeUntilDescent : n;
+  const frac = Math.max(0, Math.min(1, remaining / cap));
 
-  const iconLeft = layout.viewW - 12 - DESCENT_ICON_W;
-  const cx = iconLeft + DESCENT_ICON_W / 2;
-  const lineSpan = DESCENT_LINE_Y - DESCENT_BAR_TOP - 14;  // bar travel range
-  const barY = DESCENT_BAR_TOP + lineSpan * progress;
-  const tint = hexLerpRgba(PALETTE.moon, PALETTE.moonHalo, progress, HUD_OPACITY.strong);
-  const tintSoft = hexLerpRgba(PALETTE.moon, PALETTE.moonHalo, progress, HUD_OPACITY.soft);
+  // One pip per shot up to the cap; above it (only the low-pressure early
+  // levels and timed modes run that high) the row caps out and each pip stands
+  // for a fraction, so the meter never overruns the corner.
+  const capUnits = Math.max(1, Math.round(cap));
+  const pipCount = Math.min(capUnits, DESCENT_MAX_PIPS);
+  const lit = Math.max(0, Math.min(pipCount, Math.ceil(frac * pipCount)));
+
+  // Imminent-descent warning: in the final beat the lit moons throb toward a
+  // warm ember and swell, so the threat registers in peripheral vision during
+  // a frantic end game. Timed (≤2s) and shot-based (last shot) each trigger it.
+  const reduced = !!(settings && settings.reducedMotion);
+  const imminent = isSpeed ? (game.timeUntilDescent <= 2.0) : (n <= 1);
+  const pulse = (imminent && !reduced)
+    ? 0.5 + 0.5 * Math.sin(performance.now() / 1000 * (isSpeed ? 7 : 5))
+    : 0;
+  const canGlow = !reduced && !(PERF_CONFIG.disableMobileShadows && PERF_MODE);
+
+  // Lit moons: cream when the meter is full, amber as it empties, ember on the
+  // imminent throb.
+  const lowHex = hexLerpHex(PALETTE.moonHalo, DESCENT_DANGER, imminent ? pulse : 0);
+  const moonHex = hexLerpHex(PALETTE.moon, lowHex, 1 - frac);
+
+  const pipR = hudPx(layout, 0.22, 3.5, settings);
+  const gap = pipR * 1.3;
+  const step = pipR * 2 + gap;
+  const rowW = pipCount * pipR * 2 + (pipCount - 1) * gap;
+  const right = layout.viewW - 12;
+  const left = right - rowW;
+  const cy = DESCENT_BAR_TOP + pipR + 2;
+  const rowCx = (left + right) / 2;
 
   ctx.save();
-  // Trellis bar — the thing actually descending. A rounded stroke reads as
-  // a bamboo segment rather than a generic UI line.
-  ctx.strokeStyle = tint;
-  ctx.lineWidth = 2.4;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(cx - DESCENT_BAR_W / 2, barY);
-  ctx.lineTo(cx + DESCENT_BAR_W / 2, barY);
-  ctx.stroke();
-  // Two short strings hanging from the bar — implies the lanterns it carries.
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = tintSoft;
-  for (const xo of [-6, 6]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + xo, barY + 2);
-    ctx.lineTo(cx + xo, barY + 6);
-    ctx.stroke();
+  for (let i = 0; i < pipCount; i++) {
+    const px = left + pipR + i * step;
+    if (i < lit) {
+      // A lit moon: soft halo + glowing disc. The edge moon (next to go) and,
+      // in the imminent beat, the whole row swells on the pulse.
+      const isEdge = i === lit - 1;
+      const rr = pipR * ((imminent || isEdge) ? 1 + 0.16 * pulse : 1);
+      if (canGlow) {
+        ctx.shadowColor = imminent ? DESCENT_DANGER : PALETTE.moonHalo;
+        ctx.shadowBlur = imminent ? 5 * (0.5 + pulse) : 3;
+      }
+      const halo = ctx.createRadialGradient(px, cy, 0, px, cy, rr * 2.1);
+      halo.addColorStop(0, hexToRgba(moonHex, 0.45));
+      halo.addColorStop(1, hexToRgba(moonHex, 0));
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(px, cy, rr * 2.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = hexToRgba(moonHex, HUD_OPACITY.strong);
+      ctx.beginPath();
+      ctx.arc(px, cy, rr, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // A spent moon: a faint empty ring holding its place in the row.
+      ctx.strokeStyle = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(px, cy, pipR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
+  ctx.shadowBlur = 0;
 
-  // Countdown number — italic serif so it feels lantern-paper, not UI.
-  const numPx = hudPx(layout, 0.78, 14, settings);
+  // Exact count — kept visible but subtle, tucked beneath the row so it never
+  // shifts the layout. n is shots remaining, or whole seconds in timed modes.
+  const numPx = hudPx(layout, 0.40, 9, settings);
+  const numY = cy + pipR + 2;
   ctx.font = `italic 500 ${numPx}px Georgia, serif`;
-  ctx.fillStyle = tint;
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(String(n), cx, (barY + DESCENT_LINE_Y) / 2 + 1);
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = hexToRgba(imminent ? DESCENT_DANGER : PALETTE.moon, HUD_OPACITY.soft);
+  ctx.fillText(String(n), rowCx, numY);
 
-  // Waterline — what the descent is closing on. Dashed and faint so it reads
-  // as ambient threat rather than a hard UI element.
-  ctx.strokeStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(cx - DESCENT_BAR_W / 2 - 2, DESCENT_LINE_Y);
-  ctx.lineTo(cx + DESCENT_BAR_W / 2 + 2, DESCENT_LINE_Y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // "descent" label sits under the waterline at hairline opacity — present
-  // for first-time players, invisible to anyone who already knows the icon.
-  const subPx = hudPx(layout, 0.42, 9, settings);
+  // Hairline mode hint under the count — semantic for first-timers, invisible
+  // to anyone who already knows the icon.
+  const subPx = hudPx(layout, 0.32, 7.5, settings);
   ctx.font = `400 ${subPx}px ${SANS}`;
   ctx.fillStyle = `rgba(245, 233, 201, ${HUD_OPACITY.faint})`;
-  ctx.textBaseline = 'top';
-  ctx.fillText(isSpeed ? 'time drop' : 'descent', cx, DESCENT_LINE_Y + 3);
+  ctx.fillText(isSpeed ? 'time drop' : 'descent', rowCx, numY + numPx + 1);
   ctx.restore();
+}
+
+// Warm ember the descent readout throbs toward in its final beat — past the
+// ambient moon→amber tint into a clear "about to drop" warning.
+const DESCENT_DANGER = '#E8843E';
+
+// Linear interpolation between two hex colors, returning a hex string.
+function hexLerpHex(hexA, hexB, t) {
+  const ra = parseInt(hexA.slice(1, 3), 16), ga = parseInt(hexA.slice(3, 5), 16), ba = parseInt(hexA.slice(5, 7), 16);
+  const rb = parseInt(hexB.slice(1, 3), 16), gb = parseInt(hexB.slice(3, 5), 16), bb = parseInt(hexB.slice(5, 7), 16);
+  const to2 = (v) => Math.round(v).toString(16).padStart(2, '0');
+  return `#${to2(ra + (rb - ra) * t)}${to2(ga + (gb - ga) * t)}${to2(ba + (bb - ba) * t)}`;
 }
 
 // Linear interpolation between two hex colors, returning an rgba() string.
@@ -381,8 +421,8 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   const ready = !!game.moonburstReady;
   const spend = game.moonriseSpend;
   const spendActive = !!(spend && spend.t < spend.life);
-  const labelActive = !!(game.moonriseLabel && game.moonriseLabel.t < game.moonriseLabel.life);
-  // Keep the row up while a charge is flying out or the "tide held" label is
+  const labelActive = !!(game.statusMsg && game.statusMsg.t < game.statusMsg.life);
+  // Keep the row up while a charge is flying out or a status message is
   // showing, so the readout doesn't blink away under its own callout.
   if (charges === 0 && meter <= 0 && !ready && !spendActive && !labelActive) return;
 
@@ -394,8 +434,8 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   const cy = y + px * 0.5;
   const pipX0 = x + pipR;
   const pipStep = pipR * 2 + gap * 0.5;
-  // Publish pip geometry so drawMoonriseSpend can launch the spent charge from
-  // exactly the right slot.
+  // Publish pip geometry so the emptied-pip flash and the "tide held" label
+  // anchor to exactly the right slot.
   comboPowerGeom = { pipX0, pipStep, pipR, cy };
   let cx = pipX0;
 
@@ -450,65 +490,27 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   ctx.restore();
 }
 
-// The spent Moonrise charge in flight: a haloed crescent arcing from its HUD
-// pip up into the moon, arriving as the moon flares to lift the board. Makes
-// the rescue legibly "cost" an earned charge. Reads comboPowerGeom (the pip it
-// left) and the live moon position as its endpoints.
-export function drawMoonriseSpend(ctx, layout, game, settings) {
-  const s = game.moonriseSpend;
-  if (!s || !comboPowerGeom) return;
-  const u = Math.min(1, s.t / s.life);
-  const e = easeOut(u);
-
-  const sx = comboPowerGeom.pipX0 + s.pipIndex * comboPowerGeom.pipStep;
-  const sy = comboPowerGeom.cy;
-  const m = getMoonState(layout, settings);
-
-  // Arc the path upward so the charge sweeps into the sky rather than sliding
-  // in a straight line — the sine bump peaks mid-flight.
-  const px = sx + (m.cx - sx) * e;
-  const py = sy + (m.cy - sy) * e - Math.sin(u * Math.PI) * layout.size * 2.5;
-  const r = comboPowerGeom.pipR * (1 + e * 1.4);
-  // Fade out over the final stretch as it merges into the moon's glow.
-  const fade = u < 0.82 ? 1 : Math.max(0, 1 - (u - 0.82) / 0.18);
-
-  ctx.save();
-  // Comet glow trail.
-  ctx.globalCompositeOperation = 'lighter';
-  const glow = ctx.createRadialGradient(px, py, 0, px, py, r * 3.2);
-  glow.addColorStop(0, hexToRgba(PALETTE.moonHalo, 0.55 * fade));
-  glow.addColorStop(1, hexToRgba(PALETTE.moonHalo, 0));
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(px, py, r * 3.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = fade;
-  drawCrescent(ctx, px, py, r, PALETTE.moon, true);
-  ctx.globalAlpha = 1;
-  ctx.restore();
-}
-
-// "moonrise — tide held" callout, drawn next to the combo-power readout (the
-// meter that paid for the rescue) rather than at the waterline. Rises and
-// fades like a score float but anchored in HUD space beneath the pip row.
-export function drawMoonriseLabel(ctx, layout, game, settings) {
-  const lab = game.moonriseLabel;
-  if (!lab || lab.t >= lab.life) return;
+// Unified status line for combo-power announcements (moonrise charged / tide
+// held, moonburst ready / fired). One slot, one place to read it: anchored in
+// HUD space just below the combo-power pip row, holding position while it fades
+// in and out — no rise, so it never climbs into the readout above and the
+// atmosphere stays calm. All such messages funnel through game.statusMsg.
+export function drawStatusMessage(ctx, layout, game, settings) {
+  const msg = game.statusMsg;
+  if (!msg || msg.t >= msg.life) return;
   const geom = comboPowerGeom;
   const ax = geom ? geom.pipX0 - geom.pipR : MENU_RESERVE_PX;
   const rowY = geom ? geom.cy : hudPx(layout, 0.95, 14, settings) * 3.2;
   const pipR = geom ? geom.pipR : hudPx(layout, 0.52, 10, settings) * 0.34;
 
-  const tt = lab.t / lab.life;
-  const px = hudPx(layout, 0.66, 12, settings);
-  const rise = settings.reducedMotion ? 0 : px * 1.4 * easeOut(tt);
-  const fadeIn = Math.min(1, tt / 0.12);
-  const fadeOut = Math.min(1, (1 - tt) / 0.32);
+  const tt = msg.t / msg.life;
+  const px = hudPx(layout, 0.62, 12, settings);
+  const fadeIn = Math.min(1, tt / 0.18);
+  const fadeOut = Math.min(1, (1 - tt) / 0.35);
   const alpha = Math.min(fadeIn, fadeOut);
 
-  // Sit just below the pip row and drift upward toward it as it fades.
-  const y = rowY + pipR + px * 0.9 - rise;
+  // Fixed position just below the pip row — fades in place, never moves.
+  const y = rowY + pipR + px * 0.9;
 
   ctx.save();
   ctx.textAlign = 'left';
@@ -519,7 +521,7 @@ export function drawMoonriseLabel(ctx, layout, game, settings) {
     ctx.shadowBlur = 8;
   }
   ctx.fillStyle = hexToRgba(PALETTE.moonHalo, 0.96 * alpha);
-  ctx.fillText('moonrise — tide held', ax, y);
+  ctx.fillText(msg.text, ax, y);
   ctx.restore();
 }
 
@@ -1329,28 +1331,25 @@ export function drawLanternInventory(ctx, layout, game, settings) {
   ctx.restore();
 }
 
+// Padding (px) added around the visible button when hit-testing taps, so a
+// thumb that lands just shy of the glyph still restarts instead of falling
+// through to the aim path and firing a lantern. See input.js.
+export const QUICK_RESTART_HIT_PAD = 14;
+
 export function getQuickRestartButtonRect(layout) {
   const size = layout.size;
-  const btnSize = size * 1.2;
+  // Lantern-relative, but never smaller than a comfortable thumb target —
+  // on small viewports size*1.2 collapsed to ~20px, which was hard to hit.
+  const btnSize = Math.max(size * 1.2, 48);
+  const margin = size * 0.6;
   const handedness = layout.handedness || 'right';
+  const y = layout.viewH - margin - btnSize;
+  // Place opposite the player's aiming hand.
+  const x = handedness === 'left'
+    ? layout.viewW - margin - btnSize  // bottom-right
+    : margin;                          // bottom-left
 
-  if (handedness === 'left') {
-    // Bottom-right corner (opposite of left handedness)
-    return {
-      x: layout.viewW - size * 1.8,
-      y: layout.viewH - size * 1.8,
-      w: btnSize,
-      h: btnSize
-    };
-  } else {
-    // Bottom-left corner (opposite of right handedness)
-    return {
-      x: size * 0.6,
-      y: layout.viewH - size * 1.8,
-      w: btnSize,
-      h: btnSize
-    };
-  }
+  return { x, y, w: btnSize, h: btnSize };
 }
 
 export function drawQuickRestartButton(ctx, layout, game, settings) {
