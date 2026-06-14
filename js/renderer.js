@@ -7,12 +7,13 @@ import { PHASE } from './game.js';
 import {
   drawBackgroundSky, drawCelestialLayer, drawMoonBleed, drawBamboo,
   drawBoard, drawLauncher, drawShotQueue, drawAimLine, drawProjectile,
+  drawMoonriseWash,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
-  drawLoadingOverlay, drawMoonriseSpend, drawMoonriseLabel,
+  drawLoadingOverlay, drawStatusMessage,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -42,12 +43,15 @@ export function render(ctx, layout, game, settings, stats, scores) {
   }
   drawBursts(ctx, layout, game, settings);
   drawFloats(ctx, layout, game, settings);
+  // Moonlight wash for the Moonrise rescue — over the world + effects, under the
+  // HUD so the chrome stays readable while the screen bathes in moonlight.
+  drawMoonriseWash(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
   // After drawScoreHud (which draws the combo-power pips and publishes their
-  // geometry) so the spent charge and "tide held" label anchor to the meter.
-  drawMoonriseSpend(ctx, layout, game, settings);
-  drawMoonriseLabel(ctx, layout, game, settings);
+  // geometry) so the status line anchors to the meter. The spent charge reads
+  // as the emptied pip's flash plus the moon swelling — no flying sprite.
+  drawStatusMessage(ctx, layout, game, settings);
   drawLanternInventory(ctx, layout, game, settings);
   drawQuickRestartButton(ctx, layout, game, settings);
   if ((game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) && !game.endOverlayDismissed) {

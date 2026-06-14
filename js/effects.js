@@ -13,9 +13,13 @@ const FLOAT_STYLES = Object.freeze({
   drop:      { offsetR: 0.6, life: 1.6 },
   chain:     { offsetR: 2.0, life: 1.7 },
   combo:     { offsetR: 2.6, life: 1.8 },
-  moonburst: { offsetR: 3.0, life: 1.9 },
-  moonrise:  { offsetR: 3.4, life: 2.0 },
 });
+
+// How long a unified status message lingers before fading out, in seconds.
+// Combo-power announcements (moonrise charged / tide held, moonburst ready /
+// fired) all funnel through one slot so the player has a single, calm place to
+// read them — see announceStatus / drawStatusMessage.
+const STATUS_LIFE = 1.8;
 
 // Time constant (seconds) for easing the moon-bloom toward the current combo
 // tier. Small enough to feel responsive, large enough that a combo reset
@@ -28,7 +32,7 @@ export function hasActiveEffects(game) {
   if (game.ripples && game.ripples.length > 0) return true;
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) return true;
   if (game.moonriseSpend) return true;
-  if (game.moonriseLabel) return true;
+  if (game.statusMsg) return true;
   return false;
 }
 
@@ -66,9 +70,9 @@ export function tickEffects(game, dtSec) {
     game.moonriseSpend.t += dtSec;
     if (game.moonriseSpend.t >= game.moonriseSpend.life) game.moonriseSpend = null;
   }
-  if (game.moonriseLabel) {
-    game.moonriseLabel.t += dtSec;
-    if (game.moonriseLabel.t >= game.moonriseLabel.life) game.moonriseLabel = null;
+  if (game.statusMsg) {
+    game.statusMsg.t += dtSec;
+    if (game.statusMsg.t >= game.statusMsg.life) game.statusMsg = null;
   }
   // Smoothly chase the moon-bloom toward the current combo tier so the halo
   // swells as a streak builds and eases back down when it breaks. Exponential
@@ -172,11 +176,12 @@ function pushFloat(game, kind, text, x, y, r) {
   game.floats.push({ kind, text, x, y: y - r * s.offsetR, t: 0, life });
 }
 
-// Announce a combo-power event (Moonburst loaded, Moonrise banked/spent) with
-// a floating label at a board position. Thin wrapper so game.js doesn't reach
-// into the float internals.
-export function spawnPowerFloat(game, kind, text, x, y, layout) {
-  pushFloat(game, kind, text, x, y, layout.size);
+// Announce a combo-power event (Moonrise charged / tide held, Moonburst ready
+// / fired) through the single status slot. Replaces whatever message was
+// showing — one calm line, one place to read it, rendered by drawStatusMessage.
+// `kind` ('moonrise' | 'moonburst') only tints the text.
+export function announceStatus(game, text, kind = 'moonrise') {
+  game.statusMsg = { text, kind, t: 0, life: STATUS_LIFE };
 }
 
 // Stamp positions, kinds, and lifetimes for one shot's bonus callouts.

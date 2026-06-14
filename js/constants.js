@@ -225,10 +225,12 @@ export const SPEED_MODE_SETTLE_ANIM_SEC = 0.03;
 export const SPEED_MODE_DESCENT_TIME_FACTOR = 1.5;
 export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
 
-// ─── Combo powers (campaign/zen) ─────────────────────────────────────────────
+// ─── Combo powers (campaign/zen/speed) ───────────────────────────────────────
 // Two combo-fed resources that turn the combo counter from a vanity number
-// into the late-game's relief valve. Both are gated to standard shot-based
-// modes (not puzzle, not speed/fast) so hand-tuned puzzles stay pristine.
+// into the late-game's relief valve. They run in every freeplay mode —
+// campaign, zen, and speed (where the time pressure makes the relief most
+// valuable). Only puzzles opt out (see comboPowersActive), since they're
+// hand-tuned for a fixed shot queue and a luck target.
 //
 //   Moonrise — a meter charged by the combo magnitude of each scoring shot.
 //   Filling it banks a charge (cap moonriseMaxCharges). A banked charge is
@@ -241,7 +243,10 @@ export const SPEED_MODE_FIRE_COOLDOWN = 0.15;
 //   where it lands (color-blind, blockers included), blowing a hole in a
 //   cramped board.
 export const COMBO_POWERS = Object.freeze({
-  moonriseFull: 80,        // meter units to bank one Moonrise charge
+  moonriseFull: 110,       // meter units to bank one Moonrise charge. Tuned up
+                           // from 80 so charges accrue more gradually — the
+                           // mid-game no longer hands you a full bank of three
+                           // before the end game asks for them.
   moonriseScoreDivisor: 12, // each scoring shot adds combo + total/this, so a
                             // big cluster or drop charges far faster than a
                             // string of small pops
