@@ -218,6 +218,60 @@ export function levelConfig(level) {
   return LEVELS[idx];
 }
 
+// Seed Explorer: deterministically derive a full settings config from a single
+// 32-bit `settingsSeed`. Mirrors generateLevelConfig's shape so createGame,
+// serialization, and the menu can treat a seeded config exactly like a level
+// config — but the ranges here are curated to stay playable (no degenerate
+// 1-color or wall-of-blockers boards) while still feeling varied. The board
+// itself comes from a *separate* boardSeed; this function only decides the
+// rules. env/moon get gentle nudges so each variant has its own mood without
+// wrecking readability.
+export function seededConfig(settingsSeed) {
+  // Same LCG generateLevelConfig uses, seeded off the explorer's settingsSeed.
+  let s = (((settingsSeed >>> 0) || 1) * 2246822519 + 3266489917) >>> 0;
+  const next = () => {
+    s = (s * 1103515245 + 12345) >>> 0;
+    return (s & 0x7fffffff) / 2147483648;
+  };
+
+  // Colors 3..6 — center on 4-5 so matches stay findable.
+  const cr = next();
+  const colors = cr < 0.15 ? 3 : cr < 0.5 ? 4 : cr < 0.85 ? 5 : 6;
+
+  // Starting rows 3..7.
+  const rr = next();
+  const initialRows = rr < 0.2 ? 3 : rr < 0.45 ? 4 : rr < 0.75 ? 5 : rr < 0.92 ? 6 : 7;
+
+  // Descent pressure 5..12 (higher = more breathing room).
+  const dr = next();
+  const descentShots = dr < 0.12 ? 5 : dr < 0.32 ? 6 : dr < 0.55 ? 7 : dr < 0.72 ? 8 : dr < 0.85 ? 9 : dr < 0.95 ? 10 : 12;
+
+  // ~35% timed (speed) mode — the minority so most variants are relaxed.
+  const isSpeedMode = next() < 0.35;
+
+  const packs = ['plain', 'bugs', 'flowers', 'dragons', 'random'];
+  const stencilPack = packs[Math.min(packs.length - 1, Math.floor(next() * packs.length))];
+
+  // Stone blockers on ~30% of variants, and never on the gentlest (3-color,
+  // shallow) boards where they'd feel punishing.
+  const hasBlockers = colors >= 4 && initialRows >= 4 && next() < 0.3;
+
+  // Subtle ambience. windSpeed 0..0.9, glow 0.85..1.35, ripple 0.7..1.6.
+  const env = {
+    windSpeed: Math.round(next() * 0.9 * 100) / 100,
+    windFrequency: 0.7 + Math.round(next() * 1.3 * 100) / 100,
+    glowIntensity: 0.85 + Math.round(next() * 0.5 * 100) / 100,
+    rippleSpeedScale: 0.7 + Math.round(next() * 0.9 * 100) / 100,
+  };
+  // Half the time pin the moon to a seeded phase/position for visual variety;
+  // otherwise leave it live (-1).
+  const moon = next() < 0.5
+    ? { phase: Math.round(next() * 100) / 100, position: Math.round(next() * 100) / 100 }
+    : { phase: -1, position: -1 };
+
+  return { colors, initialRows, descentShots, isSpeedMode, stencilPack, hasBlockers, env, moon };
+}
+
 // Speed Mode Tuning parameters
 export const SPEED_MODE_PROJECTILE_SPEED = 65;
 export const SPEED_MODE_DESCENT_DRIFT_SPEED = 35;

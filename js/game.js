@@ -11,6 +11,7 @@ import {
   ENV_PARAMS, MOON_OVERRIDE,
   getActivePackId,
   COMBO_POWERS,
+  seededConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
@@ -67,7 +68,7 @@ const MOONRISE_DUR       = 1.5;   // total cinematic length, seconds
 const MOONRISE_BOB_FRAC  = 0.14;  // peak board bob, as a fraction of one row
 const MOONRISE_SPEND_SEC = 0.6;   // spent-charge flight; lands as the moon flares
 
-export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode, settingsSeed, boardSeed } = {}) {
   // Determine gameMode
   if (!gameMode) {
     if (typeof Arcade !== 'undefined' && Arcade.state) {
@@ -80,6 +81,9 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     gameMode = 'puzzle';
   }
   const isPuzzle = gameMode === 'puzzle';
+  // Seed Explorer: two independent seeds — settingsSeed picks the rules,
+  // boardSeed seeds the playthrough RNG (board layout + queue + designs).
+  const isSeedMode = gameMode === 'seed';
 
   let config = null;
   let colors = null;
@@ -116,6 +120,23 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     isSpeedMode = puzzleDescentType === 'time';
     descentShots = puzzleDescentType === 'shot' ? (pz.descentEvery || 2) : 0;
     descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
+  } else if (isSeedMode) {
+    config = seededConfig((settingsSeed ?? M3_DEFAULT_SEED) >>> 0);
+    colors = COLOR_KEYS.slice(0, config.colors);
+    // boardSeed drives the playthrough RNG, fully decoupled from settingsSeed.
+    effectiveSeed = (boardSeed ?? seed ?? M3_DEFAULT_SEED) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    // Reuse the campaign blocker path (board.js places stones when level >= 16)
+    // by passing a synthetic level when the seeded config calls for blockers.
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, config.hasBlockers ? 16 : 0);
+
+    queueCurrent = pick(rng, colors);
+    queueNext = pick(rng, colors);
+    queueAfterNext = pick(rng, colors);
+
+    isSpeedMode = config.isSpeedMode;
+    descentShots = config.descentShots;
+    descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
   } else {
     config = levelConfig(level);
     colors = COLOR_KEYS.slice(0, config.colors);
@@ -146,7 +167,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   if (isPuzzle) {
     const pz = puzzleConfig(puzzleId);
     activePackId = pz.stencilPack || 'bugs';
-  } else if (gameMode === 'campaign') {
+  } else if (gameMode === 'campaign' || isSeedMode) {
     activePackId = config.stencilPack || 'bugs';
   } else {
     // Zen or Speed
@@ -231,6 +252,12 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     puzzleGoalType,
     puzzleDescentType,
     puzzleIntroCard,
+
+    // Seed Explorer: the two seeds that fully define this variant. Persisted so
+    // restore can rebuild the seeded config and history can replay it exactly.
+    settingsSeed: isSeedMode ? ((settingsSeed ?? M3_DEFAULT_SEED) >>> 0) : null,
+    boardSeed: isSeedMode ? (effectiveSeed >>> 0) : null,
+    seedConfig: isSeedMode ? config : null,
   };
 }
 

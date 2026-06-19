@@ -1,4 +1,4 @@
-import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, ENV_PARAMS, MOON_OVERRIDE } from './constants.js';
+import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, seededConfig, ENV_PARAMS, MOON_OVERRIDE } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
@@ -12,7 +12,11 @@ import { initAdminPanel } from './admin-panel.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import {
   isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
+  openMenuToExplore, openMenuToSeeds,
 } from './renderer/menu.js';
+import {
+  exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory,
+} from './seed-explore.js';
 
 await Arcade.ready;
 
@@ -237,6 +241,19 @@ function startGame(g) {
       if (pz.moon.phase !== undefined) MOON_OVERRIDE.phase = pz.moon.phase;
       if (pz.moon.position !== undefined) MOON_OVERRIDE.position = pz.moon.position;
     }
+  } else if (game.gameMode === 'seed') {
+    // Seed Explorer variants carry their own seeded ambience.
+    const cfg = game.seedConfig || seededConfig((game.settingsSeed ?? 0) >>> 0);
+    if (cfg.env) {
+      if (cfg.env.windSpeed !== undefined) ENV_PARAMS.windSpeed = cfg.env.windSpeed;
+      if (cfg.env.windFrequency !== undefined) ENV_PARAMS.windFrequency = cfg.env.windFrequency;
+      if (cfg.env.glowIntensity !== undefined) ENV_PARAMS.glowIntensity = cfg.env.glowIntensity;
+      if (cfg.env.rippleSpeedScale !== undefined) ENV_PARAMS.rippleSpeedScale = cfg.env.rippleSpeedScale;
+    }
+    if (cfg.moon) {
+      if (cfg.moon.phase !== undefined) MOON_OVERRIDE.phase = cfg.moon.phase;
+      if (cfg.moon.position !== undefined) MOON_OVERRIDE.position = cfg.moon.position;
+    }
   }
 
   saveGameState(game);
@@ -300,6 +317,13 @@ function bootstrapGame() {
     if (gameMode === 'puzzle') {
       const savedPuzzleId = Math.max(1, Math.min(PUZZLE_COUNT, loadProgressLevel('puzzle') | 0));
       startGame(createGame({ layout, isPuzzleMode: true, puzzleId: savedPuzzleId, gameMode: 'puzzle' }));
+    } else if (gameMode === 'seed') {
+      // No in-progress variant: stand up the current candidate behind the build
+      // screen so there's something to render, but don't "play" until the
+      // player hits Play (which can re-roll the seeds first).
+      ensureExplore();
+      startGame(createGame({ layout, gameMode: 'seed', settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed }));
+      openMenuToExplore();
     } else {
       startGame(createGame({ layout, level: loadProgressLevel(gameMode), gameMode }));
     }
@@ -392,6 +416,26 @@ async function loadAndStartPuzzle(puzzleId) {
   forceRequestFrame();
 }
 
+// Seed Explorer: start (or replay) a variant defined by its two seeds. Mirrors
+// loadAndStartLevel — switch the stencil pack the seeded config asks for, then
+// boot a fresh seed-mode game. The build screen's current candidate is synced
+// to these seeds so reopening it shows what was just played.
+async function loadAndStartSeed({ settingsSeed, boardSeed }) {
+  if (game) {
+    game.loading = true;
+    game.endOverlayDismissed = true;
+    forceRequestFrame();
+  }
+  Arcade.state.set('gameMode', 'seed');
+  const cfg = seededConfig(settingsSeed >>> 0);
+  setSeeds(settingsSeed, boardSeed);
+  await changeStencilPack(cfg.stencilPack || 'bugs');
+  startGame(createGame({ layout, gameMode: 'seed', settingsSeed, boardSeed }));
+  resetHudState(0, bestScore);
+  refreshMenuData();
+  forceRequestFrame();
+}
+
 function nextLevel() {
   recordOutcome(game, /*won=*/true);
   if (game.isPuzzleMode) {
@@ -423,9 +467,45 @@ function startLevel(level) {
 // promotion, and a celebratory toast when the player sets a new personal best.
 function recordOutcome(g, won) {
   if (!g || g.score <= 0) return;
+  // One outcome per completed game. Seed mode's "New"/"Seeds"/"Replay" buttons
+  // all record before navigating but leave the game object in place, so without
+  // this guard a back-and-forth could log the same variant to history twice.
+  if (g.outcomeRecorded) return;
+  g.outcomeRecorded = true;
   const score = g.score | 0;
 
-  if (g.isPuzzleMode) {
+  if (g.gameMode === 'seed') {
+    // Seed Explorer: a completed (won or lost) variant is mined into the Seeds
+    // history so it can be replayed. Skipped/un-started variants never reach
+    // here. Also drops a leaderboard entry and rolls up lifetime totals.
+    const cfg = g.seedConfig || seededConfig((g.settingsSeed ?? 0) >>> 0);
+    pushSeedHistory({
+      settingsSeed: g.settingsSeed >>> 0,
+      boardSeed: g.boardSeed >>> 0,
+      score,
+      won: !!won,
+      combo: g.bestCombo | 0,
+      colors: cfg.colors,
+      isSpeedMode: !!cfg.isSpeedMode,
+      stencilPack: cfg.stencilPack,
+      ts: Date.now(),
+    });
+    Arcade.scores.add(SCORES_CATEGORY, {
+      score,
+      meta: { settingsSeed: g.settingsSeed >>> 0, boardSeed: g.boardSeed >>> 0, won, combo: g.bestCombo | 0, isSeedMode: true },
+    });
+    const nowMs = sessionTimer.elapsedMs();
+    const playDelta = Math.max(0, nowMs - lastReportedMs);
+    lastReportedMs = nowMs;
+    Arcade.stats.update(STATS_KEY, (prev) => {
+      const s = { ...STATS_DEFAULTS, ...(prev || {}) };
+      s.totalPlayMs += playDelta | 0;
+      s.totalPops   += g.counts.popped  | 0;
+      s.totalDrops  += g.counts.dropped | 0;
+      s.bestCombo    = Math.max(s.bestCombo | 0, g.bestCombo | 0);
+      return s;
+    });
+  } else if (g.isPuzzleMode) {
     Arcade.scores.add(SCORES_CATEGORY, {
       score,
       meta: { puzzleId: g.puzzleId, won, combo: g.bestCombo | 0, isPuzzleMode: true },
@@ -671,12 +751,18 @@ attachInput(canvas, () => game, () => layout, {
   onPrevClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    openMenuToLevelSelector(game);
+    if (game.gameMode === 'seed') {
+      openMenuToSeeds(game);
+    } else {
+      openMenuToLevelSelector(game);
+    }
   },
   onRestartClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    if (game.isPuzzleMode) {
+    if (game.gameMode === 'seed') {
+      loadAndStartSeed({ settingsSeed: game.settingsSeed, boardSeed: game.boardSeed });
+    } else if (game.isPuzzleMode) {
       loadAndStartPuzzle(game.puzzleId);
     } else {
       loadAndStartLevel(game.level);
@@ -685,7 +771,12 @@ attachInput(canvas, () => game, () => layout, {
   onNextClick: () => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
-    if (game.isPuzzleMode) {
+    if (game.gameMode === 'seed') {
+      // "New" — roll a fresh variant and drop back to the build screen.
+      shuffleAll();
+      openMenuToExplore();
+      requestFrame();
+    } else if (game.isPuzzleMode) {
       loadAndStartPuzzle(game.puzzleId + 1);
     } else {
       loadAndStartLevel(game.level + 1);
@@ -709,12 +800,18 @@ attachInput(canvas, () => game, () => layout, {
     if (mode === 'zen') msg = 'Zen mode active — untimed';
     else if (mode === 'speed') msg = 'Speed mode active — timed';
     else if (mode === 'puzzle') msg = 'Puzzle mode active — teasers';
-    
+    else if (mode === 'seed') msg = 'Explore mode active — mine variants';
+
     Arcade.ui.toast(msg, { kind: 'info' });
-    
+
     if (mode === 'puzzle') {
       const puzzleId = loadProgressLevel('puzzle');
       loadAndStartPuzzle(puzzleId);
+    } else if (mode === 'seed') {
+      // Stand up the current candidate behind the build screen, then open it.
+      ensureExplore();
+      loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed });
+      openMenuToExplore();
     } else {
       const lvl = loadProgressLevel(mode);
       loadAndStartLevel(lvl);
@@ -723,6 +820,23 @@ attachInput(canvas, () => game, () => layout, {
   onToggleFastLaunch: (active) => {
     Arcade.ui.toast(active ? 'Fast launch enabled' : 'Fast launch disabled', { kind: 'info' });
     restartLevel();
+  },
+  // ─── Seed Explorer build-screen + history actions ───
+  onStartSeed: () => {
+    // Play the variant currently shown on the build screen.
+    loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed });
+  },
+  onShuffleBoard: () => { requestFrame(); },
+  onShuffleSettings: () => { requestFrame(); },
+  onSetSeeds: (which) => {
+    // Manual seed entry. The menu layer already validated/applied via setSeeds;
+    // here we just wake the loop so the new preview draws.
+    void which;
+    requestFrame();
+  },
+  onPickSeedHistory: (entry) => {
+    if (!entry) return;
+    loadAndStartSeed({ settingsSeed: entry.settingsSeed, boardSeed: entry.boardSeed });
   },
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
   // body actually draw. Also refresh the cached leaderboard/stats on every

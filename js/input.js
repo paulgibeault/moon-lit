@@ -21,6 +21,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     onWinClick, onLossClick, onInteract, onStartLevel, onStartPuzzle, onMenuChange, onToggleSpeed,
     onPrevClick, onRestartClick, onNextClick, onDismissClick, onRestoreClick,
     onChangeGameMode, onToggleFastLaunch,
+    onStartSeed, onShuffleBoard, onShuffleSettings, onSetSeeds, onPickSeedHistory,
   } = callbacks;
   
   // Notify main.js when the menu opens/closes so the rAF loop can wake up.
@@ -38,6 +39,12 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     onInteract:   () => { bump(); fireMenuChange(); },
     onChangeGameMode: (mode) => onChangeGameMode?.(mode),
     onToggleFastLaunch: (active) => onToggleFastLaunch?.(active),
+    // Seed Explorer build screen / history actions.
+    onStartSeed: (seeds) => onStartSeed?.(seeds),
+    onShuffleBoard: () => onShuffleBoard?.(),
+    onShuffleSettings: () => onShuffleSettings?.(),
+    onSetSeeds: (which) => onSetSeeds?.(which),
+    onPickSeedHistory: (entry) => onPickSeedHistory?.(entry),
   };
 
   let rect = canvas.getBoundingClientRect();

@@ -617,7 +617,9 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.fillStyle = won ? '#E8B770' : '#E8843E'; // Gold for win, warm orange for game over
   ctx.font = `600 ${titlePx}px ${SERIF}`;
   let titleText = "";
-  if (game.isPuzzleMode) {
+  if (game.gameMode === 'seed') {
+    titleText = won ? "Variant Cleared" : "Variant Drowned";
+  } else if (game.isPuzzleMode) {
     titleText = won ? `Puzzle ${game.puzzleId} Cleared` : "Puzzle Failed";
   } else {
     titleText = won ? `Stage ${game.level} Cleared` : "Trellis Touched the Water";
@@ -727,9 +729,12 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.restore();
 
   const isPuzzle = game.isPuzzleMode;
+  const isSeed = game.gameMode === 'seed';
   const nextNum = isPuzzle ? game.puzzleId + 1 : game.level + 1;
   let nextCfg = null;
-  if (isPuzzle) {
+  if (isSeed) {
+    nextCfg = null;
+  } else if (isPuzzle) {
     nextCfg = nextNum <= 50 ? puzzleConfig(nextNum) : null;
   } else {
     nextCfg = nextNum <= 1000 ? levelConfig(nextNum) : null;
@@ -741,7 +746,44 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
 
-  if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= 50 && nextCfg)) {
+  if (isSeed) {
+    // Seed Explorer: recap the variant just played (config + seeds) instead of
+    // a "next stage" preview.
+    const cfg = game.seedConfig || {};
+    ctx.fillText('THIS VARIANT', boxX + 12 * fs, boxY + 10 * fs);
+    const innerW = boxW - 20 * fs;
+    const colCenter1 = boxX + 10 * fs + innerW / 6;
+    const colCenter2 = boxX + 10 * fs + innerW / 2;
+    const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
+    const contentCenterY = boxY + 50 * fs;
+
+    drawMiniModeIcon(ctx, !!cfg.isSpeedMode, colCenter1, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9', cardBg);
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(cfg.isSpeedMode ? 'Timed' : 'Classic', colCenter1, contentCenterY + 16 * fs);
+
+    drawMiniStencilIcon(ctx, cfg.stencilPack, colCenter2, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9');
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
+    ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
+    const shortNames = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
+    ctx.fillText(shortNames[cfg.stencilPack] || cfg.stencilPack || '—', colCenter2, contentCenterY + 16 * fs);
+
+    const seedColors = COLOR_KEYS.slice(0, cfg.colors || 4);
+    const dotR = 4.5 * fs;
+    const dotGap = dotR * 2.5;
+    const startDotX = colCenter3 - ((seedColors.length - 1) * dotGap) / 2;
+    for (let c = 0; c < seedColors.length; c++) {
+      ctx.fillStyle = COLORS[seedColors[c]];
+      ctx.beginPath();
+      ctx.arc(startDotX + c * dotGap, contentCenterY - 10 * fs, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.5)';
+    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
+    ctx.fillText(`s#${game.settingsSeed >>> 0} · b#${game.boardSeed >>> 0}`, boxX + boxW / 2, boxY + boxH - 10 * fs);
+  } else if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= 50 && nextCfg)) {
     ctx.fillText(isPuzzle ? `PUZZLE ${nextNum} PREVIEW` : `STAGE ${nextNum} PREVIEW`, boxX + 12 * fs, boxY + 10 * fs);
 
     const innerW = boxW - 20 * fs;
@@ -823,7 +865,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     y: btnY,
     w: btnW,
     h: btnH,
-    label: isPuzzle ? 'Puzzles' : 'Stages',
+    label: isSeed ? 'Seeds' : isPuzzle ? 'Puzzles' : 'Stages',
     action: 'prev',
     enabled: true,
   };
@@ -833,7 +875,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     y: btnY,
     w: btnW,
     h: btnH,
-    label: 'Restart',
+    label: isSeed ? 'Replay' : 'Restart',
     action: 'restart',
     enabled: true,
   };
@@ -843,9 +885,9 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     y: btnY,
     w: btnW,
     h: btnH,
-    label: 'Next',
+    label: isSeed ? 'New' : 'Next',
     action: 'next',
-    enabled: isPuzzle ? (nextNum <= 50 && nextNum <= reached) : (nextNum <= 1000 && nextNum <= reached),
+    enabled: isSeed ? true : (isPuzzle ? (nextNum <= 50 && nextNum <= reached) : (nextNum <= 1000 && nextNum <= reached)),
   };
 
   // Push all to hit list so coordinates are checked on click

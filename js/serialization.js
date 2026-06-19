@@ -6,7 +6,7 @@
 // so restoring skips straight to the post-anim state cleanly.
 
 import {
-  COLOR_KEYS, levelConfig,
+  COLOR_KEYS, levelConfig, seededConfig,
   PROJECTILE_SPEED, DESCENT_DRIFT_SPEED, SETTLE_ANIM_SEC,
   SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR
@@ -37,6 +37,11 @@ export function serializeGame(g) {
     score: g.score,
     aimAngle: g.aimAngle,
     phase: g.phase,
+    gameMode: g.gameMode,
+    // Seed Explorer: the variant's two seeds (null in other modes). Restore
+    // rebuilds the seeded config from settingsSeed.
+    settingsSeed: g.settingsSeed ?? null,
+    boardSeed: g.boardSeed ?? null,
     isPuzzleMode: g.isPuzzleMode,
     puzzleId: g.puzzleId,
     puzzleQueueIndex: g.puzzleQueueIndex,
@@ -195,9 +200,10 @@ export function restoreGame(saved) {
   if (!migrated || migrated.version !== SAVE_VERSION) return null;
 
   const isPuzzleMode = !!migrated.isPuzzleMode;
+  const isSeedMode = migrated.gameMode === 'seed';
   const puzzleId = migrated.puzzleId || 1;
   const level = migrated.level ?? 1;
-  
+
   let config = null;
   let colors = null;
   let descentShots = 0;
@@ -205,8 +211,14 @@ export function restoreGame(saved) {
   let puzzleGoalType = 'clear-all';
   let puzzleDescentType = 'none';
   let puzzleIntroCard = null;
+  let seedConfig = null;
 
-  if (isPuzzleMode) {
+  if (isSeedMode) {
+    seedConfig = seededConfig((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0);
+    colors = COLOR_KEYS.slice(0, seedConfig.colors);
+    descentShots = seedConfig.descentShots;
+    descentTimeLimit = seedConfig.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  } else if (isPuzzleMode) {
     const pz = puzzleConfig(puzzleId);
     colors = pz.colors;
     puzzleGoalType = migrated.puzzleGoalType || pz.goalType || 'clear-all';
@@ -369,6 +381,13 @@ export function restoreGame(saved) {
     puzzleGoalType,
     puzzleDescentType,
     puzzleIntroCard,
+
+    // Seed Explorer properties. gameMode is left undefined for legacy saves
+    // that predate the field so callers fall back to Arcade.state as before.
+    gameMode: migrated.gameMode || undefined,
+    settingsSeed: isSeedMode ? ((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0) : null,
+    boardSeed: isSeedMode ? ((migrated.boardSeed ?? migrated.rngState ?? 0x4D6F6F6E) >>> 0) : null,
+    seedConfig,
   };
 }
 
