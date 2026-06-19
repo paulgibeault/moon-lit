@@ -14,6 +14,7 @@
 import { seededConfig, COLOR_KEYS } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial } from './board.js';
+import { makePatternState, patternRowColors, chooseStoneCells } from './seed-pattern.js';
 
 const HISTORY_KEY = 'seedHistory';
 const HISTORY_CAP = 50;
@@ -36,10 +37,14 @@ const previewLayout = {
   wallRight: PREVIEW_W - 8,
 };
 
-// The variant currently being browsed on the build screen.
+// The variant currently being browsed on the build screen. `overrides` holds
+// any settings the player has hand-picked from the build screen; the effective
+// config is the seeded config with these merged on top. Shuffling settings
+// rolls a new seed AND clears overrides (a fresh random variant).
 export const exploreState = {
   settingsSeed: 0,
   boardSeed: 0,
+  overrides: {},   // { colors?, initialRows?, descentShots?, isSpeedMode?, stencilPack?, blockerPct? }
   preview: null,   // { config, lanterns: [{ nx, ny, color, isBlocker }] }
 };
 
@@ -48,14 +53,26 @@ function randomSeed() {
   return Math.floor(Math.random() * 0x100000000) >>> 0;
 }
 
+// The effective settings config: the seeded base with hand-picked overrides
+// merged on top. env/moon stay seed-derived (overrides only touch rule fields).
+export function effectiveConfig(settingsSeed, overrides) {
+  return { ...seededConfig(settingsSeed >>> 0), ...(overrides || {}) };
+}
+
 // Build a throwaway board for the thumbnail. Mirrors createGame's seed branch
-// (settingsSeed → config, boardSeed → board RNG) but keeps nothing alive.
-export function buildPreview(settingsSeed, boardSeed) {
-  const config = seededConfig(settingsSeed >>> 0);
+// (settingsSeed + overrides → config, boardSeed → board RNG) but keeps nothing
+// alive.
+export function buildPreview(settingsSeed, boardSeed, overrides) {
+  const config = effectiveConfig(settingsSeed, overrides);
   const colors = COLOR_KEYS.slice(0, config.colors);
   const rng = mulberry32(boardSeed >>> 0);
   const board = createBoard();
-  populateInitial(board, previewLayout, rng, config.initialRows, colors, config.hasBlockers ? 16 : 0);
+  const ps = makePatternState(config.pattern, rng, colors);
+  populateInitial(board, previewLayout, rng, config.initialRows, colors, 0, {
+    blockerFraction: (config.blockerPct || 0) / 100,
+    rowColors: (A, count) => patternRowColors(ps, A, count, rng),
+    selectStones: (eligible, count) => chooseStoneCells(ps, eligible, count, rng),
+  });
   // Preview the upcoming queue colors too, so the summary can hint at them.
   const queue = [pick(rng, colors), pick(rng, colors), pick(rng, colors)];
   const lanterns = board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, isBlocker: !!l.isBlocker }));
@@ -63,7 +80,7 @@ export function buildPreview(settingsSeed, boardSeed) {
 }
 
 function refreshPreview() {
-  exploreState.preview = buildPreview(exploreState.settingsSeed, exploreState.boardSeed);
+  exploreState.preview = buildPreview(exploreState.settingsSeed, exploreState.boardSeed, exploreState.overrides);
 }
 
 // Ensure there's a candidate variant to show (first time the build screen opens).
@@ -82,6 +99,7 @@ export function shuffleBoard() {
 
 export function shuffleSettings() {
   exploreState.settingsSeed = randomSeed();
+  exploreState.overrides = {};   // a fresh roll discards hand-picked settings
   refreshPreview();
 }
 
@@ -89,13 +107,25 @@ export function shuffleSettings() {
 export function shuffleAll() {
   exploreState.settingsSeed = randomSeed();
   exploreState.boardSeed = randomSeed();
+  exploreState.overrides = {};
   refreshPreview();
 }
 
-// Point the build screen at specific seeds — manual entry or history replay.
-export function setSeeds(settingsSeed, boardSeed) {
+// Hand-pick one setting from the build screen. If the chosen value matches the
+// seeded base, the override is dropped so the field tracks the seed again.
+export function setOverride(field, value) {
+  const base = seededConfig(exploreState.settingsSeed >>> 0);
+  if (base[field] === value) delete exploreState.overrides[field];
+  else exploreState.overrides[field] = value;
+  refreshPreview();
+}
+
+// Point the build screen at specific seeds (+ optional overrides) — manual
+// entry or history replay.
+export function setSeeds(settingsSeed, boardSeed, overrides) {
   exploreState.settingsSeed = (settingsSeed >>> 0);
   exploreState.boardSeed = (boardSeed >>> 0);
+  exploreState.overrides = overrides ? { ...overrides } : {};
   refreshPreview();
 }
 

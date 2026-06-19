@@ -62,44 +62,59 @@ export function syncLanternPixels(board, layout) {
 // Place `rows` rows of lanterns close-packed against the trellis. Even rows
 // span `cols` lanterns, odd rows are offset by one radius (and one fewer
 // lantern, so the right edge stays aligned). Used for fresh-game seeding.
-export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS, level = 1) {
+export function populateInitial(board, layout, rng, rows = GRID.initialRows, colors = COLOR_KEYS, level = 1, opts = {}) {
   const r = layout.size;
   const rowH = SQRT3 * r;
   const activePackId = getActivePackId();
   for (let row = 0; row < rows; row++) {
     const odd = row & 1;
     const count = layout.cols - odd;
+    // Seed mode supplies a whole-row color function (patterns); otherwise each
+    // cell is independently random.
+    const rowCols = opts.rowColors ? opts.rowColors(row, count) : null;
     for (let i = 0; i < count; i++) {
       const nx = i * 2 + odd;
       const ny = row * SQRT3;
       const x = layout.originX + nx * r;
       const y = layout.trellisY + r + row * rowH;
-      const color = pick(rng, colors);
+      const color = rowCols ? rowCols[i] : pick(rng, colors);
       const designId = activePackId === 'random' ? getRandomDesignForColor(color, rng) : null;
       board.lanterns.push({ x, y, nx, ny, color, designId });
     }
   }
 
-  // Blocker placement for level >= 16
-  if (level >= 16) {
+  // Blocker placement. Seed mode passes opts.blockerFraction for an explicit
+  // share of stones; campaign uses the level-based count (level >= 16).
+  const useFraction = opts.blockerFraction != null;
+  if (useFraction || level >= 16) {
     const eligible = board.lanterns.filter(l => Math.round(l.ny / SQRT3) >= 1);
     if (eligible.length > 0) {
       let numBlockers = 0;
-      const roll = rng();
-      if (level <= 25) {
-        numBlockers = roll < 0.5 ? 1 : 2;
-      } else if (level <= 40) {
-        numBlockers = roll < 0.4 ? 2 : 3;
+      if (useFraction) {
+        numBlockers = Math.round(opts.blockerFraction * eligible.length);
       } else {
-        numBlockers = roll < 0.3 ? 2 : (roll < 0.8 ? 3 : 4);
+        const roll = rng();
+        if (level <= 25) {
+          numBlockers = roll < 0.5 ? 1 : 2;
+        } else if (level <= 40) {
+          numBlockers = roll < 0.4 ? 2 : 3;
+        } else {
+          numBlockers = roll < 0.3 ? 2 : (roll < 0.8 ? 3 : 4);
+        }
       }
 
-      const tempEligible = [...eligible];
-      const countToPlace = Math.min(numBlockers, tempEligible.length);
-      const chosen = [];
-      for (let k = 0; k < countToPlace; k++) {
-        const idx = Math.floor(rng() * tempEligible.length);
-        chosen.push(tempEligible.splice(idx, 1)[0]);
+      let chosen;
+      if (opts.selectStones) {
+        // Seed mode: pattern-aware stone placement (a line, diagonal, etc.).
+        chosen = opts.selectStones(eligible, numBlockers);
+      } else {
+        const tempEligible = [...eligible];
+        const countToPlace = Math.min(numBlockers, tempEligible.length);
+        chosen = [];
+        for (let k = 0; k < countToPlace; k++) {
+          const idx = Math.floor(rng() * tempEligible.length);
+          chosen.push(tempEligible.splice(idx, 1)[0]);
+        }
       }
       for (const l of chosen) {
         l.isBlocker = true;
@@ -142,11 +157,19 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts
   const count = layout.cols - oddStagger;
   const activePackId = getActivePackId();
 
-  // Calculate blocker probability per top-row cell
+  // Per-cell blocker probability. Seed mode passes an explicit opts.blockerProb
+  // (its stone percentage); campaign ramps it up with the level.
   let blockerProb = 0;
-  if (level >= 16) {
+  const seedStones = opts.blockerProb != null;
+  if (seedStones) {
+    blockerProb = opts.blockerProb;
+  } else if (level >= 16) {
     blockerProb = Math.min(0.08, 0.02 + (level - 16) * 0.0015);
   }
+
+  // Seed-mode patterns color the whole new top row at once (continuing the
+  // board's pattern); otherwise each non-blocker cell is independently random.
+  const rowCols = opts.seedRowColors ? opts.seedRowColors(count) : null;
 
   for (let i = 0; i < count; i++) {
     const nx = i * 2 + oddStagger;
@@ -155,8 +178,8 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts
     const y = layout.trellisY + r;
 
     // Check if this lantern should be a blocker
-    const isBlocker = (level >= 16 && rng() < blockerProb);
-    const color = isBlocker ? 'paper' : pick(rng, colors);
+    const isBlocker = ((seedStones || level >= 16) && rng() < blockerProb);
+    const color = isBlocker ? 'paper' : (rowCols ? rowCols[i] : pick(rng, colors));
     const designId = isBlocker ? 'flowers_bamboo' : (activePackId === 'random' ? getRandomDesignForColor(color, rng) : null);
 
     board.lanterns.push({ x, y, nx, ny, color, designId, isBlocker: !!isBlocker });

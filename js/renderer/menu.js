@@ -16,8 +16,9 @@ import { STENCIL_PACKS } from '../stencil-packs.js';
 import { changeStencilPack } from '../assets.js';
 import { puzzleConfig, PUZZLE_COUNT } from '../puzzles.js';
 import {
-  exploreState, ensureExplore, shuffleBoard, shuffleSettings, setSeeds, loadSeedHistory,
+  exploreState, ensureExplore, shuffleBoard, shuffleSettings, setSeeds, setOverride, loadSeedHistory,
 } from '../seed-explore.js';
+import { SEED_PATTERNS } from '../seed-pattern.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -102,6 +103,7 @@ export function openMenuToExplore() {
   menuState.scrollY = 0;
   menuState.isDragging = false;
   menuState.cameFromRoot = false;
+  menuState.explorePicker = null;   // no setting picker open
 }
 export function openMenuToSeeds() {
   menuState.panel = 'seeds';
@@ -231,7 +233,10 @@ export function handleMenuPointerUp(x, y, actions, game) {
       case 'show-explore': { ensureExplore(); setMenuPanel('explore'); actions?.onInteract?.(); return true; }
       case 'show-seeds':   setMenuPanel('seeds'); return true;
       case 'shuffle-board':    { shuffleBoard(); actions?.onInteract?.(); return true; }
-      case 'shuffle-settings': { shuffleSettings(); actions?.onInteract?.(); return true; }
+      case 'shuffle-settings': { menuState.explorePicker = null; shuffleSettings(); actions?.onInteract?.(); return true; }
+      case 'explore-pick-field':  { menuState.explorePicker = h.value; actions?.onInteract?.(); return true; }
+      case 'explore-set-option':  { setOverride(h.value.field, h.value.value); menuState.explorePicker = null; actions?.onInteract?.(); return true; }
+      case 'explore-close-picker': { menuState.explorePicker = null; actions?.onInteract?.(); return true; }
       case 'seed-play':        { closeMenu(); actions?.onStartSeed?.(); return true; }
       case 'seed-manual-settings':
       case 'seed-manual-board': {
@@ -501,17 +506,18 @@ function drawRootPanel(ctx, layout, game, settings) {
   if (gameMode === 'puzzle') {
     playLabel = `Play Puzzle ${targetLevel}`;
     playSub = `${actionWord} puzzle ${targetLevel}`;
-  } else if (gameMode === 'seed') {
-    playLabel = 'Play Variant';
-    playSub = `${actionWord} current variant`;
-  } else {
+  } else if (gameMode !== 'seed') {
     playLabel = `Play Stage ${targetLevel}`;
     const modeName = gameMode === 'campaign' ? 'campaign' : gameMode === 'zen' ? 'zen' : 'speed';
     playSub = `${actionWord} ${modeName} stage ${targetLevel}`;
   }
 
   const items = [];
-  items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
+  // Seed mode has no "play current variant" shortcut — playing happens from the
+  // Explore build screen instead.
+  if (gameMode !== 'seed') {
+    items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
+  }
   if (gameMode === 'puzzle') {
     items.push({ label: 'Puzzles', sub: `${PUZZLE_COUNT} brain-teaser challenges`, action: 'show-puzzles', glyph: 'puzzles' });
   } else if (gameMode === 'seed') {
@@ -523,10 +529,12 @@ function drawRootPanel(ctx, layout, game, settings) {
     items.push({ label: 'Stages', sub: 'select or revisit a stage', action: 'show-stages', glyph: 'stages' });
   }
 
-  items.push(
-    { label: 'Options',     sub: 'configure art and launch',  action: 'show-options',  glyph: 'stencils' },
-    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' }
-  );
+  // Options (art/launch config) don't apply to seed mode — its art comes from
+  // the seeded variant, set on the Explore build screen.
+  if (gameMode !== 'seed') {
+    items.push({ label: 'Options', sub: 'configure art and launch', action: 'show-options', glyph: 'stencils' });
+  }
+  items.push({ label: 'Records', sub: 'lanterns lit, best scores', action: 'show-records', glyph: 'records' });
 
   const modeRows = Math.ceil(5 / 2);
   // Compute card height dynamically: title + mode selector + divider + items
@@ -1290,6 +1298,20 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
 
 const SEED_SQRT3 = Math.sqrt(3);
 
+// Editable settings shown as chips on the build screen. Tapping a chip opens a
+// picker listing that field's alternatives. Order = display order.
+const PACK_SHORT = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
+const PATTERN_LABEL = { random: 'Random', rows: 'Rows', columns: 'Columns', diagonal: 'Diagonal', checker: 'Checker', mirror: 'Mirror' };
+const SETTING_DEFS = [
+  { field: 'colors',       label: 'Colors',  values: [3, 4, 5, 6],                                  fmt: v => `${v} colors` },
+  { field: 'initialRows',  label: 'Rows',    values: [3, 4, 5, 6, 7],                               fmt: v => `${v} rows` },
+  { field: 'descentShots', label: 'Descent', values: [5, 6, 7, 8, 9, 10, 12],                       fmt: v => `descent ${v}` },
+  { field: 'isSpeedMode',  label: 'Pace',    values: [false, true],                                 fmt: v => (v ? 'Timed' : 'Classic') },
+  { field: 'stencilPack',  label: 'Art',     values: ['plain', 'bugs', 'flowers', 'dragons', 'random'], fmt: v => (PACK_SHORT[v] || v) },
+  { field: 'blockerPct',   label: 'Stones',  values: [0, 10, 20, 30, 40, 50],                       fmt: v => (v === 0 ? 'No stones' : `${v}% stones`) },
+  { field: 'pattern',      label: 'Pattern', values: SEED_PATTERNS,                                 fmt: v => (PATTERN_LABEL[v] || v) },
+];
+
 // Draw a generated board's lanterns as colored dots, mapped from their
 // layout-independent (nx, ny) into the given box. nx runs 0..14 across 8
 // close-packed columns; ny is one packed-row (√3) per row.
@@ -1388,45 +1410,59 @@ function drawExplorePanel(ctx, layout, settings) {
   ctx.restore();
   y += 20 * fs;
 
+  // Hits pushed up to here belong to the title bar. Everything the body adds
+  // below is discarded if a setting picker is open, so only the picker is live.
+  const titleHitCount = menuState.hits.length;
+
   // Controls block lives at the bottom; the preview gets all the space between
   // the subtitle and it — so large boards fill the card instead of cramping.
   const rowH = Math.round(32 * fs);
   const shufW = Math.round(96 * fs);
   const valW = innerW - shufW - 8;
-  const summaryH = Math.round(24 * fs);
   const playH = Math.round(44 * fs);
-  const bottomBlockH = summaryH + 2 * (rowH + 8 * fs) + 10 * fs + playH + 18 * fs;
 
+  // ── Lay out the editable settings chips (wrap into rows within innerW) ──
+  const chipH = Math.round(28 * fs);
+  const chipGap = Math.round(8 * fs);
+  const chipPadX = Math.round(13 * fs);
+  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
+  const overrides = exploreState.overrides || {};
+  const chipItems = (cfg ? SETTING_DEFS : []).map(def => {
+    const label = def.fmt(cfg[def.field]);
+    const w = Math.ceil(ctx.measureText(label).width) + chipPadX * 2 + 10 * fs; // +caret room
+    return { def, label, w, overridden: def.field in overrides };
+  });
+  const chipRows = [];
+  let curRow = [], curW = 0;
+  for (const it of chipItems) {
+    if (curRow.length && curW + it.w > innerW) { chipRows.push(curRow); curRow = []; curW = 0; }
+    curRow.push(it); curW += it.w + chipGap;
+  }
+  if (curRow.length) chipRows.push(curRow);
+  const chipsH = chipRows.length ? chipRows.length * chipH + (chipRows.length - 1) * chipGap : 0;
+
+  const bottomBlockH = chipsH + 14 * fs + 2 * (rowH + 8 * fs) + 10 * fs + playH + 18 * fs;
   const previewTop = y;
   const previewBottom = rect.y + rect.h - bottomBlockH;
-  const previewH = Math.max(160 * fs, previewBottom - previewTop);
+  const previewH = Math.max(150 * fs, previewBottom - previewTop);
   drawBoardPreview(ctx, { x: rect.x + padX, y: previewTop, w: innerW, h: previewH }, preview);
   y = previewTop + previewH + 12 * fs;
 
-  // Settings summary.
-  if (cfg) {
-    // Palette dots.
-    const dotR = 3.5 * fs;
-    const gap = dotR * 2.6;
-    for (let c = 0; c < cfg.colors; c++) {
-      ctx.fillStyle = hexToRgba(COLORS[COLOR_KEYS[c]], 0.95);
-      ctx.beginPath();
-      ctx.arc(rect.x + padX + dotR + c * gap, y + 7 * fs, dotR, 0, Math.PI * 2);
-      ctx.fill();
+  // ── Draw the chips ──
+  const chipsTop = y;
+  for (const row of chipRows) {
+    let cx = rect.x + padX;
+    for (const it of row) {
+      drawSettingChip(ctx, { x: cx, y, w: it.w, h: chipH, fs }, it.label, it.overridden);
+      menuState.hits.push({ x: cx, y, w: it.w, h: chipH, action: 'explore-pick-field', value: it.def.field });
+      cx += it.w + chipGap;
     }
-    const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
-    const summary = `${cfg.colors} colors · ${cfg.initialRows} rows · ${cfg.isSpeedMode ? 'Timed' : 'Classic'} · ${packName}${cfg.hasBlockers ? ' · stones' : ''}`;
-    ctx.fillStyle = hexToRgba(CREAM, 0.85);
-    ctx.font = `400 ${Math.round(12 * fs)}px ${SANS}`;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText(summary, rect.x + padX + cfg.colors * gap + 8 * fs, y + 7 * fs);
-    y += summaryH;
+    y += chipH + chipGap;
   }
+  y = chipsTop + chipsH + 14 * fs;
 
-  // Seed rows: [value (tap = manual entry)] [Shuffle].
+  // ── Seed rows: [value (tap = manual entry)] [Shuffle] ──
   const seedRow = (label, seed, manualAction, shuffleAction) => {
-    // Value pill (manual entry).
     ctx.save();
     ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
     roundedRectPath(ctx, rect.x + padX, y, valW, rowH, 7);
@@ -1445,7 +1481,6 @@ function drawExplorePanel(ctx, layout, settings) {
     ctx.fillText(`#${seed >>> 0}`, rect.x + padX + valW - 10, y + rowH / 2);
     ctx.restore();
     menuState.hits.push({ x: rect.x + padX, y, w: valW, h: rowH, action: manualAction });
-    // Shuffle pill.
     drawSeedButton(ctx, { x: rect.x + padX + valW + 8, y, w: shufW, h: rowH, fs }, '⟳ Shuffle', shuffleAction);
     y += rowH + 8 * fs;
   };
@@ -1455,6 +1490,122 @@ function drawExplorePanel(ctx, layout, settings) {
   // Play button.
   y += 6 * fs;
   drawSeedButton(ctx, { x: rect.x + padX, y, w: innerW, h: playH, fs }, '▶  Play', 'seed-play', { primary: true });
+
+  // ── Setting picker overlay ── makes the body inert and lists alternatives.
+  if (menuState.explorePicker && cfg) {
+    const def = SETTING_DEFS.find(d => d.field === menuState.explorePicker);
+    if (def) {
+      menuState.hits.length = titleHitCount;   // discard body hits
+      drawSettingPicker(ctx, rect, startY, def, cfg, fs);
+    } else {
+      menuState.explorePicker = null;
+    }
+  }
+}
+
+// A tappable chip showing one editable setting's current value. Overridden
+// (hand-picked) settings get a gold tint so the player sees what they changed.
+function drawSettingChip(ctx, r, label, overridden) {
+  const fs = r.fs || 1;
+  ctx.save();
+  ctx.fillStyle = overridden ? hexToRgba(GOLD, 0.14) : 'rgba(245, 233, 201, 0.05)';
+  roundedRectPath(ctx, r.x, r.y, r.w, r.h, r.h / 2);
+  ctx.fill();
+  ctx.strokeStyle = overridden ? GOLD : hexToRgba(CREAM, 0.2);
+  ctx.lineWidth = overridden ? 1.3 : 1;
+  ctx.stroke();
+  ctx.fillStyle = overridden ? GOLD : CREAM;
+  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, r.x + 13 * fs, r.y + r.h / 2 + 0.5);
+  // Down-caret hint that it opens a list.
+  const caretX = r.x + r.w - 11 * fs;
+  const caretY = r.y + r.h / 2;
+  ctx.strokeStyle = hexToRgba(overridden ? GOLD : CREAM, 0.6);
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(caretX - 3 * fs, caretY - 1.5 * fs);
+  ctx.lineTo(caretX, caretY + 1.8 * fs);
+  ctx.lineTo(caretX + 3 * fs, caretY - 1.5 * fs);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Popover listing the alternatives for one setting. Tapping a value applies it
+// (setOverride); tapping anywhere else dismisses. Caller has already discarded
+// the body hits, so only what we push here is live.
+function drawSettingPicker(ctx, rect, bodyTop, def, cfg, fs) {
+  // Dim the whole card body.
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.62)';
+  roundedRectPath(ctx, rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4, 11);
+  ctx.fill();
+  ctx.restore();
+
+  const optH = Math.round(36 * fs);
+  const headerH = Math.round(34 * fs);
+  const padV = Math.round(12 * fs);
+  const boxW = Math.min(rect.w - 48, Math.round(300 * fs));
+  const boxH = headerH + def.values.length * optH + padV;
+  const boxX = Math.round(rect.x + (rect.w - boxW) / 2);
+  let boxY = Math.round(rect.y + (rect.h - boxH) / 2);
+  boxY = Math.max(Math.round(bodyTop), Math.min(boxY, Math.round(rect.y + rect.h - boxH - 12 * fs)));
+
+  // Box.
+  ctx.save();
+  ctx.fillStyle = 'rgba(24, 30, 56, 0.98)';
+  roundedRectPath(ctx, boxX, boxY, boxW, boxH, 10);
+  ctx.fill();
+  ctx.strokeStyle = BORDER;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Header.
+  ctx.fillStyle = GOLD;
+  ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Choose ${def.label}`, boxX + 16 * fs, boxY + headerH / 2);
+  drawDashedRule(ctx, boxX + 14 * fs, boxY + headerH - 2, boxW - 28 * fs);
+  ctx.restore();
+
+  // Options.
+  const current = cfg[def.field];
+  let oy = boxY + headerH;
+  for (const value of def.values) {
+    const isCur = current === value;
+    ctx.save();
+    if (isCur) {
+      ctx.fillStyle = hexToRgba(GOLD, 0.1);
+      roundedRectPath(ctx, boxX + 8 * fs, oy + 3, boxW - 16 * fs, optH - 6, 6);
+      ctx.fill();
+    }
+    ctx.fillStyle = isCur ? GOLD : CREAM;
+    ctx.font = `${isCur ? 600 : 400} ${Math.round(13 * fs)}px ${SERIF}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.fmt(value), boxX + 20 * fs, oy + optH / 2);
+    if (isCur) {
+      // Check mark.
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      const kx = boxX + boxW - 22 * fs, ky = oy + optH / 2;
+      ctx.beginPath();
+      ctx.moveTo(kx - 4 * fs, ky);
+      ctx.lineTo(kx - 1 * fs, ky + 3 * fs);
+      ctx.lineTo(kx + 4 * fs, ky - 3 * fs);
+      ctx.stroke();
+    }
+    ctx.restore();
+    menuState.hits.push({ x: boxX, y: oy, w: boxW, h: optH, action: 'explore-set-option', value: { field: def.field, value } });
+    oy += optH;
+  }
+
+  // Backdrop close — pushed LAST so option taps win.
+  menuState.hits.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, action: 'explore-close-picker' });
 }
 
 // ─── Seeds history panel ────────────────────────────────────────────────────

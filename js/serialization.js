@@ -38,10 +38,12 @@ export function serializeGame(g) {
     aimAngle: g.aimAngle,
     phase: g.phase,
     gameMode: g.gameMode,
-    // Seed Explorer: the variant's two seeds (null in other modes). Restore
-    // rebuilds the seeded config from settingsSeed.
+    // Seed Explorer: the variant's two seeds + any hand-picked setting
+    // overrides (null in other modes). Restore rebuilds the seeded config from
+    // settingsSeed and merges the overrides back on top.
     settingsSeed: g.settingsSeed ?? null,
     boardSeed: g.boardSeed ?? null,
+    settingsOverrides: g.settingsOverrides ?? null,
     isPuzzleMode: g.isPuzzleMode,
     puzzleId: g.puzzleId,
     puzzleQueueIndex: g.puzzleQueueIndex,
@@ -84,6 +86,9 @@ export function serializeGame(g) {
     board: {
       descentCount: g.board.descentCount,
       anchorOffsetRows: g.board.anchorOffsetRows || 0,
+      // Seed Explorer pattern state — lets descents keep extending the board's
+      // pattern after a reload (null in other modes).
+      seedPattern: g.board.seedPattern || null,
       lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker })),
     },
     rngState: g.rng.getState(),
@@ -214,7 +219,7 @@ export function restoreGame(saved) {
   let seedConfig = null;
 
   if (isSeedMode) {
-    seedConfig = seededConfig((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0);
+    seedConfig = { ...seededConfig((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0), ...(migrated.settingsOverrides || {}) };
     colors = COLOR_KEYS.slice(0, seedConfig.colors);
     descentShots = seedConfig.descentShots;
     descentTimeLimit = seedConfig.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
@@ -242,6 +247,7 @@ export function restoreGame(saved) {
   if (migrated.board) {
     board.descentCount = (migrated.board.descentCount || 0) | 0;
     board.anchorOffsetRows = (migrated.board.anchorOffsetRows || 0) | 0;
+    if (migrated.board.seedPattern) board.seedPattern = migrated.board.seedPattern;
     
     // Safety check color mapping to current active palette
     const VALID_COLORS = new Set(COLOR_KEYS);
@@ -387,6 +393,7 @@ export function restoreGame(saved) {
     gameMode: migrated.gameMode || undefined,
     settingsSeed: isSeedMode ? ((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0) : null,
     boardSeed: isSeedMode ? ((migrated.boardSeed ?? migrated.rngState ?? 0x4D6F6F6E) >>> 0) : null,
+    settingsOverrides: isSeedMode ? (migrated.settingsOverrides ? { ...migrated.settingsOverrides } : {}) : null,
     seedConfig,
   };
 }

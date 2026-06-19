@@ -15,6 +15,7 @@ import {
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
+import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } from './seed-pattern.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
@@ -68,7 +69,7 @@ const MOONRISE_DUR       = 1.5;   // total cinematic length, seconds
 const MOONRISE_BOB_FRAC  = 0.14;  // peak board bob, as a fraction of one row
 const MOONRISE_SPEND_SEC = 0.6;   // spent-charge flight; lands as the moon flares
 
-export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode, settingsSeed, boardSeed } = {}) {
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode, settingsSeed, boardSeed, settingsOverrides } = {}) {
   // Determine gameMode
   if (!gameMode) {
     if (typeof Arcade !== 'undefined' && Arcade.state) {
@@ -121,14 +122,22 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentShots = puzzleDescentType === 'shot' ? (pz.descentEvery || 2) : 0;
     descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
   } else if (isSeedMode) {
-    config = seededConfig((settingsSeed ?? M3_DEFAULT_SEED) >>> 0);
+    // Effective config = seeded base + any hand-picked overrides from the build
+    // screen (env/moon stay seed-derived).
+    config = { ...seededConfig((settingsSeed ?? M3_DEFAULT_SEED) >>> 0), ...(settingsOverrides || {}) };
     colors = COLOR_KEYS.slice(0, config.colors);
     // boardSeed drives the playthrough RNG, fully decoupled from settingsSeed.
     effectiveSeed = (boardSeed ?? seed ?? M3_DEFAULT_SEED) >>> 0;
     rng = mulberry32(effectiveSeed);
-    // Reuse the campaign blocker path (board.js places stones when level >= 16)
-    // by passing a synthetic level when the seeded config calls for blockers.
-    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, config.hasBlockers ? 16 : 0);
+    // Build the layout pattern (colors + stone shape) and stamp it on the board
+    // so descents keep extending it. Stones come from blockerPct.
+    const seedPattern = makePatternState(config.pattern, rng, colors);
+    board.seedPattern = seedPattern;
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, 0, {
+      blockerFraction: (config.blockerPct || 0) / 100,
+      rowColors: (A, count) => patternRowColors(seedPattern, A, count, rng),
+      selectStones: (eligible, count) => chooseStoneCells(seedPattern, eligible, count, rng),
+    });
 
     queueCurrent = pick(rng, colors);
     queueNext = pick(rng, colors);
@@ -257,6 +266,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     // restore can rebuild the seeded config and history can replay it exactly.
     settingsSeed: isSeedMode ? ((settingsSeed ?? M3_DEFAULT_SEED) >>> 0) : null,
     boardSeed: isSeedMode ? (effectiveSeed >>> 0) : null,
+    settingsOverrides: isSeedMode ? (settingsOverrides ? { ...settingsOverrides } : {}) : null,
     seedConfig: isSeedMode ? config : null,
   };
 }
@@ -659,8 +669,17 @@ function finishSettle(game, layout) {
     // Filter out blockers so their colors do not pollute the live color set.
     const live = new Set(game.board.lanterns.filter(l => !l.isBlocker).map(l => l.color));
     const palette = game.colors.filter(c => live.has(c));
+    // Seed mode: keep the new top row on-pattern and seed stones at the
+    // variant's stone percentage. Other modes use the plain random top row.
+    const ps = game.board.seedPattern;
+    const seedOpts = (game.gameMode === 'seed' && ps)
+      ? {
+          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng),
+          blockerProb: (game.seedConfig?.blockerPct || 0) / 100,
+        }
+      : {};
     const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level,
-      { seedRow: !game.isPuzzleMode });
+      { seedRow: !game.isPuzzleMode, ...seedOpts });
     if (!ok) {
       startDrowning(game);
       return;

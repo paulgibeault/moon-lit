@@ -1,3 +1,5 @@
+import { pickPattern } from './seed-pattern.js';
+
 export const GAME_ID = 'moon-lit';
 
 // Paper-lantern palette tuned to traditional festival colors (Yi Peng, Loy
@@ -252,9 +254,16 @@ export function seededConfig(settingsSeed) {
   const packs = ['plain', 'bugs', 'flowers', 'dragons', 'random'];
   const stencilPack = packs[Math.min(packs.length - 1, Math.floor(next() * packs.length))];
 
-  // Stone blockers on ~30% of variants, and never on the gentlest (3-color,
-  // shallow) boards where they'd feel punishing.
-  const hasBlockers = colors >= 4 && initialRows >= 4 && next() < 0.3;
+  // Stone blockers as a percentage of the board. Most variants have none, and
+  // the gentlest (3-color, shallow) boards never get them — they'd feel
+  // punishing. Call next() unconditionally so the seed→env/moon draws below
+  // stay stable regardless of the gate.
+  const sb = next();
+  const allowStones = colors >= 4 && initialRows >= 4;
+  const blockerPct = !allowStones ? 0 : (sb < 0.7 ? 0 : sb < 0.85 ? 10 : sb < 0.95 ? 20 : 30);
+
+  // Layout pattern for colors + stones — mostly random, sometimes structured.
+  const pattern = pickPattern(next());
 
   // Subtle ambience. windSpeed 0..0.9, glow 0.85..1.35, ripple 0.7..1.6.
   const env = {
@@ -269,7 +278,7 @@ export function seededConfig(settingsSeed) {
     ? { phase: Math.round(next() * 100) / 100, position: Math.round(next() * 100) / 100 }
     : { phase: -1, position: -1 };
 
-  return { colors, initialRows, descentShots, isSpeedMode, stencilPack, hasBlockers, env, moon };
+  return { colors, initialRows, descentShots, isSpeedMode, stencilPack, blockerPct, pattern, env, moon };
 }
 
 // Speed Mode Tuning parameters

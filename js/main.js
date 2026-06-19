@@ -15,7 +15,7 @@ import {
   openMenuToExplore, openMenuToSeeds,
 } from './renderer/menu.js';
 import {
-  exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory,
+  exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
 
 await Arcade.ready;
@@ -322,7 +322,7 @@ function bootstrapGame() {
       // screen so there's something to render, but don't "play" until the
       // player hits Play (which can re-roll the seeds first).
       ensureExplore();
-      startGame(createGame({ layout, gameMode: 'seed', settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed }));
+      startGame(createGame({ layout, gameMode: 'seed', settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed, settingsOverrides: exploreState.overrides }));
       openMenuToExplore();
     } else {
       startGame(createGame({ layout, level: loadProgressLevel(gameMode), gameMode }));
@@ -420,17 +420,17 @@ async function loadAndStartPuzzle(puzzleId) {
 // loadAndStartLevel — switch the stencil pack the seeded config asks for, then
 // boot a fresh seed-mode game. The build screen's current candidate is synced
 // to these seeds so reopening it shows what was just played.
-async function loadAndStartSeed({ settingsSeed, boardSeed }) {
+async function loadAndStartSeed({ settingsSeed, boardSeed, overrides }) {
   if (game) {
     game.loading = true;
     game.endOverlayDismissed = true;
     forceRequestFrame();
   }
   Arcade.state.set('gameMode', 'seed');
-  const cfg = seededConfig(settingsSeed >>> 0);
-  setSeeds(settingsSeed, boardSeed);
+  const cfg = effectiveConfig(settingsSeed, overrides);
+  setSeeds(settingsSeed, boardSeed, overrides);
   await changeStencilPack(cfg.stencilPack || 'bugs');
-  startGame(createGame({ layout, gameMode: 'seed', settingsSeed, boardSeed }));
+  startGame(createGame({ layout, gameMode: 'seed', settingsSeed, boardSeed, settingsOverrides: overrides }));
   resetHudState(0, bestScore);
   refreshMenuData();
   forceRequestFrame();
@@ -482,6 +482,7 @@ function recordOutcome(g, won) {
     pushSeedHistory({
       settingsSeed: g.settingsSeed >>> 0,
       boardSeed: g.boardSeed >>> 0,
+      overrides: (g.settingsOverrides && Object.keys(g.settingsOverrides).length) ? { ...g.settingsOverrides } : null,
       score,
       won: !!won,
       combo: g.bestCombo | 0,
@@ -761,7 +762,7 @@ attachInput(canvas, () => game, () => layout, {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
     if (game.gameMode === 'seed') {
-      loadAndStartSeed({ settingsSeed: game.settingsSeed, boardSeed: game.boardSeed });
+      loadAndStartSeed({ settingsSeed: game.settingsSeed, boardSeed: game.boardSeed, overrides: game.settingsOverrides });
     } else if (game.isPuzzleMode) {
       loadAndStartPuzzle(game.puzzleId);
     } else {
@@ -810,7 +811,7 @@ attachInput(canvas, () => game, () => layout, {
     } else if (mode === 'seed') {
       // Stand up the current candidate behind the build screen, then open it.
       ensureExplore();
-      loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed });
+      loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed, overrides: exploreState.overrides });
       openMenuToExplore();
     } else {
       const lvl = loadProgressLevel(mode);
@@ -824,7 +825,7 @@ attachInput(canvas, () => game, () => layout, {
   // ─── Seed Explorer build-screen + history actions ───
   onStartSeed: () => {
     // Play the variant currently shown on the build screen.
-    loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed });
+    loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed, overrides: exploreState.overrides });
   },
   onShuffleBoard: () => { requestFrame(); },
   onShuffleSettings: () => { requestFrame(); },
@@ -836,7 +837,7 @@ attachInput(canvas, () => game, () => layout, {
   },
   onPickSeedHistory: (entry) => {
     if (!entry) return;
-    loadAndStartSeed({ settingsSeed: entry.settingsSeed, boardSeed: entry.boardSeed });
+    loadAndStartSeed({ settingsSeed: entry.settingsSeed, boardSeed: entry.boardSeed, overrides: entry.overrides });
   },
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
   // body actually draw. Also refresh the cached leaderboard/stats on every
