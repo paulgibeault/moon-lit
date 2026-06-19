@@ -312,6 +312,10 @@ export function step(game, dtSec, layout) {
 
   tickEffects(game, dtSec);
 
+  // Moonrise rescue is a non-blocking cinematic — advance it alongside whatever
+  // the player is doing, so aim/fire continue through the animation.
+  if (game.moonriseFx) tickMoonriseFx(game, dtSec, layout);
+
   // If Speed Mode is active, tick down the time-based descent timer.
   if (game.isSpeedMode && (game.phase === PHASE.AIMING || game.phase === PHASE.FLYING || game.phase === PHASE.SETTLING)) {
     game.timeUntilDescent = Math.max(0, game.timeUntilDescent - dtSec);
@@ -355,10 +359,6 @@ export function step(game, dtSec, layout) {
     if (!game.isFastLaunch) {
       return true;
     }
-  }
-
-  if (game.phase === PHASE.MOONRISE) {
-    return stepMoonrise(game, dtSec, layout);
   }
 
   if (game.phase === PHASE.DROWNING) {
@@ -542,9 +542,12 @@ function stepDrowning(game, dtSec, layout) {
   return true;
 }
 
-// Kick off the Moonrise rescue: the board is about to descend, so animate it
-// dipping a row and then being lifted back. Drives board.descentAnimY (the
-// same offset a real descent rides), which the renderer already applies.
+// Kick off the Moonrise rescue cinematic. This is a purely cosmetic overlay:
+// the gameplay effect (cancelling the descent) is applied immediately by the
+// caller and the phase stays AIMING, so aim and fire are never interrupted.
+// The animation drives board.descentAnimY (a render-only offset), jiggle, and
+// the moonlight wash, all read by the renderer, and ticks itself to completion
+// alongside normal play via tickMoonriseFx.
 function startMoonrise(game, layout) {
   game.moonriseFx = {
     t: 0,
@@ -555,17 +558,13 @@ function startMoonrise(game, layout) {
     flared: false,
   };
   game.board.descentAnimY = 0;
-  game.phase = PHASE.MOONRISE;
 }
 
-function stepMoonrise(game, dtSec, layout) {
+// Advance the Moonrise cinematic by one frame. Called every frame while
+// game.moonriseFx is set, regardless of phase, so the player keeps aiming and
+// firing while the moon flares and the field bobs.
+function tickMoonriseFx(game, dtSec, layout) {
   const fx = game.moonriseFx;
-  if (!fx) {                         // defensive: e.g. restored mid-animation
-    game.board.descentAnimY = 0;
-    resetDescentCounter(game);       // the descent was cancelled
-    game.phase = PHASE.AIMING;
-    return true;
-  }
   fx.t += dtSec;
   const u = Math.min(1, fx.t / fx.dur);
 
@@ -593,10 +592,7 @@ function stepMoonrise(game, dtSec, layout) {
   if (u >= 1) {
     game.board.descentAnimY = 0;
     game.moonriseFx = null;
-    resetDescentCounter(game);
-    game.phase = PHASE.AIMING;
   }
-  return true;
 }
 
 // Reset whichever descent clock the current mode uses after a cancelled
@@ -623,7 +619,12 @@ function finishSettle(game, layout) {
       // over the dip, arriving as the moon flares — so the rescue visibly
       // consumes an earned charge. pipIndex is the post-decrement count.
       game.moonriseSpend = { t: 0, life: MOONRISE_SPEND_SEC, pipIndex: game.moonriseCharges };
+      // Cancel the descent and reset the counter now, then hand control back to
+      // the player. The flare/bob/wash play out as a non-blocking cinematic
+      // (tickMoonriseFx) so aiming and firing are never paused for it.
+      resetDescentCounter(game);
       startMoonrise(game, layout);
+      game.phase = PHASE.AIMING;
       return;
     }
     // Pull the new top row only from colors currently in play, so a descent

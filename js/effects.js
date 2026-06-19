@@ -32,6 +32,7 @@ export function hasActiveEffects(game) {
   if (game.ripples && game.ripples.length > 0) return true;
   if (game.moonPulse && game.moonPulse.t < game.moonPulse.life) return true;
   if (game.moonriseSpend) return true;
+  if (game.moonriseFx) return true;
   if (game.statusMsg) return true;
   return false;
 }

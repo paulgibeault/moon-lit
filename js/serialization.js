@@ -303,7 +303,9 @@ export function restoreGame(saved) {
   return {
     rng,
     board,
-    phase: migrated.phase || 'aiming',
+    // Moonrise is no longer a phase (it's a non-blocking cinematic); a legacy
+    // save taken mid-rescue resumes straight into aiming.
+    phase: (!migrated.phase || migrated.phase === 'moonrise') ? 'aiming' : migrated.phase,
     aimAngle: migrated.aimAngle || 0,
     queue: { 
       current: queueCurrent, 
