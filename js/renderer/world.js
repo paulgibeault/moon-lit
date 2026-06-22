@@ -2623,8 +2623,7 @@ function drawLauncherAssembly(ctx, layout, game, tSec, isReflection) {
       const loadedVisible =
         game.phase === PHASE.AIMING ||
         game.phase === PHASE.SETTLING ||
-        game.phase === PHASE.DESCENDING ||
-        game.phase === PHASE.MOONRISE;
+        game.phase === PHASE.DESCENDING;
       if (loadedVisible) {
         ctx.save();
         ctx.translate(0, -d_hinge_lantern);

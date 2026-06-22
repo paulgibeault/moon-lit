@@ -15,6 +15,10 @@ import {
 import { STENCIL_PACKS } from '../stencil-packs.js';
 import { changeStencilPack } from '../assets.js';
 import { puzzleConfig, PUZZLE_COUNT } from '../puzzles.js';
+import {
+  exploreState, ensureExplore, shuffleBoard, shuffleSettings, setSeeds, setOverride, loadSeedHistory,
+} from '../seed-explore.js';
+import { SEED_PATTERNS } from '../seed-pattern.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -25,7 +29,7 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options'
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options' | 'explore' | 'seeds'
   fade: 0,             // 0..1
   fadeTarget: 0,
   hits: [],            // [{x, y, w, h, action, value}]
@@ -88,6 +92,25 @@ export function openMenuToLevelSelector(game) {
   menuState.fadeTarget = 1;
   menuState.isDragging = false;
   menuState.needsScrollToCurrent = true;
+  menuState.cameFromRoot = false;
+}
+// Seed Explorer: jump straight to the build screen (variant mining) or the
+// completed-variant history. ensureExplore() guarantees a candidate to preview.
+export function openMenuToExplore() {
+  ensureExplore();
+  menuState.panel = 'explore';
+  menuState.fadeTarget = 1;
+  menuState.scrollY = 0;
+  menuState.isDragging = false;
+  menuState.cameFromRoot = false;
+  menuState.explorePicker = null;   // no setting picker open
+}
+export function openMenuToSeeds() {
+  menuState.panel = 'seeds';
+  menuState.fadeTarget = 1;
+  menuState.scrollY = 0;
+  menuState.isDragging = false;
+  menuState.needsScrollToCurrent = false;
   menuState.cameFromRoot = false;
 }
 
@@ -207,6 +230,33 @@ export function handleMenuPointerUp(x, y, actions, game) {
       case 'show-puzzles': setMenuPanel('puzzles'); return true;
       case 'show-options': setMenuPanel('options'); return true;
       case 'show-records': setMenuPanel('records'); return true;
+      case 'show-explore': { ensureExplore(); setMenuPanel('explore'); actions?.onInteract?.(); return true; }
+      case 'show-seeds':   setMenuPanel('seeds'); return true;
+      case 'shuffle-board':    { shuffleBoard(); actions?.onInteract?.(); return true; }
+      case 'shuffle-settings': { menuState.explorePicker = null; shuffleSettings(); actions?.onInteract?.(); return true; }
+      case 'explore-pick-field':  { menuState.explorePicker = h.value; actions?.onInteract?.(); return true; }
+      case 'explore-set-option':  { setOverride(h.value.field, h.value.value); menuState.explorePicker = null; actions?.onInteract?.(); return true; }
+      case 'explore-close-picker': { menuState.explorePicker = null; actions?.onInteract?.(); return true; }
+      case 'seed-play':        { closeMenu(); actions?.onStartSeed?.(); return true; }
+      case 'seed-manual-settings':
+      case 'seed-manual-board': {
+        // Manual seed entry. Canvas has no DOM inputs, so prompt() for v1.
+        const isBoard = h.action === 'seed-manual-board';
+        const cur = isBoard ? exploreState.boardSeed : exploreState.settingsSeed;
+        const raw = (typeof window !== 'undefined' && window.prompt)
+          ? window.prompt(`Enter ${isBoard ? 'board' : 'settings'} seed (number):`, String(cur >>> 0))
+          : null;
+        if (raw != null) {
+          const n = parseInt(String(raw).trim(), 10);
+          if (Number.isFinite(n)) {
+            if (isBoard) setSeeds(exploreState.settingsSeed, n);
+            else setSeeds(n, exploreState.boardSeed);
+          }
+        }
+        actions?.onInteract?.();
+        return true;
+      }
+      case 'pick-seed-history': { closeMenu(); actions?.onPickSeedHistory?.(h.value); return true; }
       case 'pick-stencil': {
         const gameMode = Arcade.state.get('gameMode') || 'campaign';
         if (gameMode === 'zen' || gameMode === 'speed') {
@@ -273,6 +323,8 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   else if (menuState.panel === 'stages')  drawStagesPanel(ctx, layout, game, settings, stats);
   else if (menuState.panel === 'puzzles') drawPuzzlesPanel(ctx, layout, game, settings, stats);
   else if (menuState.panel === 'options') drawOptionsPanel(ctx, layout, settings);
+  else if (menuState.panel === 'explore') drawExplorePanel(ctx, layout, settings);
+  else if (menuState.panel === 'seeds')   drawSeedsPanel(ctx, layout, game, settings);
   ctx.restore();
 }
 
@@ -454,27 +506,39 @@ function drawRootPanel(ctx, layout, game, settings) {
   if (gameMode === 'puzzle') {
     playLabel = `Play Puzzle ${targetLevel}`;
     playSub = `${actionWord} puzzle ${targetLevel}`;
-  } else {
+  } else if (gameMode !== 'seed') {
     playLabel = `Play Stage ${targetLevel}`;
     const modeName = gameMode === 'campaign' ? 'campaign' : gameMode === 'zen' ? 'zen' : 'speed';
     playSub = `${actionWord} ${modeName} stage ${targetLevel}`;
   }
 
   const items = [];
-  items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
+  // Seed mode has no "play current variant" shortcut — playing happens from the
+  // Explore build screen instead.
+  if (gameMode !== 'seed') {
+    items.push({ label: playLabel, sub: playSub, action: 'play-confirm', glyph: 'play' });
+  }
   if (gameMode === 'puzzle') {
     items.push({ label: 'Puzzles', sub: `${PUZZLE_COUNT} brain-teaser challenges`, action: 'show-puzzles', glyph: 'puzzles' });
+  } else if (gameMode === 'seed') {
+    items.push(
+      { label: 'Explore', sub: 'mine new board & rule seeds', action: 'show-explore', glyph: 'explore' },
+      { label: 'Seeds',   sub: 'your completed variants',     action: 'show-seeds',   glyph: 'records' }
+    );
   } else {
     items.push({ label: 'Stages', sub: 'select or revisit a stage', action: 'show-stages', glyph: 'stages' });
   }
-  
-  items.push(
-    { label: 'Options',     sub: 'configure art and launch',  action: 'show-options',  glyph: 'stencils' },
-    { label: 'Records',     sub: 'lanterns lit, best scores', action: 'show-records',  glyph: 'records' }
-  );
 
+  // Options (art/launch config) don't apply to seed mode — its art comes from
+  // the seeded variant, set on the Explore build screen.
+  if (gameMode !== 'seed') {
+    items.push({ label: 'Options', sub: 'configure art and launch', action: 'show-options', glyph: 'stencils' });
+  }
+  items.push({ label: 'Records', sub: 'lanterns lit, best scores', action: 'show-records', glyph: 'records' });
+
+  const modeRows = Math.ceil(5 / 2);
   // Compute card height dynamically: title + mode selector + divider + items
-  const cardH = Math.round((210 + items.length * 48) * fs);
+  const cardH = Math.round((210 + (modeRows - 2) * (48 + 8) + items.length * 48) * fs);
   const rect = cardRect(layout, 320 * fs, cardH);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
@@ -484,7 +548,7 @@ function drawRootPanel(ctx, layout, game, settings) {
   const innerW = rect.w - padX * 2;
   let y = startY + 6;
 
-  // ─── Game Mode Grid (2x2) ───
+  // ─── Game Mode Grid (2 columns) ───
   y = drawSectionHeader(ctx, rect.x + padX, y, 'Game Mode', fs);
 
   const colW = Math.floor((innerW - 12) / 2);
@@ -494,11 +558,12 @@ function drawRootPanel(ctx, layout, game, settings) {
     { id: 'campaign', label: 'Campaign', sub: 'Default levels', glyph: 'stages' },
     { id: 'zen',      label: 'Zen',      sub: 'Classic play',   glyph: 'moon' },
     { id: 'speed',    label: 'Speed',    sub: 'Rapid fire',     glyph: 'speed' },
-    { id: 'puzzle',   label: 'Puzzle',   sub: 'Teaser puzzles',  glyph: 'puzzles' }
+    { id: 'puzzle',   label: 'Puzzle',   sub: 'Teaser puzzles',  glyph: 'puzzles' },
+    { id: 'seed',     label: 'Explore',  sub: 'Seed variants',   glyph: 'explore' }
   ];
 
   const modeStartY = y;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < modeOpts.length; i++) {
     const opt = modeOpts[i];
     const isSelected = (opt.id === gameMode);
     const rowIndex = Math.floor(i / 2);
@@ -537,7 +602,7 @@ function drawRootPanel(ctx, layout, game, settings) {
     menuState.hits.push({ x: tx, y: ty, w: colW, h: colH, action: 'change-gamemode', value: opt.id });
   }
 
-  y += 2 * colH + 8 + 10;
+  y += modeRows * colH + (modeRows - 1) * 8 + 10;
   drawDashedRule(ctx, rect.x + padX, y, innerW);
   y += 10;
 
@@ -676,6 +741,13 @@ function drawGlyph(ctx, kind, cx, cy) {
       ctx.lineTo(cx - 3, cy + 6);
       ctx.closePath();
       ctx.fill();
+      break;
+    }
+    case 'explore': {
+      // A bright sparkle + two smaller ones — "discover variants".
+      drawStar(ctx, cx - 1, cy - 1, 5, hexToRgba(GOLD, 0.95));
+      drawStar(ctx, cx + 5, cy + 4, 2.2, hexToRgba(CREAM, 0.9));
+      drawStar(ctx, cx + 5, cy - 5, 1.8, hexToRgba(CREAM, 0.7));
       break;
     }
     case 'moon':
@@ -1215,6 +1287,429 @@ function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
     roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
     ctx.fill();
 
+    ctx.fillStyle = hexToRgba(GOLD, 0.7);
+    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ─── Explore (Seed build) panel ─────────────────────────────────────────────
+
+const SEED_SQRT3 = Math.sqrt(3);
+
+// Editable settings shown as chips on the build screen. Tapping a chip opens a
+// picker listing that field's alternatives. Order = display order.
+const PACK_SHORT = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
+const PATTERN_LABEL = { random: 'Random', rows: 'Rows', columns: 'Columns', diagonal: 'Diagonal', checker: 'Checker', mirror: 'Mirror' };
+const SETTING_DEFS = [
+  { field: 'colors',       label: 'Colors',  values: [3, 4, 5, 6],                                  fmt: v => `${v} colors` },
+  { field: 'initialRows',  label: 'Rows',    values: [3, 4, 5, 6, 7],                               fmt: v => `${v} rows` },
+  { field: 'descentShots', label: 'Descent', values: [5, 6, 7, 8, 9, 10, 12],                       fmt: v => `descent ${v}` },
+  { field: 'isSpeedMode',  label: 'Pace',    values: [false, true],                                 fmt: v => (v ? 'Timed' : 'Classic') },
+  { field: 'stencilPack',  label: 'Art',     values: ['plain', 'bugs', 'flowers', 'dragons', 'random'], fmt: v => (PACK_SHORT[v] || v) },
+  { field: 'blockerPct',   label: 'Stones',  values: [0, 10, 20, 30, 40, 50],                       fmt: v => (v === 0 ? 'No stones' : `${v}% stones`) },
+  { field: 'pattern',      label: 'Pattern', values: SEED_PATTERNS,                                 fmt: v => (PATTERN_LABEL[v] || v) },
+];
+
+// Draw a generated board's lanterns as colored dots, mapped from their
+// layout-independent (nx, ny) into the given box. nx runs 0..14 across 8
+// close-packed columns; ny is one packed-row (√3) per row.
+function drawBoardPreview(ctx, box, preview) {
+  ctx.save();
+  // Box background — a slice of night sky.
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.55)';
+  roundedRectPath(ctx, box.x, box.y, box.w, box.h, 8);
+  ctx.fill();
+  ctx.strokeStyle = BORDER_SOFT;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const lanterns = (preview && preview.lanterns) || [];
+  if (lanterns.length) {
+    let maxRow = 0;
+    for (const l of lanterns) maxRow = Math.max(maxRow, Math.round(l.ny / SEED_SQRT3));
+    // The board spans 14 nx-units wide and maxRow*√3 ny-units tall; add a
+    // 1-unit (one radius) margin all round so lanterns never kiss the border.
+    const spanW = 14 + 2;
+    const spanH = (maxRow * SEED_SQRT3) + 2;
+    const unit = Math.min(box.w / spanW, box.h / Math.max(spanH, 6));
+    const dotR = unit * 0.92;
+    // Center the board both axes so short boards sit in the middle, not the top.
+    const contentW = 14 * unit;
+    const contentH = maxRow * SEED_SQRT3 * unit;
+    const originX = box.x + (box.w - contentW) / 2;
+    const originY = box.y + (box.h - contentH) / 2;
+
+    // Clip so a tall board can't spill past the box.
+    roundedRectPath(ctx, box.x, box.y, box.w, box.h, 8);
+    ctx.clip();
+
+    for (const l of lanterns) {
+      const px = originX + l.nx * unit;
+      const py = originY + l.ny * unit;
+      ctx.fillStyle = l.isBlocker ? 'rgba(120, 120, 130, 0.85)' : (COLORS[l.color] || CREAM);
+      ctx.beginPath();
+      ctx.arc(px, py, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+    ctx.font = `italic 400 12px ${SERIF}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('shuffle to generate a board', box.x + box.w / 2, box.y + box.h / 2);
+  }
+  ctx.restore();
+}
+
+// A pill button used on the build screen. Registers its own hit.
+function drawSeedButton(ctx, r, label, action, opts = {}) {
+  const { primary = false, value } = opts;
+  ctx.save();
+  ctx.fillStyle = primary ? hexToRgba(GOLD, 0.16) : 'rgba(245, 233, 201, 0.05)';
+  roundedRectPath(ctx, r.x, r.y, r.w, r.h, 7);
+  ctx.fill();
+  ctx.strokeStyle = primary ? GOLD : hexToRgba(CREAM, 0.18);
+  ctx.lineWidth = primary ? 1.4 : 1;
+  ctx.stroke();
+  ctx.fillStyle = primary ? GOLD : CREAM;
+  ctx.font = `${primary ? 600 : 500} ${Math.round(r.fs ? 13 * r.fs : 13)}px ${SERIF}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);
+  ctx.restore();
+  menuState.hits.push({ x: r.x, y: r.y, w: r.w, h: r.h, action, value });
+}
+
+function drawExplorePanel(ctx, layout, settings) {
+  const fs = fontScaleOf(settings);
+  ensureExplore();
+  const preview = exploreState.preview;
+  const cfg = preview ? preview.config : null;
+
+  // Roomy on desktop (so big boards read clearly), full-width-ish on phones.
+  const maxW = Math.max(360 * fs, Math.min(580 * fs, layout.viewW * 0.6));
+  const rect = cardRect(layout, maxW, 720 * fs);
+  menuState.cardRect = rect;
+  menuState.maxScrollY = 0;   // fixed layout — no scrolling
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Explore', { showBack: true, fs });
+
+  const padX = 24;
+  const innerW = rect.w - padX * 2;
+  let y = startY + 4;
+
+  // Subtitle.
+  ctx.save();
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `italic 400 ${Math.round(11 * fs)}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText('shuffle a variant, then play — keepers are saved', rect.x + padX, y);
+  ctx.restore();
+  y += 20 * fs;
+
+  // Hits pushed up to here belong to the title bar. Everything the body adds
+  // below is discarded if a setting picker is open, so only the picker is live.
+  const titleHitCount = menuState.hits.length;
+
+  // Controls block lives at the bottom; the preview gets all the space between
+  // the subtitle and it — so large boards fill the card instead of cramping.
+  const rowH = Math.round(32 * fs);
+  const shufW = Math.round(96 * fs);
+  const valW = innerW - shufW - 8;
+  const playH = Math.round(44 * fs);
+
+  // ── Lay out the editable settings chips (wrap into rows within innerW) ──
+  const chipH = Math.round(28 * fs);
+  const chipGap = Math.round(8 * fs);
+  const chipPadX = Math.round(13 * fs);
+  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
+  const overrides = exploreState.overrides || {};
+  const chipItems = (cfg ? SETTING_DEFS : []).map(def => {
+    const label = def.fmt(cfg[def.field]);
+    const w = Math.ceil(ctx.measureText(label).width) + chipPadX * 2 + 10 * fs; // +caret room
+    return { def, label, w, overridden: def.field in overrides };
+  });
+  const chipRows = [];
+  let curRow = [], curW = 0;
+  for (const it of chipItems) {
+    if (curRow.length && curW + it.w > innerW) { chipRows.push(curRow); curRow = []; curW = 0; }
+    curRow.push(it); curW += it.w + chipGap;
+  }
+  if (curRow.length) chipRows.push(curRow);
+  const chipsH = chipRows.length ? chipRows.length * chipH + (chipRows.length - 1) * chipGap : 0;
+
+  const bottomBlockH = chipsH + 14 * fs + 2 * (rowH + 8 * fs) + 10 * fs + playH + 18 * fs;
+  const previewTop = y;
+  const previewBottom = rect.y + rect.h - bottomBlockH;
+  const previewH = Math.max(150 * fs, previewBottom - previewTop);
+  drawBoardPreview(ctx, { x: rect.x + padX, y: previewTop, w: innerW, h: previewH }, preview);
+  y = previewTop + previewH + 12 * fs;
+
+  // ── Draw the chips ──
+  const chipsTop = y;
+  for (const row of chipRows) {
+    let cx = rect.x + padX;
+    for (const it of row) {
+      drawSettingChip(ctx, { x: cx, y, w: it.w, h: chipH, fs }, it.label, it.overridden);
+      menuState.hits.push({ x: cx, y, w: it.w, h: chipH, action: 'explore-pick-field', value: it.def.field });
+      cx += it.w + chipGap;
+    }
+    y += chipH + chipGap;
+  }
+  y = chipsTop + chipsH + 14 * fs;
+
+  // ── Seed rows: [value (tap = manual entry)] [Shuffle] ──
+  const seedRow = (label, seed, manualAction, shuffleAction) => {
+    ctx.save();
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
+    roundedRectPath(ctx, rect.x + padX, y, valW, rowH, 7);
+    ctx.fill();
+    ctx.strokeStyle = hexToRgba(CREAM, 0.16);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = hexToRgba(CREAM, 0.55);
+    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(label.toUpperCase(), rect.x + padX + 10, y + rowH / 2);
+    ctx.fillStyle = CREAM;
+    ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
+    ctx.textAlign = 'right';
+    ctx.fillText(`#${seed >>> 0}`, rect.x + padX + valW - 10, y + rowH / 2);
+    ctx.restore();
+    menuState.hits.push({ x: rect.x + padX, y, w: valW, h: rowH, action: manualAction });
+    drawSeedButton(ctx, { x: rect.x + padX + valW + 8, y, w: shufW, h: rowH, fs }, '⟳ Shuffle', shuffleAction);
+    y += rowH + 8 * fs;
+  };
+  seedRow('Settings', exploreState.settingsSeed, 'seed-manual-settings', 'shuffle-settings');
+  seedRow('Board', exploreState.boardSeed, 'seed-manual-board', 'shuffle-board');
+
+  // Play button.
+  y += 6 * fs;
+  drawSeedButton(ctx, { x: rect.x + padX, y, w: innerW, h: playH, fs }, '▶  Play', 'seed-play', { primary: true });
+
+  // ── Setting picker overlay ── makes the body inert and lists alternatives.
+  if (menuState.explorePicker && cfg) {
+    const def = SETTING_DEFS.find(d => d.field === menuState.explorePicker);
+    if (def) {
+      menuState.hits.length = titleHitCount;   // discard body hits
+      drawSettingPicker(ctx, rect, startY, def, cfg, fs);
+    } else {
+      menuState.explorePicker = null;
+    }
+  }
+}
+
+// A tappable chip showing one editable setting's current value. Overridden
+// (hand-picked) settings get a gold tint so the player sees what they changed.
+function drawSettingChip(ctx, r, label, overridden) {
+  const fs = r.fs || 1;
+  ctx.save();
+  ctx.fillStyle = overridden ? hexToRgba(GOLD, 0.14) : 'rgba(245, 233, 201, 0.05)';
+  roundedRectPath(ctx, r.x, r.y, r.w, r.h, r.h / 2);
+  ctx.fill();
+  ctx.strokeStyle = overridden ? GOLD : hexToRgba(CREAM, 0.2);
+  ctx.lineWidth = overridden ? 1.3 : 1;
+  ctx.stroke();
+  ctx.fillStyle = overridden ? GOLD : CREAM;
+  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, r.x + 13 * fs, r.y + r.h / 2 + 0.5);
+  // Down-caret hint that it opens a list.
+  const caretX = r.x + r.w - 11 * fs;
+  const caretY = r.y + r.h / 2;
+  ctx.strokeStyle = hexToRgba(overridden ? GOLD : CREAM, 0.6);
+  ctx.lineWidth = 1.3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(caretX - 3 * fs, caretY - 1.5 * fs);
+  ctx.lineTo(caretX, caretY + 1.8 * fs);
+  ctx.lineTo(caretX + 3 * fs, caretY - 1.5 * fs);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Popover listing the alternatives for one setting. Tapping a value applies it
+// (setOverride); tapping anywhere else dismisses. Caller has already discarded
+// the body hits, so only what we push here is live.
+function drawSettingPicker(ctx, rect, bodyTop, def, cfg, fs) {
+  // Dim the whole card body.
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 15, 34, 0.62)';
+  roundedRectPath(ctx, rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4, 11);
+  ctx.fill();
+  ctx.restore();
+
+  const optH = Math.round(36 * fs);
+  const headerH = Math.round(34 * fs);
+  const padV = Math.round(12 * fs);
+  const boxW = Math.min(rect.w - 48, Math.round(300 * fs));
+  const boxH = headerH + def.values.length * optH + padV;
+  const boxX = Math.round(rect.x + (rect.w - boxW) / 2);
+  let boxY = Math.round(rect.y + (rect.h - boxH) / 2);
+  boxY = Math.max(Math.round(bodyTop), Math.min(boxY, Math.round(rect.y + rect.h - boxH - 12 * fs)));
+
+  // Box.
+  ctx.save();
+  ctx.fillStyle = 'rgba(24, 30, 56, 0.98)';
+  roundedRectPath(ctx, boxX, boxY, boxW, boxH, 10);
+  ctx.fill();
+  ctx.strokeStyle = BORDER;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Header.
+  ctx.fillStyle = GOLD;
+  ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`Choose ${def.label}`, boxX + 16 * fs, boxY + headerH / 2);
+  drawDashedRule(ctx, boxX + 14 * fs, boxY + headerH - 2, boxW - 28 * fs);
+  ctx.restore();
+
+  // Options.
+  const current = cfg[def.field];
+  let oy = boxY + headerH;
+  for (const value of def.values) {
+    const isCur = current === value;
+    ctx.save();
+    if (isCur) {
+      ctx.fillStyle = hexToRgba(GOLD, 0.1);
+      roundedRectPath(ctx, boxX + 8 * fs, oy + 3, boxW - 16 * fs, optH - 6, 6);
+      ctx.fill();
+    }
+    ctx.fillStyle = isCur ? GOLD : CREAM;
+    ctx.font = `${isCur ? 600 : 400} ${Math.round(13 * fs)}px ${SERIF}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.fmt(value), boxX + 20 * fs, oy + optH / 2);
+    if (isCur) {
+      // Check mark.
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      const kx = boxX + boxW - 22 * fs, ky = oy + optH / 2;
+      ctx.beginPath();
+      ctx.moveTo(kx - 4 * fs, ky);
+      ctx.lineTo(kx - 1 * fs, ky + 3 * fs);
+      ctx.lineTo(kx + 4 * fs, ky - 3 * fs);
+      ctx.stroke();
+    }
+    ctx.restore();
+    menuState.hits.push({ x: boxX, y: oy, w: boxW, h: optH, action: 'explore-set-option', value: { field: def.field, value } });
+    oy += optH;
+  }
+
+  // Backdrop close — pushed LAST so option taps win.
+  menuState.hits.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, action: 'explore-close-picker' });
+}
+
+// ─── Seeds history panel ────────────────────────────────────────────────────
+
+function drawSeedsPanel(ctx, layout, game, settings) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Seeds', { showBack: true, fs });
+
+  const padX = 20;
+  const history = loadSeedHistory();
+
+  const subPx = Math.max(11, Math.round(11 * fs));
+  ctx.save();
+  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillText(
+    history.length ? `${history.length} variant${history.length === 1 ? '' : 's'} mined · tap to replay` : 'no variants yet — play one in Explore',
+    rect.x + padX, startY
+  );
+  ctx.restore();
+
+  const viewportX = rect.x + padX;
+  const viewportY = startY + subPx + 12;
+  const viewportW = rect.w - padX * 2;
+  const viewportH = rect.y + rect.h - viewportY - 16;
+
+  const rowHeight = Math.round(48 * fs);
+  const totalHeight = history.length * rowHeight;
+
+  menuState.viewportY = viewportY;
+  menuState.viewportH = viewportH;
+  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
+  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
+  ctx.clip();
+
+  for (let i = 0; i < history.length; i++) {
+    const rowY = viewportY + i * rowHeight - menuState.scrollY;
+    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) continue;
+    const e = history[i];
+
+    ctx.save();
+    ctx.fillStyle = hexToRgba(CREAM, e.won ? 0.05 : 0.025);
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.fill();
+    ctx.strokeStyle = e.won ? hexToRgba(GOLD, 0.4) : hexToRgba(CREAM, 0.12);
+    ctx.lineWidth = 1;
+    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
+    ctx.stroke();
+
+    // Win star / loss dot.
+    if (e.won) drawStar(ctx, viewportX + 14, rowY + rowHeight / 2, 3.4 * fs, GOLD);
+    else {
+      ctx.strokeStyle = hexToRgba(CREAM, 0.4);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(viewportX + 14, rowY + rowHeight / 2, 2.6 * fs, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Score.
+    ctx.fillStyle = CREAM;
+    ctx.font = `600 ${Math.round(15 * fs)}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(fmtInt(e.score | 0), viewportX + 28, rowY + rowHeight * 0.38);
+
+    // Summary line.
+    const packName = STENCIL_PACKS[e.stencilPack]?.name || e.stencilPack || '';
+    ctx.fillStyle = hexToRgba(CREAM, 0.5);
+    ctx.font = `400 ${Math.round(9.5 * fs)}px ${SANS}`;
+    ctx.fillText(`${e.colors} colors · ${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`, viewportX + 28, rowY + rowHeight * 0.7);
+
+    // Seeds, right-aligned.
+    ctx.fillStyle = hexToRgba(CREAM, 0.45);
+    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
+    ctx.textAlign = 'right';
+    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 16 : 10);
+    ctx.fillText(`s#${e.settingsSeed >>> 0}`, scoreRightX, rowY + rowHeight * 0.38);
+    ctx.fillText(`b#${e.boardSeed >>> 0}`, scoreRightX, rowY + rowHeight * 0.7);
+    ctx.restore();
+
+    menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: 'pick-seed-history', value: e });
+  }
+  ctx.restore();
+
+  // Scrollbar.
+  if (menuState.maxScrollY > 0) {
+    const sbW = 3;
+    const sbX = viewportX + viewportW - sbW;
+    const thumbH = Math.max(16, viewportH * (viewportH / totalHeight));
+    const thumbY = viewportY + (viewportH - thumbH) * (menuState.scrollY / menuState.maxScrollY);
+    ctx.save();
+    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
+    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
+    ctx.fill();
     ctx.fillStyle = hexToRgba(GOLD, 0.7);
     roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
     ctx.fill();

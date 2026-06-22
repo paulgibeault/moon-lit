@@ -6,7 +6,7 @@
 // so restoring skips straight to the post-anim state cleanly.
 
 import {
-  COLOR_KEYS, levelConfig,
+  COLOR_KEYS, levelConfig, seededConfig,
   PROJECTILE_SPEED, DESCENT_DRIFT_SPEED, SETTLE_ANIM_SEC,
   SPEED_MODE_PROJECTILE_SPEED, SPEED_MODE_DESCENT_DRIFT_SPEED,
   SPEED_MODE_SETTLE_ANIM_SEC, SPEED_MODE_DESCENT_TIME_FACTOR
@@ -37,6 +37,13 @@ export function serializeGame(g) {
     score: g.score,
     aimAngle: g.aimAngle,
     phase: g.phase,
+    gameMode: g.gameMode,
+    // Seed Explorer: the variant's two seeds + any hand-picked setting
+    // overrides (null in other modes). Restore rebuilds the seeded config from
+    // settingsSeed and merges the overrides back on top.
+    settingsSeed: g.settingsSeed ?? null,
+    boardSeed: g.boardSeed ?? null,
+    settingsOverrides: g.settingsOverrides ?? null,
     isPuzzleMode: g.isPuzzleMode,
     puzzleId: g.puzzleId,
     puzzleQueueIndex: g.puzzleQueueIndex,
@@ -79,6 +86,9 @@ export function serializeGame(g) {
     board: {
       descentCount: g.board.descentCount,
       anchorOffsetRows: g.board.anchorOffsetRows || 0,
+      // Seed Explorer pattern state — lets descents keep extending the board's
+      // pattern after a reload (null in other modes).
+      seedPattern: g.board.seedPattern || null,
       lanterns: g.board.lanterns.map(l => ({ nx: l.nx, ny: l.ny, color: l.color, designId: l.designId, isTarget: l.isTarget, isBlocker: l.isBlocker })),
     },
     rngState: g.rng.getState(),
@@ -195,9 +205,10 @@ export function restoreGame(saved) {
   if (!migrated || migrated.version !== SAVE_VERSION) return null;
 
   const isPuzzleMode = !!migrated.isPuzzleMode;
+  const isSeedMode = migrated.gameMode === 'seed';
   const puzzleId = migrated.puzzleId || 1;
   const level = migrated.level ?? 1;
-  
+
   let config = null;
   let colors = null;
   let descentShots = 0;
@@ -205,8 +216,14 @@ export function restoreGame(saved) {
   let puzzleGoalType = 'clear-all';
   let puzzleDescentType = 'none';
   let puzzleIntroCard = null;
+  let seedConfig = null;
 
-  if (isPuzzleMode) {
+  if (isSeedMode) {
+    seedConfig = { ...seededConfig((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0), ...(migrated.settingsOverrides || {}) };
+    colors = COLOR_KEYS.slice(0, seedConfig.colors);
+    descentShots = seedConfig.descentShots;
+    descentTimeLimit = seedConfig.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
+  } else if (isPuzzleMode) {
     const pz = puzzleConfig(puzzleId);
     colors = pz.colors;
     puzzleGoalType = migrated.puzzleGoalType || pz.goalType || 'clear-all';
@@ -230,6 +247,7 @@ export function restoreGame(saved) {
   if (migrated.board) {
     board.descentCount = (migrated.board.descentCount || 0) | 0;
     board.anchorOffsetRows = (migrated.board.anchorOffsetRows || 0) | 0;
+    if (migrated.board.seedPattern) board.seedPattern = migrated.board.seedPattern;
     
     // Safety check color mapping to current active palette
     const VALID_COLORS = new Set(COLOR_KEYS);
@@ -303,7 +321,9 @@ export function restoreGame(saved) {
   return {
     rng,
     board,
-    phase: migrated.phase || 'aiming',
+    // Moonrise is no longer a phase (it's a non-blocking cinematic); a legacy
+    // save taken mid-rescue resumes straight into aiming.
+    phase: (!migrated.phase || migrated.phase === 'moonrise') ? 'aiming' : migrated.phase,
     aimAngle: migrated.aimAngle || 0,
     queue: { 
       current: queueCurrent, 
@@ -367,6 +387,14 @@ export function restoreGame(saved) {
     puzzleGoalType,
     puzzleDescentType,
     puzzleIntroCard,
+
+    // Seed Explorer properties. gameMode is left undefined for legacy saves
+    // that predate the field so callers fall back to Arcade.state as before.
+    gameMode: migrated.gameMode || undefined,
+    settingsSeed: isSeedMode ? ((migrated.settingsSeed ?? 0x4D6F6F6E) >>> 0) : null,
+    boardSeed: isSeedMode ? ((migrated.boardSeed ?? migrated.rngState ?? 0x4D6F6F6E) >>> 0) : null,
+    settingsOverrides: isSeedMode ? (migrated.settingsOverrides ? { ...migrated.settingsOverrides } : {}) : null,
+    seedConfig,
   };
 }
 

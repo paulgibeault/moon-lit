@@ -11,9 +11,11 @@ import {
   ENV_PARAMS, MOON_OVERRIDE,
   getActivePackId,
   COMBO_POWERS,
+  seededConfig,
 } from './constants.js';
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
+import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } from './seed-pattern.js';
 import { getRandomDesignForColor } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
@@ -67,7 +69,7 @@ const MOONRISE_DUR       = 1.5;   // total cinematic length, seconds
 const MOONRISE_BOB_FRAC  = 0.14;  // peak board bob, as a fraction of one row
 const MOONRISE_SPEND_SEC = 0.6;   // spent-charge flight; lands as the moon flares
 
-export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode } = {}) {
+export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzzleId = 1, gameMode, settingsSeed, boardSeed, settingsOverrides } = {}) {
   // Determine gameMode
   if (!gameMode) {
     if (typeof Arcade !== 'undefined' && Arcade.state) {
@@ -80,6 +82,9 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     gameMode = 'puzzle';
   }
   const isPuzzle = gameMode === 'puzzle';
+  // Seed Explorer: two independent seeds — settingsSeed picks the rules,
+  // boardSeed seeds the playthrough RNG (board layout + queue + designs).
+  const isSeedMode = gameMode === 'seed';
 
   let config = null;
   let colors = null;
@@ -116,6 +121,31 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     isSpeedMode = puzzleDescentType === 'time';
     descentShots = puzzleDescentType === 'shot' ? (pz.descentEvery || 2) : 0;
     descentTimeLimit = isSpeedMode ? (pz.queue.length * SPEED_MODE_DESCENT_TIME_FACTOR) : 0;
+  } else if (isSeedMode) {
+    // Effective config = seeded base + any hand-picked overrides from the build
+    // screen (env/moon stay seed-derived).
+    config = { ...seededConfig((settingsSeed ?? M3_DEFAULT_SEED) >>> 0), ...(settingsOverrides || {}) };
+    colors = COLOR_KEYS.slice(0, config.colors);
+    // boardSeed drives the playthrough RNG, fully decoupled from settingsSeed.
+    effectiveSeed = (boardSeed ?? seed ?? M3_DEFAULT_SEED) >>> 0;
+    rng = mulberry32(effectiveSeed);
+    // Build the layout pattern (colors + stone shape) and stamp it on the board
+    // so descents keep extending it. Stones come from blockerPct.
+    const seedPattern = makePatternState(config.pattern, rng, colors);
+    board.seedPattern = seedPattern;
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, 0, {
+      blockerFraction: (config.blockerPct || 0) / 100,
+      rowColors: (A, count) => patternRowColors(seedPattern, A, count, rng),
+      selectStones: (eligible, count) => chooseStoneCells(seedPattern, eligible, count, rng),
+    });
+
+    queueCurrent = pick(rng, colors);
+    queueNext = pick(rng, colors);
+    queueAfterNext = pick(rng, colors);
+
+    isSpeedMode = config.isSpeedMode;
+    descentShots = config.descentShots;
+    descentTimeLimit = config.descentShots * SPEED_MODE_DESCENT_TIME_FACTOR;
   } else {
     config = levelConfig(level);
     colors = COLOR_KEYS.slice(0, config.colors);
@@ -146,7 +176,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
   if (isPuzzle) {
     const pz = puzzleConfig(puzzleId);
     activePackId = pz.stencilPack || 'bugs';
-  } else if (gameMode === 'campaign') {
+  } else if (gameMode === 'campaign' || isSeedMode) {
     activePackId = config.stencilPack || 'bugs';
   } else {
     // Zen or Speed
@@ -231,6 +261,13 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     puzzleGoalType,
     puzzleDescentType,
     puzzleIntroCard,
+
+    // Seed Explorer: the two seeds that fully define this variant. Persisted so
+    // restore can rebuild the seeded config and history can replay it exactly.
+    settingsSeed: isSeedMode ? ((settingsSeed ?? M3_DEFAULT_SEED) >>> 0) : null,
+    boardSeed: isSeedMode ? (effectiveSeed >>> 0) : null,
+    settingsOverrides: isSeedMode ? (settingsOverrides ? { ...settingsOverrides } : {}) : null,
+    seedConfig: isSeedMode ? config : null,
   };
 }
 
@@ -312,6 +349,10 @@ export function step(game, dtSec, layout) {
 
   tickEffects(game, dtSec);
 
+  // Moonrise rescue is a non-blocking cinematic — advance it alongside whatever
+  // the player is doing, so aim/fire continue through the animation.
+  if (game.moonriseFx) tickMoonriseFx(game, dtSec, layout);
+
   // If Speed Mode is active, tick down the time-based descent timer.
   if (game.isSpeedMode && (game.phase === PHASE.AIMING || game.phase === PHASE.FLYING || game.phase === PHASE.SETTLING)) {
     game.timeUntilDescent = Math.max(0, game.timeUntilDescent - dtSec);
@@ -355,10 +396,6 @@ export function step(game, dtSec, layout) {
     if (!game.isFastLaunch) {
       return true;
     }
-  }
-
-  if (game.phase === PHASE.MOONRISE) {
-    return stepMoonrise(game, dtSec, layout);
   }
 
   if (game.phase === PHASE.DROWNING) {
@@ -542,9 +579,12 @@ function stepDrowning(game, dtSec, layout) {
   return true;
 }
 
-// Kick off the Moonrise rescue: the board is about to descend, so animate it
-// dipping a row and then being lifted back. Drives board.descentAnimY (the
-// same offset a real descent rides), which the renderer already applies.
+// Kick off the Moonrise rescue cinematic. This is a purely cosmetic overlay:
+// the gameplay effect (cancelling the descent) is applied immediately by the
+// caller and the phase stays AIMING, so aim and fire are never interrupted.
+// The animation drives board.descentAnimY (a render-only offset), jiggle, and
+// the moonlight wash, all read by the renderer, and ticks itself to completion
+// alongside normal play via tickMoonriseFx.
 function startMoonrise(game, layout) {
   game.moonriseFx = {
     t: 0,
@@ -555,17 +595,13 @@ function startMoonrise(game, layout) {
     flared: false,
   };
   game.board.descentAnimY = 0;
-  game.phase = PHASE.MOONRISE;
 }
 
-function stepMoonrise(game, dtSec, layout) {
+// Advance the Moonrise cinematic by one frame. Called every frame while
+// game.moonriseFx is set, regardless of phase, so the player keeps aiming and
+// firing while the moon flares and the field bobs.
+function tickMoonriseFx(game, dtSec, layout) {
   const fx = game.moonriseFx;
-  if (!fx) {                         // defensive: e.g. restored mid-animation
-    game.board.descentAnimY = 0;
-    resetDescentCounter(game);       // the descent was cancelled
-    game.phase = PHASE.AIMING;
-    return true;
-  }
   fx.t += dtSec;
   const u = Math.min(1, fx.t / fx.dur);
 
@@ -593,10 +629,7 @@ function stepMoonrise(game, dtSec, layout) {
   if (u >= 1) {
     game.board.descentAnimY = 0;
     game.moonriseFx = null;
-    resetDescentCounter(game);
-    game.phase = PHASE.AIMING;
   }
-  return true;
 }
 
 // Reset whichever descent clock the current mode uses after a cancelled
@@ -623,7 +656,12 @@ function finishSettle(game, layout) {
       // over the dip, arriving as the moon flares — so the rescue visibly
       // consumes an earned charge. pipIndex is the post-decrement count.
       game.moonriseSpend = { t: 0, life: MOONRISE_SPEND_SEC, pipIndex: game.moonriseCharges };
+      // Cancel the descent and reset the counter now, then hand control back to
+      // the player. The flare/bob/wash play out as a non-blocking cinematic
+      // (tickMoonriseFx) so aiming and firing are never paused for it.
+      resetDescentCounter(game);
       startMoonrise(game, layout);
+      game.phase = PHASE.AIMING;
       return;
     }
     // Pull the new top row only from colors currently in play, so a descent
@@ -631,8 +669,17 @@ function finishSettle(game, layout) {
     // Filter out blockers so their colors do not pollute the live color set.
     const live = new Set(game.board.lanterns.filter(l => !l.isBlocker).map(l => l.color));
     const palette = game.colors.filter(c => live.has(c));
+    // Seed mode: keep the new top row on-pattern and seed stones at the
+    // variant's stone percentage. Other modes use the plain random top row.
+    const ps = game.board.seedPattern;
+    const seedOpts = (game.gameMode === 'seed' && ps)
+      ? {
+          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng),
+          blockerProb: (game.seedConfig?.blockerPct || 0) / 100,
+        }
+      : {};
     const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level,
-      { seedRow: !game.isPuzzleMode });
+      { seedRow: !game.isPuzzleMode, ...seedOpts });
     if (!ok) {
       startDrowning(game);
       return;
