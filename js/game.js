@@ -222,6 +222,13 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     counts: { popped: 0, dropped: 0 },
     combo: 0,
     bestCombo: 0,
+    // Telemetry counters (see telemetry.js). shotsFired counts every launch;
+    // moonriseUsed/moonburstUsed count combo-power activations; startMs anchors
+    // per-game duration. All are summarized into a record at WIN/GAME_OVER.
+    shotsFired: 0,
+    moonriseUsed: 0,
+    moonburstUsed: 0,
+    startMs: (typeof performance !== 'undefined' ? performance.now() : 0),
     // Combo powers (campaign/zen only — see comboPowersActive). moonMeter
     // charges toward a banked Moonrise charge; moonburstReady flags that the
     // next shot fired is a radius-clearing Moonburst. moonGlow is the smoothed
@@ -324,7 +331,8 @@ export function fire(game, layout) {
     game.shots = [newShot];
     game.phase = PHASE.FLYING;
   }
-  if (moonburst) game.moonburstReady = false;
+  if (moonburst) { game.moonburstReady = false; game.moonburstUsed = (game.moonburstUsed | 0) + 1; }
+  game.shotsFired = (game.shotsFired | 0) + 1;
 
   const tSec = performance.now() / 1000;
   game.lastLaunchTime = tSec;
@@ -652,6 +660,7 @@ function finishSettle(game, layout) {
     // so the relief lands exactly in the end game where it matters.
     if (comboPowersActive(game) && game.moonriseCharges > 0 && fieldInDanger(game, layout)) {
       game.moonriseCharges--;
+      game.moonriseUsed = (game.moonriseUsed | 0) + 1;
       // The pip that just emptied (now the highest index) flies up to the moon
       // over the dip, arriving as the moon flares — so the rescue visibly
       // consumes an earned charge. pipIndex is the post-decrement count.

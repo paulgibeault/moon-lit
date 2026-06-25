@@ -17,6 +17,7 @@ import {
 import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
+import { buildGameRecord, recordGame } from './telemetry.js';
 
 await Arcade.ready;
 
@@ -466,13 +467,29 @@ function startLevel(level) {
 // End-of-stage bookkeeping: leaderboard entry, stats update, best-score
 // promotion, and a celebratory toast when the player sets a new personal best.
 function recordOutcome(g, won) {
-  if (!g || g.score <= 0) return;
+  if (!g) return;
   // One outcome per completed game. Seed mode's "New"/"Seeds"/"Replay" buttons
   // all record before navigating but leave the game object in place, so without
   // this guard a back-and-forth could log the same variant to history twice.
   if (g.outcomeRecorded) return;
   g.outcomeRecorded = true;
   const score = g.score | 0;
+
+  // Telemetry: log EVERY finished game — win or loss, including 0-score quick
+  // losses — before the score gate below. Losses are the strongest difficulty
+  // signal, so this runs unconditionally (the legacy stats/leaderboard rollup
+  // stays score>0 only). See telemetry.js.
+  try {
+    const durationMs = (typeof performance !== 'undefined' && g.startMs)
+      ? Math.round(performance.now() - g.startMs) : 0;
+    recordGame(buildGameRecord(g, won, durationMs));
+  } catch (e) {
+    console.warn(`[${GAME_ID}] telemetry record failed`, e);
+  }
+
+  // Below here is the legacy leaderboard / lifetime-stats rollup, which only
+  // tracks games that actually scored.
+  if (score <= 0) return;
 
   if (g.gameMode === 'seed') {
     // Seed Explorer: a completed (won or lost) variant is mined into the Seeds
