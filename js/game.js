@@ -260,7 +260,10 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (!isPuzzle && (level === 10 || level === 16)) || (isPuzzle && !!puzzleIntroCard),
+    // The "Timed Mode Introduced" card only makes sense in campaign, where the
+    // mode actually flips to timed at lvl 10. Zen pins Classic and Speed pins
+    // Timed for every level, so the transition card would mislabel/repeat there.
+    showModeIntroCard: (gameMode === 'campaign' && (level === 10 || level === 16)) || (isPuzzle && !!puzzleIntroCard),
     endOverlayDismissed: false,
     
     // Puzzle properties

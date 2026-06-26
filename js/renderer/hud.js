@@ -792,8 +792,13 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
     const contentCenterY = boxY + 50 * fs;
 
-    // Col 1: Mode
-    const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time') : nextCfg.isSpeedMode;
+    // Col 1: Mode. Zen pins Classic and Speed pins Timed regardless of the
+    // level's seeded config (mirrors createGame's mode override), so the preview
+    // can't promise a mode the pinned game won't actually play.
+    const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time')
+      : game.gameMode === 'zen' ? false
+      : game.gameMode === 'speed' ? true
+      : nextCfg.isSpeedMode;
     drawMiniModeIcon(ctx, isNextSpeed, colCenter1, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9', cardBg);
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
     ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
