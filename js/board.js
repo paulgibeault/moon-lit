@@ -1,6 +1,6 @@
 import { GRID, COLOR_KEYS, getActivePackId } from './constants.js';
 import { pick } from './prng.js';
-import { getRandomDesignForColor } from './stencil-packs.js';
+import { designForCell } from './stencil-packs.js';
 
 const SQRT3 = Math.sqrt(3);
 
@@ -66,6 +66,9 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows, col
   const r = layout.size;
   const rowH = SQRT3 * r;
   const activePackId = getActivePackId();
+  // Designs are picked deterministically from the seed + cell position so the
+  // stencil pack never perturbs the gameplay RNG (board layout stays seed-stable).
+  const designSeed = (opts.designSeed ?? 0) >>> 0;
   for (let row = 0; row < rows; row++) {
     const odd = row & 1;
     const count = layout.cols - odd;
@@ -78,7 +81,7 @@ export function populateInitial(board, layout, rng, rows = GRID.initialRows, col
       const x = layout.originX + nx * r;
       const y = layout.trellisY + r + row * rowH;
       const color = rowCols ? rowCols[i] : pick(rng, colors);
-      const designId = activePackId === 'random' ? getRandomDesignForColor(color, rng) : null;
+      const designId = activePackId === 'random' ? designForCell(designSeed, row * 31 + nx, color) : null;
       board.lanterns.push({ x, y, nx, ny, color, designId });
     }
   }
@@ -156,6 +159,7 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts
   const oddStagger = (board.descentCount & 1) === 0 ? 1 : 0;
   const count = layout.cols - oddStagger;
   const activePackId = getActivePackId();
+  const designSeed = (opts.designSeed ?? 0) >>> 0;
 
   // Per-cell blocker probability. Seed mode passes an explicit opts.blockerProb
   // (its stone percentage); campaign ramps it up with the level.
@@ -180,7 +184,8 @@ export function descend(board, layout, rng, colors = COLOR_KEYS, level = 1, opts
     // Check if this lantern should be a blocker
     const isBlocker = ((seedStones || level >= 16) && rng() < blockerProb);
     const color = isBlocker ? 'paper' : (rowCols ? rowCols[i] : pick(rng, colors));
-    const designId = isBlocker ? 'flowers_bamboo' : (activePackId === 'random' ? getRandomDesignForColor(color, rng) : null);
+    const designId = isBlocker ? 'flowers_bamboo'
+      : (activePackId === 'random' ? designForCell(designSeed, 0x40000 + board.descentCount * 31 + nx, color) : null);
 
     board.lanterns.push({ x, y, nx, ny, color, designId, isBlocker: !!isBlocker });
   }

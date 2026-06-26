@@ -16,7 +16,7 @@ import {
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } from './seed-pattern.js';
-import { getRandomDesignForColor } from './stencil-packs.js';
+import { designForCell } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
 import { popMatches, dropFloating, clearRadius } from './match.js';
@@ -135,6 +135,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     board.seedPattern = seedPattern;
     if (layout) populateInitial(board, layout, rng, config.initialRows, colors, 0, {
       blockerFraction: (config.blockerPct || 0) / 100,
+      designSeed: effectiveSeed,
       rowColors: (A, count) => patternRowColors(seedPattern, A, count, rng),
       selectStones: (eligible, count) => chooseStoneCells(seedPattern, eligible, count, rng),
     });
@@ -151,8 +152,8 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     colors = COLOR_KEYS.slice(0, config.colors);
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
     rng = mulberry32(effectiveSeed);
-    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, level);
-    
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, level, { designSeed: effectiveSeed });
+
     queueCurrent = pick(rng, colors);
     queueNext = pick(rng, colors);
     queueAfterNext = pick(rng, colors);
@@ -185,9 +186,12 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
       : 'bugs';
   }
 
-  const currentDesign = (activePackId === 'random' && queueCurrent) ? getRandomDesignForColor(queueCurrent, rng) : null;
-  const nextDesign = (activePackId === 'random' && queueNext) ? getRandomDesignForColor(queueNext, rng) : null;
-  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? getRandomDesignForColor(queueAfterNext, rng) : null;
+  // Queue designs are keyed by ordinal (0,1,2 here; advanceQueue continues from
+  // queueDesignSeq) so they never draw from the gameplay RNG.
+  const QK = 0x80000;
+  const currentDesign = (activePackId === 'random' && queueCurrent) ? designForCell(effectiveSeed, QK + 0, queueCurrent) : null;
+  const nextDesign = (activePackId === 'random' && queueNext) ? designForCell(effectiveSeed, QK + 1, queueNext) : null;
+  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? designForCell(effectiveSeed, QK + 2, queueAfterNext) : null;
 
   return {
     rng,
@@ -275,6 +279,11 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     boardSeed: isSeedMode ? (effectiveSeed >>> 0) : null,
     settingsOverrides: isSeedMode ? (settingsOverrides ? { ...settingsOverrides } : {}) : null,
     seedConfig: isSeedMode ? config : null,
+
+    // Seed for deterministic, RNG-decoupled stencil/design selection, plus the
+    // running ordinal advanceQueue uses to key freshly generated queue designs.
+    designSeed: effectiveSeed >>> 0,
+    queueDesignSeq: 3,
   };
 }
 
@@ -683,12 +692,12 @@ function finishSettle(game, layout) {
     const ps = game.board.seedPattern;
     const seedOpts = (game.gameMode === 'seed' && ps)
       ? {
-          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng),
+          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng, palette),
           blockerProb: (game.seedConfig?.blockerPct || 0) / 100,
         }
       : {};
     const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level,
-      { seedRow: !game.isPuzzleMode, ...seedOpts });
+      { seedRow: !game.isPuzzleMode, designSeed: game.designSeed, ...seedOpts });
     if (!ok) {
       startDrowning(game);
       return;
@@ -869,7 +878,9 @@ function advanceQueue(game) {
   game.queue.afterNext = nextColor;
   
   const activePackId = game.stencilPack || 'bugs';
-  game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
+  game.queue.afterNextDesign = activePackId === 'random'
+    ? designForCell(game.designSeed, 0x80000 + (game.queueDesignSeq = (game.queueDesignSeq | 0) + 1), nextColor)
+    : null;
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }
 

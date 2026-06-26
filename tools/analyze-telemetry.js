@@ -83,6 +83,9 @@ const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
 function difficultyIndex(rows) {
   const plays = rows.length;
   const wins = rows.filter(r => r.won).length;
+  // Never beaten = the hardest, full stop. Pin to the top so a trophy seed
+  // always outranks anything you've cleared (more attempts breaks ties in rank()).
+  if (wins === 0) return 100;
   const lossRate = 1 - wins / plays;
   const winRows = rows.filter(r => r.won);
   const grind = winRows.length
@@ -97,7 +100,7 @@ function fairnessLabel(rows) {
   const plays = rows.length;
   const wins = rows.filter(r => r.won).length;
   const winRate = wins / plays;
-  if (wins === 0 && plays >= 3) return 'unwinnable?';   // never beaten — check solvability
+  if (wins === 0) return 'unbeaten';   // 🏆 hardest — a trophy seed (confirm solvable before authoring)
   if (winRate > 0.9) return 'trivial';
   if (winRate >= 0.15 && winRate <= 0.6) return 'challenging';  // the sweet spot
   if (winRate < 0.15) return 'brutal';
@@ -159,34 +162,55 @@ console.log(`\n▸ Hardest CONFIG signatures  (colors/rows/descent/mode/blocker%
 if (!bySig.length) console.log('  (none meet the play threshold)');
 for (const g of bySig.slice(0, opts.top)) {
   console.log(`  [${String(g.difficulty).padStart(3)}] ${g.fairness.padEnd(12)} ${g.key.padEnd(22)} ` +
-    `${g.wins}/${g.plays} won  med ${g.medShotsToWin ?? '–'} shots / ${g.medDurationSec}s`);
+    `${g.wins}/${g.plays} won  med ${g.medShotsToWin ?? '–'} shots / ${g.medDurationSec}s${g.wins === 0 ? '  🏆' : ''}`);
 }
 
 const seedRows = games.filter(g => seedPair(g));
-const bySeed = rank(groupBy(seedRows, seedPair));
+const bySeed = rank(groupBy(seedRows, seedPair));   // sorted hardest → easiest
+const isHard = (g) => g.fairness === 'unbeaten' || g.fairness === 'challenging' || g.fairness === 'brutal';
+const isEasy = (g) => g.fairness === 'easy' || g.fairness === 'trivial';
+
+const unbeaten = bySeed.filter(g => g.wins === 0);
 console.log(`\n▸ Curation candidates — hardest SEED PAIRS  (settingsSeed:boardSeed, ≥${opts.minPlays} plays)`);
-console.log('  prefer "challenging"/"brutal" with ≥1 win — verify fairness with solver before promoting.');
+if (unbeaten.length) {
+  console.log(`  🏆 ${unbeaten.length} UNBEATEN seed${unbeaten.length > 1 ? 's' : ''} — your toughest. These beat you; wear it as a badge,`);
+  console.log(`     then confirm each is actually solvable before authoring it into a puzzle.`);
+}
+console.log('  late-level material — verify solvability with the solver before promoting.');
 if (!bySeed.length) console.log('  (no seed pairs meet the play threshold — play more Explore variants)');
-for (const g of bySeed.slice(0, opts.top)) {
+for (const g of bySeed.filter(isHard).slice(0, opts.top)) {
+  const [s, b] = g.key.split(':');
+  const flag = g.wins === 0 ? '  🏆 UNBEATEN' : '';
+  console.log(`  [${String(g.difficulty).padStart(3)}] ${g.fairness.padEnd(12)} s#${s} b#${b}  ` +
+    `${g.wins}/${g.plays} won  rows-left-on-loss ${g.avgRowsLeftOnLoss ?? '–'}${flag}`);
+}
+
+// Easiest end of the curve — warm-up / early-level material.
+console.log(`\n▸ Curation candidates — easiest SEED PAIRS  (warm-up / early-level material, ≥${opts.minPlays} plays)`);
+const easySeeds = [...bySeed].reverse().filter(isEasy);   // easiest first
+if (!easySeeds.length) console.log('  (none meet the play threshold)');
+for (const g of easySeeds.slice(0, opts.top)) {
   const [s, b] = g.key.split(':');
   console.log(`  [${String(g.difficulty).padStart(3)}] ${g.fairness.padEnd(12)} s#${s} b#${b}  ` +
-    `${g.wins}/${g.plays} won  rows-left-on-loss ${g.avgRowsLeftOnLoss ?? '–'}`);
+    `${g.wins}/${g.plays} won  med ${g.medShotsToWin ?? '–'} shots / ${g.medDurationSec}s`);
 }
 
 // ─── candidates out ──────────────────────────────────────────────────────────
-const candidates = bySeed
-  .filter(g => g.fairness === 'challenging' || g.fairness === 'brutal')
-  .filter(g => g.wins >= 1)   // beaten at least once → plausibly fair
-  .slice(0, opts.top)
-  .map(g => {
-    const [settingsSeed, boardSeed] = g.key.split(':').map(Number);
-    return { settingsSeed, boardSeed, ...g, key: undefined };
-  });
+// Capture BOTH ends of the difficulty curve: hard seeds for late levels, easy
+// seeds for warm-ups / early levels. Unbeaten seeds are kept (not dropped) but
+// flagged — confirm they're solvable, not unwinnable, before promoting.
+function toCandidate(g, bucket) {
+  const [settingsSeed, boardSeed] = g.key.split(':').map(Number);
+  return { settingsSeed, boardSeed, bucket, needsSolverCheck: g.wins === 0, ...g, key: undefined };
+}
+const hardCandidates = bySeed.filter(isHard).slice(0, opts.top).map(g => toCandidate(g, 'hard'));
+const easyCandidates = easySeeds.slice(0, opts.top).map(g => toCandidate(g, 'easy'));
+const candidates = [...hardCandidates, ...easyCandidates];
 
 if (opts.out) {
   const payload = { source: file, generatedAt: new Date().toISOString(), overall, configRanking: bySig, candidates };
   writeFileSync(opts.out, JSON.stringify(payload, null, 2));
-  console.log(`\n✓ wrote ${candidates.length} candidate(s) → ${opts.out}`);
+  console.log(`\n✓ wrote ${candidates.length} candidate(s) — ${hardCandidates.length} hard, ${easyCandidates.length} easy → ${opts.out}`);
 }
 console.log(`\nNext: verify a candidate's board is solvable & fair before authoring it as a puzzle.`);
 console.log(`      (build the board from its seeds, then run tools/solver.js / measure-difficulty.js)\n`);

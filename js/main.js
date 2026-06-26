@@ -9,7 +9,7 @@ import { attachInput } from './input.js';
 import { loadLanterns, loadBambooSprites, loadMoonTexture, loadHarnessSprite, triggerNewRandomMapping, changeStencilPack } from './assets.js';
 import { syncLanternPixels } from './board.js';
 import { initAdminPanel } from './admin-panel.js';
-import { getRandomDesignForColor } from './stencil-packs.js';
+import { designForCell } from './stencil-packs.js';
 import {
   isMenuOpen, isMenuPanelOpen, isMenuSettled, tickMenu, closeMenu, openMenuToLevelSelector,
   openMenuToExplore, openMenuToSeeds,
@@ -867,15 +867,18 @@ attachInput(canvas, () => game, () => layout, {
     wasMenuOpen = isMenuOpenNow;
 
     if (game && game.stencilPack === 'random') {
+      // Backfill missing designs deterministically (seed + position/ordinal) so
+      // merely opening the menu never consumes the gameplay RNG.
+      const ds = game.designSeed >>> 0;
       for (const l of game.board.lanterns) {
         if (!l.designId) {
-          l.designId = getRandomDesignForColor(l.color, game.rng);
+          l.designId = designForCell(ds, ((l.nx | 0) << 12) ^ Math.round((l.ny || 0) * 16), l.color);
         }
       }
       if (game.queue) {
-        if (!game.queue.currentDesign) game.queue.currentDesign = getRandomDesignForColor(game.queue.current, game.rng);
-        if (!game.queue.nextDesign) game.queue.nextDesign = getRandomDesignForColor(game.queue.next, game.rng);
-        if (!game.queue.afterNextDesign) game.queue.afterNextDesign = getRandomDesignForColor(game.queue.afterNext, game.rng);
+        if (!game.queue.currentDesign) game.queue.currentDesign = designForCell(ds, 0x80000 + 0, game.queue.current);
+        if (!game.queue.nextDesign) game.queue.nextDesign = designForCell(ds, 0x80000 + 1, game.queue.next);
+        if (!game.queue.afterNextDesign) game.queue.afterNextDesign = designForCell(ds, 0x80000 + 2, game.queue.afterNext);
       }
     }
     requestFrame();
