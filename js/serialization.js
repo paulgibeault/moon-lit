@@ -13,7 +13,7 @@ import {
 } from './constants.js';
 import { mulberry32FromState } from './prng.js';
 import { createBoard } from './board.js';
-import { getRandomDesignForColor } from './stencil-packs.js';
+import { designForCell } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
 function getActivePackId() {
@@ -242,6 +242,9 @@ export function restoreGame(saved) {
   const rng = mulberry32FromState(rngState >>> 0);
   
   const activePackId = getActivePackId();
+  // Seed for RNG-decoupled design backfill on resume (boardSeed for seed mode,
+  // else the restored rng state). Keeps design picks off the gameplay stream.
+  const designSeed = ((migrated.boardSeed ?? migrated.rngState ?? rngState) >>> 0);
 
   const board = createBoard();
   if (migrated.board) {
@@ -256,7 +259,8 @@ export function restoreGame(saved) {
     if (migrated.board.lanterns) {
       for (const l of migrated.board.lanterns) {
         const mappedColor = mapColor(l.color);
-        let designId = l.designId !== undefined ? l.designId : (activePackId === 'random' ? getRandomDesignForColor(mappedColor, rng) : null);
+        let designId = l.designId !== undefined ? l.designId
+          : (activePackId === 'random' ? designForCell(designSeed, ((l.nx | 0) << 12) ^ Math.round((l.ny ?? 0) * 16), mappedColor) : null);
         if (!!l.isTarget && !designId) {
           designId = 'dragons_dragon_head';
         }
@@ -289,15 +293,15 @@ export function restoreGame(saved) {
 
   let currentDesign = migrated.queue?.currentDesign;
   if (currentDesign === undefined) {
-    currentDesign = activePackId === 'random' ? getRandomDesignForColor(queueCurrent, rng) : null;
+    currentDesign = activePackId === 'random' ? designForCell(designSeed, 0x80000 + 0, queueCurrent) : null;
   }
   let nextDesign = migrated.queue?.nextDesign;
   if (nextDesign === undefined) {
-    nextDesign = activePackId === 'random' ? getRandomDesignForColor(queueNext, rng) : null;
+    nextDesign = activePackId === 'random' ? designForCell(designSeed, 0x80000 + 1, queueNext) : null;
   }
   let afterNextDesign = migrated.queue?.afterNextDesign;
   if (afterNextDesign === undefined) {
-    afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(queueAfterNext, rng) : null;
+    afterNextDesign = activePackId === 'random' ? designForCell(designSeed, 0x80000 + 2, queueAfterNext) : null;
   }
 
   const isSpeedMode = !!migrated.isSpeedMode;
@@ -395,6 +399,8 @@ export function restoreGame(saved) {
     boardSeed: isSeedMode ? ((migrated.boardSeed ?? migrated.rngState ?? 0x4D6F6F6E) >>> 0) : null,
     settingsOverrides: isSeedMode ? (migrated.settingsOverrides ? { ...migrated.settingsOverrides } : {}) : null,
     seedConfig,
+    designSeed,
+    queueDesignSeq: 3,
   };
 }
 

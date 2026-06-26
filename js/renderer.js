@@ -11,9 +11,9 @@ import {
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
 import {
-  tweenHud, drawScoreHud, drawDescentMeter, drawEndOverlay, resetHudState,
+  tweenHud, drawScoreHud, drawDescentMeter, drawComboMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
-  drawLoadingOverlay, drawStatusMessage,
+  drawLoadingOverlay, drawRightNotices,
 } from './renderer/hud.js';
 import { drawMenu } from './renderer/menu.js';
 
@@ -47,11 +47,14 @@ export function render(ctx, layout, game, settings, stats, scores) {
   // HUD so the chrome stays readable while the screen bathes in moonlight.
   drawMoonriseWash(ctx, layout, game, settings);
   drawScoreHud(ctx, layout, game, settings);
+  // The Moonrise/combo meter sits top-right above the descent meter; draw it
+  // first so it publishes its pip geometry, then the descent readout (which
+  // reserves room beneath the strip), then the status line that anchors to it.
+  drawComboMeter(ctx, layout, game, settings);
   drawDescentMeter(ctx, layout, game, settings);
-  // After drawScoreHud (which draws the combo-power pips and publishes their
-  // geometry) so the status line anchors to the meter. The spent charge reads
-  // as the emptied pip's flash plus the moon swelling — no flying sprite.
-  drawStatusMessage(ctx, layout, game, settings);
+  // ×N combo badge + Moonrise/Moonburst announcements, stacked on the right
+  // below the descent meter.
+  drawRightNotices(ctx, layout, game, settings);
   drawLanternInventory(ctx, layout, game, settings);
   drawQuickRestartButton(ctx, layout, game, settings);
   if ((game.phase === PHASE.WIN || game.phase === PHASE.GAME_OVER) && !game.endOverlayDismissed) {

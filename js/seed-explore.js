@@ -70,6 +70,7 @@ export function buildPreview(settingsSeed, boardSeed, overrides) {
   const ps = makePatternState(config.pattern, rng, colors);
   populateInitial(board, previewLayout, rng, config.initialRows, colors, 0, {
     blockerFraction: (config.blockerPct || 0) / 100,
+    designSeed: boardSeed >>> 0,
     rowColors: (A, count) => patternRowColors(ps, A, count, rng),
     selectStones: (eligible, count) => chooseStoneCells(ps, eligible, count, rng),
   });

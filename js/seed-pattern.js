@@ -51,9 +51,19 @@ export function makePatternState(type, rng, colors) {
 // Colors for one row of `count` lanterns at absolute row `A` (0 = first created,
 // growing downward; descent rows are negative). Returns an array aligned to the
 // row's columns left→right.
-export function patternRowColors(ps, A, count, rng) {
+export function patternRowColors(ps, A, count, rng, liveColors = null) {
   const out = new Array(count);
-  const { order, k } = ps;
+  // When given the live palette (descents), restrict the pattern to colors still
+  // on the board so a new row can't reintroduce a color the player already
+  // cleared. RNG draw counts are unchanged (mirror/random still draw `count`
+  // picks), so the seed stream stays aligned.
+  let { order, colors } = ps;
+  if (liveColors && liveColors.length) {
+    const liveSet = new Set(liveColors);
+    const fOrder = order.filter(c => liveSet.has(c));
+    if (fOrder.length) { order = fOrder; colors = colors.filter(c => liveSet.has(c)); }
+  }
+  const k = order.length;
   switch (ps.type) {
     case 'rows':
       out.fill(order[mod(Math.floor(A / ps.bandH), k)]);
@@ -74,13 +84,13 @@ export function patternRowColors(ps, A, count, rng) {
       const cache = {};
       for (let i = 0; i < count; i++) {
         const key = Math.min(i, count - 1 - i);
-        if (cache[key] === undefined) cache[key] = pick(rng, ps.colors);
+        if (cache[key] === undefined) cache[key] = pick(rng, colors);
         out[i] = cache[key];
       }
       break;
     }
     default:
-      for (let i = 0; i < count; i++) out[i] = pick(rng, ps.colors);
+      for (let i = 0; i < count; i++) out[i] = pick(rng, colors);
   }
   return out;
 }

@@ -16,7 +16,7 @@ import {
 import { mulberry32, pick } from './prng.js';
 import { createBoard, populateInitial, descend, isCleared, addLantern, populatePuzzle } from './board.js';
 import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } from './seed-pattern.js';
-import { getRandomDesignForColor } from './stencil-packs.js';
+import { designForCell } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
 import { popMatches, dropFloating, clearRadius } from './match.js';
@@ -135,6 +135,7 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     board.seedPattern = seedPattern;
     if (layout) populateInitial(board, layout, rng, config.initialRows, colors, 0, {
       blockerFraction: (config.blockerPct || 0) / 100,
+      designSeed: effectiveSeed,
       rowColors: (A, count) => patternRowColors(seedPattern, A, count, rng),
       selectStones: (eligible, count) => chooseStoneCells(seedPattern, eligible, count, rng),
     });
@@ -151,8 +152,8 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     colors = COLOR_KEYS.slice(0, config.colors);
     effectiveSeed = (seed ?? (M3_DEFAULT_SEED + level * 1009)) >>> 0;
     rng = mulberry32(effectiveSeed);
-    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, level);
-    
+    if (layout) populateInitial(board, layout, rng, config.initialRows, colors, level, { designSeed: effectiveSeed });
+
     queueCurrent = pick(rng, colors);
     queueNext = pick(rng, colors);
     queueAfterNext = pick(rng, colors);
@@ -185,9 +186,12 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
       : 'bugs';
   }
 
-  const currentDesign = (activePackId === 'random' && queueCurrent) ? getRandomDesignForColor(queueCurrent, rng) : null;
-  const nextDesign = (activePackId === 'random' && queueNext) ? getRandomDesignForColor(queueNext, rng) : null;
-  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? getRandomDesignForColor(queueAfterNext, rng) : null;
+  // Queue designs are keyed by ordinal (0,1,2 here; advanceQueue continues from
+  // queueDesignSeq) so they never draw from the gameplay RNG.
+  const QK = 0x80000;
+  const currentDesign = (activePackId === 'random' && queueCurrent) ? designForCell(effectiveSeed, QK + 0, queueCurrent) : null;
+  const nextDesign = (activePackId === 'random' && queueNext) ? designForCell(effectiveSeed, QK + 1, queueNext) : null;
+  const afterNextDesign = (activePackId === 'random' && queueAfterNext) ? designForCell(effectiveSeed, QK + 2, queueAfterNext) : null;
 
   return {
     rng,
@@ -222,6 +226,13 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     counts: { popped: 0, dropped: 0 },
     combo: 0,
     bestCombo: 0,
+    // Telemetry counters (see telemetry.js). shotsFired counts every launch;
+    // moonriseUsed/moonburstUsed count combo-power activations; startMs anchors
+    // per-game duration. All are summarized into a record at WIN/GAME_OVER.
+    shotsFired: 0,
+    moonriseUsed: 0,
+    moonburstUsed: 0,
+    startMs: (typeof performance !== 'undefined' ? performance.now() : 0),
     // Combo powers (campaign/zen only — see comboPowersActive). moonMeter
     // charges toward a banked Moonrise charge; moonburstReady flags that the
     // next shot fired is a radius-clearing Moonburst. moonGlow is the smoothed
@@ -249,7 +260,10 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     descentTimeLimit,
     timeUntilDescent: descentTimeLimit,
     fireCooldown: 0,
-    showModeIntroCard: (!isPuzzle && (level === 10 || level === 16)) || (isPuzzle && !!puzzleIntroCard),
+    // The "Timed Mode Introduced" card only makes sense in campaign, where the
+    // mode actually flips to timed at lvl 10. Zen pins Classic and Speed pins
+    // Timed for every level, so the transition card would mislabel/repeat there.
+    showModeIntroCard: (gameMode === 'campaign' && (level === 10 || level === 16)) || (isPuzzle && !!puzzleIntroCard),
     endOverlayDismissed: false,
     
     // Puzzle properties
@@ -268,6 +282,11 @@ export function createGame({ seed, layout, level = 1, isPuzzleMode = false, puzz
     boardSeed: isSeedMode ? (effectiveSeed >>> 0) : null,
     settingsOverrides: isSeedMode ? (settingsOverrides ? { ...settingsOverrides } : {}) : null,
     seedConfig: isSeedMode ? config : null,
+
+    // Seed for deterministic, RNG-decoupled stencil/design selection, plus the
+    // running ordinal advanceQueue uses to key freshly generated queue designs.
+    designSeed: effectiveSeed >>> 0,
+    queueDesignSeq: 3,
   };
 }
 
@@ -324,7 +343,8 @@ export function fire(game, layout) {
     game.shots = [newShot];
     game.phase = PHASE.FLYING;
   }
-  if (moonburst) game.moonburstReady = false;
+  if (moonburst) { game.moonburstReady = false; game.moonburstUsed = (game.moonburstUsed | 0) + 1; }
+  game.shotsFired = (game.shotsFired | 0) + 1;
 
   const tSec = performance.now() / 1000;
   game.lastLaunchTime = tSec;
@@ -652,6 +672,7 @@ function finishSettle(game, layout) {
     // so the relief lands exactly in the end game where it matters.
     if (comboPowersActive(game) && game.moonriseCharges > 0 && fieldInDanger(game, layout)) {
       game.moonriseCharges--;
+      game.moonriseUsed = (game.moonriseUsed | 0) + 1;
       // The pip that just emptied (now the highest index) flies up to the moon
       // over the dip, arriving as the moon flares — so the rescue visibly
       // consumes an earned charge. pipIndex is the post-decrement count.
@@ -674,12 +695,12 @@ function finishSettle(game, layout) {
     const ps = game.board.seedPattern;
     const seedOpts = (game.gameMode === 'seed' && ps)
       ? {
-          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng),
+          seedRowColors: (count) => patternRowColors(ps, nextDescentRow(ps), count, game.rng, palette),
           blockerProb: (game.seedConfig?.blockerPct || 0) / 100,
         }
       : {};
     const ok = descend(game.board, layout, game.rng, palette.length ? palette : game.colors, game.level,
-      { seedRow: !game.isPuzzleMode, ...seedOpts });
+      { seedRow: !game.isPuzzleMode, designSeed: game.designSeed, ...seedOpts });
     if (!ok) {
       startDrowning(game);
       return;
@@ -860,7 +881,9 @@ function advanceQueue(game) {
   game.queue.afterNext = nextColor;
   
   const activePackId = game.stencilPack || 'bugs';
-  game.queue.afterNextDesign = activePackId === 'random' ? getRandomDesignForColor(nextColor, game.rng) : null;
+  game.queue.afterNextDesign = activePackId === 'random'
+    ? designForCell(game.designSeed, 0x80000 + (game.queueDesignSeq = (game.queueDesignSeq | 0) + 1), nextColor)
+    : null;
   game.lastQueueAdvanceTime = performance.now() / 1000;
 }
 

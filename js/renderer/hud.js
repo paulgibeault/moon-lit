@@ -72,6 +72,19 @@ export function tweenHud(game, settings) {
 const DESCENT_BAR_TOP = 10;
 const DESCENT_MAX_PIPS = 8;
 
+// Vertical anchors of the top-right descent readout, shared by the meter and the
+// notification stack that sits below it, so the two never drift apart. `bottom`
+// is the y just under the "descent"/"time drop" sub-label.
+function descentMetrics(layout, game, settings) {
+  const comboReserve = comboPowersActive(game) ? hudPx(layout, 0.52, 10, settings) * 1.35 : 0;
+  const pipR = hudPx(layout, 0.22, 3.5, settings);
+  const cy = DESCENT_BAR_TOP + comboReserve + pipR + 2;
+  const numPx = hudPx(layout, 0.40, 9, settings);
+  const subPx = hudPx(layout, 0.32, 7.5, settings);
+  const numY = cy + pipR + 2;
+  return { pipR, cy, numPx, subPx, numY, bottom: numY + numPx + 1 + subPx };
+}
+
 export function drawDescentMeter(ctx, layout, game, settings) {
   if (game.isPuzzleMode && game.puzzleDescentType === 'none') {
     return;
@@ -117,7 +130,9 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   const rowW = pipCount * pipR * 2 + (pipCount - 1) * gap;
   const right = layout.viewW - 12;
   const left = right - rowW;
-  const cy = DESCENT_BAR_TOP + pipR + 2;
+  // cy reserves room for the Moonrise/combo strip above us in freeplay modes, so
+  // the countdown holds a fixed spot whether or not a charge is banked.
+  const cy = descentMetrics(layout, game, settings).cy;
   const rowCx = (left + right) / 2;
 
   ctx.save();
@@ -242,12 +257,9 @@ export function drawScoreHud(ctx, layout, game, settings) {
   // Combo badge — silent until the player is actually chaining. When the
   // chain ends, the badge disappears with the next render and the celebration
   // lives entirely in the world-side "combo ×N" float.
-  const comboY = 8 + fontPx + subPx + 6;
-  drawComboBadge(ctx, layout, game, settings, subX, comboY, align);
-  // Combo-power readout (Moonrise meter + charges, Moonburst-ready) sits a
-  // line below the combo badge. Persists after a chain breaks — banked
-  // charges and a loaded burst outlive the combo that earned them.
-  drawComboPowers(ctx, layout, game, settings, subX, comboY + hudPx(layout, 0.62, 12, settings) * 1.3, align);
+  // The ×N combo badge and Moonrise/Moonburst announcements now live in the
+  // right-hand notification stack below the descent meter (drawRightNotices);
+  // the Moonrise/combo meter itself sits top-right above the descent meter.
 
   // Best-flash glow: a soft moonHalo ring under the score for ~1.5s after a
   // new best lands. Honors reduced motion via tweenHud's instant-clear.
@@ -431,12 +443,18 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   const frac = charges >= maxCharges ? 1 : Math.max(0, Math.min(1, meter / COMBO_POWERS.moonriseFull));
   const pipR = px * 0.34;
   const gap = px * 0.5;
+  const pipStep = pipR * 2 + gap * 0.5;
+  const barW = px * 4.2;
+  // Right-anchor on the fill bar's right edge so it sits flush with the descent
+  // meter directly below. The burst marker (when armed) hangs to the LEFT of the
+  // charges, into open space, so the charges+bar block stays put.
+  const coreW = pipR + maxCharges * pipStep + gap * 0.3 + barW;
+  if (align === 'right') x -= coreW;
   const cy = y + px * 0.5;
   const pipX0 = x + pipR;
-  const pipStep = pipR * 2 + gap * 0.5;
-  // Publish pip geometry so the emptied-pip flash and the "tide held" label
-  // anchor to exactly the right slot.
-  comboPowerGeom = { pipX0, pipStep, pipR, cy };
+  // Publish pip geometry (+ alignment) so the emptied-pip flash and the status
+  // label anchor to exactly the right slot wherever the strip sits.
+  comboPowerGeom = { pipX0, pipStep, pipR, cy, align };
   let cx = pipX0;
 
   ctx.save();
@@ -464,7 +482,6 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
 
   // Meter bar — fills toward the next charge, tinting moon→halo as it nears full.
   cx += gap * 0.3;
-  const barW = px * 4.2;
   const barH = px * 0.42;
   const barY = cy - barH / 2;
   ctx.fillStyle = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
@@ -480,28 +497,54 @@ function drawComboPowers(ctx, layout, game, settings, x, y, align) {
   // Moonburst-ready sparkle — a soft pulse so it reads as "armed, fire when ready".
   if (ready) {
     const tt = settings.reducedMotion ? 1 : 0.65 + 0.35 * Math.sin(performance.now() / 1000 * 4);
-    ctx.globalAlpha = tt;
-    drawSparkle(ctx, cx + pipR, cy, pipR * 1.6, PALETTE.moonHalo);
-    ctx.globalAlpha = 1;
     ctx.font = `italic 600 ${px}px ${SERIF}`;
     ctx.fillStyle = hexToRgba(PALETTE.moonHalo, HUD_OPACITY.strong * tt);
-    ctx.fillText('burst', cx + pipR * 2.6, cy);
+    if (align === 'right') {
+      // Hang left of the charges so the charges+bar stay flush-right with descent.
+      const sx = pipX0 - pipR - gap;
+      ctx.globalAlpha = tt;
+      drawSparkle(ctx, sx, cy, pipR * 1.6, PALETTE.moonHalo);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'right';
+      ctx.fillText('burst', sx - pipR * 1.8, cy);
+    } else {
+      ctx.globalAlpha = tt;
+      drawSparkle(ctx, cx + pipR, cy, pipR * 1.6, PALETTE.moonHalo);
+      ctx.globalAlpha = 1;
+      ctx.fillText('burst', cx + pipR * 2.6, cy);
+    }
   }
   ctx.restore();
 }
 
+// Top-right Moonrise/combo meter: the charges + fill bar, right-anchored at the
+// same edge as the descent meter and sitting directly above it (drawDescentMeter
+// reserves the matching height). Co-locating the two means a spent Moonrise can
+// later animate as a short drop from this strip onto the descent it rescues.
+export function drawComboMeter(ctx, layout, game, settings) {
+  drawComboPowers(ctx, layout, game, settings, layout.viewW - 12, DESCENT_BAR_TOP, 'right');
+}
+
+// Right-hand notification stack, sitting comfortably below the descent meter:
+// the ×N combo badge and, a line under it, the Moonrise/Moonburst announcement.
+// Both right-anchored to the same edge as the meters above, so the whole right
+// column reads as one cluster. Each element self-hides when it has nothing to
+// say; their slots are fixed so neither jumps when the other appears.
+export function drawRightNotices(ctx, layout, game, settings) {
+  const rightEdge = layout.viewW - 12;
+  const top = descentMetrics(layout, game, settings).bottom + hudPx(layout, 0.6, 11, settings);
+  drawComboBadge(ctx, layout, game, settings, rightEdge, top, 'right');
+  const lineH = hudPx(layout, 0.62, 12, settings) * 1.8;
+  drawStatusMessage(ctx, layout, game, settings, rightEdge, top + lineH, 'right');
+}
+
 // Unified status line for combo-power announcements (moonrise charged / tide
-// held, moonburst ready / fired). One slot, one place to read it: anchored in
-// HUD space just below the combo-power pip row, holding position while it fades
-// in and out — no rise, so it never climbs into the readout above and the
-// atmosphere stays calm. All such messages funnel through game.statusMsg.
-export function drawStatusMessage(ctx, layout, game, settings) {
+// held, moonburst ready / fired). One slot, one place to read it. Positioned by
+// the caller (drawRightNotices); fades in place without moving so the atmosphere
+// stays calm. All such messages funnel through game.statusMsg.
+export function drawStatusMessage(ctx, layout, game, settings, x, y, align = 'right') {
   const msg = game.statusMsg;
   if (!msg || msg.t >= msg.life) return;
-  const geom = comboPowerGeom;
-  const ax = geom ? geom.pipX0 - geom.pipR : MENU_RESERVE_PX;
-  const rowY = geom ? geom.cy : hudPx(layout, 0.95, 14, settings) * 3.2;
-  const pipR = geom ? geom.pipR : hudPx(layout, 0.52, 10, settings) * 0.34;
 
   const tt = msg.t / msg.life;
   const px = hudPx(layout, 0.62, 12, settings);
@@ -509,11 +552,8 @@ export function drawStatusMessage(ctx, layout, game, settings) {
   const fadeOut = Math.min(1, (1 - tt) / 0.35);
   const alpha = Math.min(fadeIn, fadeOut);
 
-  // Fixed position just below the pip row — fades in place, never moves.
-  const y = rowY + pipR + px * 0.9;
-
   ctx.save();
-  ctx.textAlign = 'left';
+  ctx.textAlign = align;
   ctx.textBaseline = 'middle';
   ctx.font = `italic 700 ${px}px ${SERIF}`;
   if (!settings.reducedMotion && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
@@ -521,7 +561,7 @@ export function drawStatusMessage(ctx, layout, game, settings) {
     ctx.shadowBlur = 8;
   }
   ctx.fillStyle = hexToRgba(PALETTE.moonHalo, 0.96 * alpha);
-  ctx.fillText(msg.text, ax, y);
+  ctx.fillText(msg.text, x, y);
   ctx.restore();
 }
 
@@ -792,8 +832,13 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     const colCenter3 = boxX + 10 * fs + 5 * innerW / 6;
     const contentCenterY = boxY + 50 * fs;
 
-    // Col 1: Mode
-    const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time') : nextCfg.isSpeedMode;
+    // Col 1: Mode. Zen pins Classic and Speed pins Timed regardless of the
+    // level's seeded config (mirrors createGame's mode override), so the preview
+    // can't promise a mode the pinned game won't actually play.
+    const isNextSpeed = isPuzzle ? (nextCfg.descentType === 'time')
+      : game.gameMode === 'zen' ? false
+      : game.gameMode === 'speed' ? true
+      : nextCfg.isSpeedMode;
     drawMiniModeIcon(ctx, isNextSpeed, colCenter1, contentCenterY - 10 * fs, fs * 2.4, '#F5E9C9', cardBg);
     ctx.fillStyle = 'rgba(245, 233, 201, 0.8)';
     ctx.font = `500 ${Math.round(11 * fs)}px ${SANS}`;
