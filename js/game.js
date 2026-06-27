@@ -19,7 +19,7 @@ import { makePatternState, patternRowColors, nextDescentRow, chooseStoneCells } 
 import { designForCell } from './stencil-packs.js';
 import { puzzleConfig } from './puzzles.js';
 
-import { popMatches, dropFloating, clearRadius } from './match.js';
+import { popMatches, dropFloating, clearMoonburst } from './match.js';
 import { resolveShot, clearBonus, crossedMilestone, crossedMultiple } from './scoring.js';
 import { settleAround, tickAnims } from './physics.js';
 import { clamp, SQRT3 } from './geometry.js';
@@ -736,10 +736,17 @@ function resolvePlacement(game, layout, opts = {}) {
   // adjacency tolerance, silently failing visually-valid matches. Settle
   // is only meaningful when the new lantern stays on the board.
   //
-  // A Moonburst ignores color entirely: it clears a radius around impact.
-  const popped = moonburst
-    ? clearRadius(game.board, lantern, layout)
-    : popMatches(game.board, lantern, layout);
+  // A Moonburst clears a radius around impact and, when the shot also completes
+  // a color match, detonates from every lantern in that match — so the match
+  // always clears in full and the blast follows its shape.
+  let popped, burstEpicenters;
+  if (moonburst) {
+    const burst = clearMoonburst(game.board, lantern, layout);
+    popped = burst.cleared;
+    burstEpicenters = burst.epicenters;
+  } else {
+    popped = popMatches(game.board, lantern, layout);
+  }
   if (popped.length === 0 && !moonburst) {
     settleAround(game.board, layout, lantern);
   }
@@ -768,10 +775,14 @@ function resolvePlacement(game, layout, opts = {}) {
   if (crossedMilestone(prevScore, game.score)) pulseMoon(game);
 
   if (moonburst) {
-    // A fireball spanning the cleared zone (the per-lantern bursts above give
-    // the cluster-tearing-apart texture underneath it), plus an outward shock
-    // ripple and a moon flare.
-    spawnFireball(game, lantern.x, lantern.y, COMBO_POWERS.moonburstRadius * 1.1);
+    // A fireball spanning each detonation point (the per-lantern bursts above
+    // give the cluster-tearing-apart texture underneath it). With no match
+    // that's a lone blast at impact; with a match it's one per match lantern,
+    // so the fireball follows the match's shape. The shock ripple and moon
+    // flare still emanate from the impact point.
+    for (const c of burstEpicenters) {
+      spawnFireball(game, c.x, c.y, COMBO_POWERS.moonburstRadius * 1.1);
+    }
     announceStatus(game, 'moonburst!', 'moonburst');
     spawnRipple(game, lantern.x, lantern.y, layout, { strength: 1.0, reach: 12 });
     pulseMoon(game);

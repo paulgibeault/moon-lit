@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBoard } from '../js/board.js';
-import { clearRadius } from '../js/match.js';
+import { clearMoonburst } from '../js/match.js';
 import { crossedMultiple } from '../js/scoring.js';
 import { COMBO_POWERS } from '../js/constants.js';
 
@@ -33,36 +33,38 @@ test('crossedMultiple fires exactly on each Moonburst milestone', () => {
   assert.equal(crossedMultiple(1, 0, step), false);            // combo reset
 });
 
-test('clearRadius removes lanterns within the burst radius and keeps those outside', () => {
+test('clearMoonburst removes lanterns within the burst radius and keeps those outside', () => {
   const layout = fixtureLayout();
   const b = createBoard();
   // Seed at center; a tight neighbour well inside the radius; a far lantern
-  // many rows away, comfortably outside.
+  // many rows away, comfortably outside. Distinct colours so no match forms —
+  // the burst is a lone radius clear around impact.
   const seed = place(b, layout, 3, 3, 'red');
   const near = place(b, layout, 3, 2, 'blue'); // one packed row up — ~1 diameter
   const far = place(b, layout, 3, 12, 'green'); // 9 rows down — far outside
 
-  const cleared = clearRadius(b, seed, layout);
+  const { cleared, epicenters } = clearMoonburst(b, seed, layout);
 
   assert.ok(cleared.includes(seed), 'seed is always cleared');
   assert.ok(cleared.includes(near), 'near neighbour inside radius is cleared');
   assert.ok(!cleared.includes(far), 'far lantern is untouched');
   assert.deepEqual(b.lanterns, [far], 'only the far lantern remains on the board');
+  assert.deepEqual(epicenters, [seed], 'no match → the only epicenter is impact');
 });
 
-test('clearRadius is colour-blind and clears blockers too', () => {
+test('clearMoonburst is colour-blind and clears blockers too', () => {
   const layout = fixtureLayout();
   const b = createBoard();
   const seed = place(b, layout, 3, 3, 'red');
   const blocker = place(b, layout, 4, 3, 'paper', { isBlocker: true });
 
-  const cleared = clearRadius(b, seed, layout);
+  const { cleared } = clearMoonburst(b, seed, layout);
 
   assert.ok(cleared.includes(blocker), 'a stone blocker within radius is cleared');
   assert.equal(b.lanterns.length, 0);
 });
 
-test('clearRadius radius matches the configured reach', () => {
+test('clearMoonburst radius matches the configured reach', () => {
   const layout = fixtureLayout();
   const b = createBoard();
   const seed = place(b, layout, 3, 3, 'red');
@@ -72,7 +74,30 @@ test('clearRadius radius matches the configured reach', () => {
   const outside = { x: seed.x + reachPx * 1.1, y: seed.y, color: 'blue' };
   b.lanterns.push(inside, outside);
 
-  const cleared = clearRadius(b, seed, layout);
+  const { cleared } = clearMoonburst(b, seed, layout);
   assert.ok(cleared.includes(inside));
   assert.ok(!cleared.includes(outside));
+});
+
+// Regression + enhancement: a Moonburst that also completes a colour match must
+// clear the WHOLE match, not just the part inside the impact radius. Each match
+// lantern becomes its own epicenter so the burst follows the match's shape.
+test('clearMoonburst clears the full colour match even beyond the impact radius', () => {
+  const layout = fixtureLayout();
+  const b = createBoard();
+  // A touching vertical chain of six reds. Rows 4 and 5 sit beyond the burst
+  // radius from the seed at row 0, so an impact-only radius clear would strand
+  // them — the bug this fixes.
+  const chain = [];
+  for (let row = 0; row < 6; row++) chain.push(place(b, layout, 3, row, 'red'));
+  const seed = chain[0];
+  const reachPx = COMBO_POWERS.moonburstRadius * 2 * layout.size;
+  const farFromSeed = chain.filter(l => Math.hypot(l.x - seed.x, l.y - seed.y) > reachPx);
+  assert.ok(farFromSeed.length > 0, 'fixture must put some match lanterns beyond the radius');
+
+  const { cleared, epicenters } = clearMoonburst(b, seed, layout);
+
+  for (const l of chain) assert.ok(cleared.includes(l), 'every match lantern is cleared');
+  assert.equal(b.lanterns.length, 0, 'nothing from the match is left behind');
+  assert.equal(epicenters.length, chain.length, 'the whole match becomes epicenters');
 });
