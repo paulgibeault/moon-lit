@@ -193,6 +193,25 @@ export function handleMenuPointerMove(x, y, clientY) {
   return false;
 }
 
+// Mouse-wheel / trackpad scroll for the active list (a two-finger trackpad
+// swipe arrives here as wheel deltas). Returns true if it actually scrolled.
+export function handleMenuWheel(deltaY) {
+  if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
+  if (menuState.maxScrollY <= 0) return false;
+  const before = menuState.scrollY;
+  menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY + deltaY));
+  return menuState.scrollY !== before;
+}
+
+// Re-anchor an in-progress drag to a new pointer centroid without moving the
+// list — used when a finger lifts or lands during a two-finger scroll so the
+// list doesn't jump as the average touch point shifts.
+export function rebaseMenuDrag(clientY) {
+  if (!menuState.isDragging) return;
+  menuState.dragStartY = clientY;
+  menuState.dragStartScrollY = menuState.scrollY;
+}
+
 export function handleMenuPointerUp(x, y, actions, game) {
   if (!isMenuPanelOpen() || menuState.fadeTarget === 0) return false;
   if (!menuState.pointerDownActive) return false;
@@ -957,748 +976,52 @@ function drawStatRow(ctx, x, y, w, label, value, fs) {
   return y + px + 6;
 }
 
-// ─── Stages panel ───────────────────────────────────────────────────────────
-
-function drawStagesPanel(ctx, layout, game, settings, stats) {
+// ── Shared game-selection list ───────────────────────────────────────────────
+// One card layout for every mode (Stages, Puzzles, Seeds). Each panel builds an
+// array of row descriptors and hands them here; this owns the card, title bar,
+// subtitle, scroll math, hit registration, and scrollbar so all modes look and
+// behave identically. A descriptor:
+//   { state, accent, label, statusMarker, difficultyKey, dots:[hex],
+//     subTag:{text,color}, subLabel, rightLines:[{text,line:'top'|'bottom',small}],
+//     hasInfo, action, value, infoAction, infoValue, enabled }
+function drawSelectionList(ctx, layout, settings, opts) {
+  const { title, subtitle, items, scrollToIndex = -1 } = opts;
   const fs = fontScaleOf(settings);
   const rect = cardRect(layout, 360 * fs, 480 * fs);
   menuState.cardRect = rect;
   drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Choose a stage', { showBack: true, fs });
+  const startY = drawTitleBar(ctx, rect, title, { showBack: true, fs });
 
   const padX = 20;
-  const totalStages = LEVELS.length;
-  const reached = totalStages; // temporarily unlocked for testing
-
   const subPx = Math.max(11, Math.round(11 * fs));
-  ctx.save();
-  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText(
-    `currently on stage ${game.level} · ${reached} reached`,
-    rect.x + padX, startY
-  );
-  ctx.restore();
+  if (subtitle) {
+    ctx.save();
+    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
+    ctx.font = `italic 400 ${subPx}px ${SERIF}`;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText(subtitle, rect.x + padX, startY);
+    ctx.restore();
+  }
 
   const viewportX = rect.x + padX;
-  const viewportY = startY + subPx + 12;
+  const viewportY = startY + (subtitle ? subPx + 12 : 8);
   const viewportW = rect.w - padX * 2;
   const viewportH = rect.y + rect.h - viewportY - 16;
 
   const rowHeight = Math.round(58 * fs);
-  const totalHeight = totalStages * rowHeight;
+  const totalHeight = items.length * rowHeight;
 
   menuState.viewportY = viewportY;
   menuState.viewportH = viewportH;
   menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
   if (menuState.needsScrollToCurrent) {
     menuState.needsScrollToCurrent = false;
-    const targetY = (game.level - 1) * rowHeight;
-    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, targetY - viewportH / 2 + rowHeight / 2));
-  } else {
-    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
-  }
-
-  // Content Area
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
-  ctx.clip();
-
-  for (let i = 1; i <= totalStages; i++) {
-    const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
-
-    // Viewport cull
-    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) {
-      continue;
-    }
-
-    const isCurrent = i === game.level;
-    const isLocked = i > reached;
-    const levelData = (stats && stats.levels && stats.levels[String(i)]) || null;
-    const cleared = !!(levelData && levelData.cleared);
-    const played = !!(levelData && levelData.plays);
-    const bestScore = levelData ? levelData.bestScore | 0 : 0;
-
-    // Draw background
-    ctx.save();
-    const baseAlpha = isCurrent ? 0.08 : cleared ? 0.05 : played ? 0.03 : isLocked ? 0.015 : 0.02;
-    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.fill();
-
-    // Border
-    if (isCurrent) {
-      ctx.strokeStyle = GOLD;
-      ctx.lineWidth = 1.4;
-    } else if (cleared) {
-      ctx.strokeStyle = hexToRgba(GOLD, 0.4);
-      ctx.lineWidth = 1;
-    } else if (isLocked) {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.06);
-      ctx.lineWidth = 1;
-    } else {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.12);
-      ctx.lineWidth = 1;
-    }
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.stroke();
-
-    const cfg = levelConfig(i);
-    const cy1 = rowY + rowHeight * 0.36;   // top line baseline
-    const cy2 = rowY + rowHeight * 0.69;   // bottom line baseline
-    ctx.textBaseline = 'middle';
-
-    // ── Top line: stage name · status · difficulty, with best score on the
-    // far right in its own lane (the old layout let the score collide here).
-    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.3) : CREAM;
-    ctx.font = `600 ${Math.round(16 * fs)}px ${SERIF}`;
-    ctx.textAlign = 'left';
-    const labelText = `Stage ${i}`;
-    ctx.fillText(labelText, viewportX + 14, cy1);
-    let cursorX = viewportX + 14 + ctx.measureText(labelText).width + 11 * fs;
-
-    // Status marker: cleared star / lock / played ring.
-    if (isLocked) {
-      ctx.save();
-      ctx.strokeStyle = hexToRgba(CREAM, 0.28);
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.arc(cursorX + 4 * fs, cy1 - 2.6 * fs, 2.7 * fs, Math.PI, 0);   // shackle
-      ctx.stroke();
-      ctx.fillStyle = hexToRgba(CREAM, 0.22);
-      ctx.fillRect(cursorX + 0.5 * fs, cy1 - 1.6 * fs, 7 * fs, 5.6 * fs);  // body
-      ctx.restore();
-      cursorX += 15 * fs;
-    } else if (cleared) {
-      drawStar(ctx, cursorX + 4 * fs, cy1, 3.8 * fs, GOLD);
-      cursorX += 15 * fs;
-    } else if (played) {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.45);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(cursorX + 3 * fs, cy1, 2.7 * fs, 0, Math.PI * 2);
-      ctx.stroke();
-      cursorX += 13 * fs;
-    }
-
-    // Intrinsic difficulty badge.
-    drawDifficultyBadge(ctx, cursorX, cy1, difficultyRating(cfg).key, fs, { alpha: isLocked ? 0.4 : 1 });
-
-    // Best score — right-aligned, alone on the top line.
-    ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
-    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.18 : played ? 0.9 : 0.32);
-    ctx.textAlign = 'right';
-    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 16 : 10);
-    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, cy1);
-
-    // ── Bottom line: palette dots + pack · mode (larger, on its own line).
-    const dotR = 2.7 * fs;
-    const gap = dotR * 2.5;
-    ctx.textAlign = 'left';
-    const dotX0 = viewportX + 14 + dotR;
-    for (let c = 0; c < cfg.colors; c++) {
-      const key = COLOR_KEYS[c];
-      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.18 : 0.6);
-      ctx.beginPath();
-      ctx.arc(dotX0 + c * gap, cy2, dotR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
-    const modeName = cfg.isSpeedMode ? 'Timed' : 'Classic';
-    ctx.font = `400 ${Math.round(11.5 * fs)}px ${SANS}`;
-    ctx.fillStyle = isCurrent ? hexToRgba(GOLD, 0.85) : hexToRgba(CREAM, isLocked ? 0.2 : 0.55);
-    ctx.fillText(`${packName} · ${modeName}`, dotX0 + (cfg.colors - 1) * gap + dotR + 12 * fs, cy2);
-
-    ctx.restore();
-
-    // Register hit target with scrolled coordinates (if unlocked)
-    if (!isLocked) {
-      menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: 'pick-stage', value: i });
+    if (scrollToIndex >= 0) {
+      const targetY = scrollToIndex * rowHeight;
+      menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, targetY - viewportH / 2 + rowHeight / 2));
     }
   }
-  ctx.restore();
-
-  // Scrollbar
-  if (menuState.maxScrollY > 0) {
-    const sbW = 4;
-    const sbX = viewportX + viewportW - sbW - 2;
-    const thumbH = Math.max(20, Math.round((viewportH / totalHeight) * viewportH));
-    const thumbY = viewportY + Math.round((menuState.scrollY / menuState.maxScrollY) * (viewportH - thumbH));
-
-    ctx.save();
-    ctx.fillStyle = 'rgba(232, 183, 112, 0.05)';
-    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
-    ctx.fill();
-
-    ctx.fillStyle = hexToRgba(GOLD, 0.7);
-    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
-  const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 360 * fs, 480 * fs);
-  menuState.cardRect = rect;
-  drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Choose a puzzle', { showBack: true, fs });
-
-  const padX = 20;
-  
-  // Determine how many puzzles are unlocked
-  let maxCleared = 0;
-  if (stats && stats.puzzles) {
-    for (let i = 1; i <= PUZZLE_COUNT; i++) {
-      if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
-        maxCleared = Math.max(maxCleared, i);
-      }
-    }
-  }
-  const unlockedCount = PUZZLE_COUNT; // temporarily unlocked for testing
-
-  const subPx = Math.max(11, Math.round(11 * fs));
-  ctx.save();
-  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  const puzzleText = game.isPuzzleMode ? `currently on puzzle ${game.puzzleId}` : "select a puzzle to play";
-  ctx.fillText(
-    `${puzzleText} · ${maxCleared} cleared`,
-    rect.x + padX, startY
-  );
-  ctx.restore();
-
-  const viewportX = rect.x + padX;
-  const viewportY = startY + subPx + 12;
-  const viewportW = rect.w - padX * 2;
-  const viewportH = rect.y + rect.h - viewportY - 16;
-
-  const rowHeight = Math.round(44 * fs);
-  const totalHeight = PUZZLE_COUNT * rowHeight;
-
-  menuState.viewportY = viewportY;
-  menuState.viewportH = viewportH;
-  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
-  if (menuState.needsScrollToCurrent) {
-    menuState.needsScrollToCurrent = false;
-    const targetY = (game.puzzleId - 1) * rowHeight;
-    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, targetY - viewportH / 2 + rowHeight / 2));
-  } else {
-    menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
-  }
-
-  // Content Area
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
-  ctx.clip();
-
-  for (let i = 1; i <= PUZZLE_COUNT; i++) {
-    const rowY = viewportY + (i - 1) * rowHeight - menuState.scrollY;
-
-    // Viewport cull
-    if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) {
-      continue;
-    }
-
-    const cfg = puzzleConfig(i);
-    const isCurrent = game.isPuzzleMode && (i === game.puzzleId);
-    const isLocked = i > unlockedCount;
-    const pzData = (stats && stats.puzzles && stats.puzzles[String(i)]) || null;
-    const cleared = !!(pzData && pzData.cleared);
-    const played = !!(pzData && pzData.plays);
-    const bestScore = pzData ? pzData.bestScore | 0 : 0;
-
-    // Draw background
-    ctx.save();
-    const baseAlpha = isCurrent ? 0.08 : cleared ? 0.05 : played ? 0.03 : isLocked ? 0.015 : 0.02;
-    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.fill();
-
-    // Border
-    if (isCurrent) {
-      ctx.strokeStyle = GOLD;
-      ctx.lineWidth = 1.4;
-    } else if (cleared) {
-      ctx.strokeStyle = hexToRgba(GOLD, 0.4);
-      ctx.lineWidth = 1;
-    } else if (isLocked) {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.06);
-      ctx.lineWidth = 1;
-    } else {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.12);
-      ctx.lineWidth = 1;
-    }
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.stroke();
-
-    // Label
-    const labelPx = Math.round(13 * fs);
-    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.25) : CREAM;
-    ctx.font = `600 ${labelPx}px ${SERIF}`;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    
-    let displayName = `${i}. ${cfg.name}`;
-    ctx.fillText(displayName, viewportX + 10, rowY + rowHeight / 2);
-    const labelW = ctx.measureText(displayName).width;
-
-    // Mini icons next to name
-    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
-    const modeCx = viewportX + 10 + labelW + 10 * fs;
-    const stencilCx = modeCx + 14 * fs;
-    drawMiniModeIcon(ctx, cfg.descentType === 'time', modeCx, rowY + rowHeight / 2, fs, iconColor);
-    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
-
-    // Cleared Star or Lock
-    const lockX = viewportX + 130 * fs;
-    if (isLocked) {
-      const lockY = rowY + rowHeight / 2;
-      ctx.save();
-      ctx.strokeStyle = hexToRgba(CREAM, 0.25);
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(lockX, lockY - 2.5 * fs, 2.5 * fs, Math.PI, 0);
-      ctx.stroke();
-      ctx.fillStyle = hexToRgba(CREAM, 0.2);
-      ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
-      ctx.restore();
-    } else if (cleared) {
-      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
-    } else if (played) {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.45);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-
-    // Colors preview dots
-    const dotR = 2 * fs;
-    const gap = dotR * 2.4;
-    const totalDots = cfg.colors.length;
-    const startDotX = viewportX + 155 * fs;
-    for (let c = 0; c < totalDots; c++) {
-      const key = cfg.colors[c];
-      const cx = startDotX + c * gap;
-      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.15 : 0.55);
-      ctx.beginPath();
-      ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Detail text: e.g. "Target Goal" vs "Clear All"
-    if (viewportW > 280 * fs) {
-      const detailPx = Math.round(9 * fs);
-      ctx.font = `400 ${detailPx}px ${SANS}`;
-      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
-      ctx.textAlign = 'left';
-      const goalText = cfg.goalType === 'clear-targets' ? "Target" : "Clear All";
-      ctx.fillText(goalText, viewportX + 205 * fs, rowY + rowHeight / 2);
-    }
-
-    // Best Score / Completed
-    const scorePx = Math.round(10 * fs);
-    ctx.font = `500 ${scorePx}px ${SERIF}`;
-    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.15 : played ? 0.85 : 0.3);
-    ctx.textAlign = 'right';
-    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 18 : 12);
-    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, rowY + rowHeight / 2);
-
-    ctx.restore();
-
-    // Register hit target
-    if (!isLocked) {
-      menuState.hits.push({
-        x: viewportX,
-        y: rowY,
-        w: viewportW,
-        h: rowHeight,
-        action: 'pick-puzzle',
-        value: i
-      });
-    }
-  }
-  ctx.restore();
-
-  // Scrollbar
-  if (menuState.maxScrollY > 0) {
-    ctx.save();
-    const sbW = 3;
-    const sbX = viewportX + viewportW - sbW;
-    const trackH = viewportH;
-    const thumbH = Math.max(16, trackH * (viewportH / totalHeight));
-    const thumbY = viewportY + (trackH - thumbH) * (menuState.scrollY / menuState.maxScrollY);
-
-    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
-    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
-    ctx.fill();
-
-    ctx.fillStyle = hexToRgba(GOLD, 0.7);
-    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
-    ctx.fill();
-    ctx.restore();
-  }
-}
-
-// ─── Explore (Seed build) panel ─────────────────────────────────────────────
-
-const SEED_SQRT3 = Math.sqrt(3);
-
-// Editable settings shown as chips on the build screen. Tapping a chip opens a
-// picker listing that field's alternatives. Order = display order.
-const PACK_SHORT = { plain: 'Plain', bugs: 'Insects', flowers: 'Flora', dragons: 'Dragons', random: 'Random' };
-const PATTERN_LABEL = { random: 'Random', rows: 'Rows', columns: 'Columns', diagonal: 'Diagonal', checker: 'Checker', mirror: 'Mirror' };
-const SETTING_DEFS = [
-  { field: 'colors',       label: 'Colors',  values: [3, 4, 5, 6],                                  fmt: v => `${v} colors` },
-  { field: 'initialRows',  label: 'Rows',    values: [3, 4, 5, 6, 7],                               fmt: v => `${v} rows` },
-  { field: 'descentShots', label: 'Descent', values: [5, 6, 7, 8, 9, 10, 12],                       fmt: v => `descent ${v}` },
-  { field: 'isSpeedMode',  label: 'Pace',    values: [false, true],                                 fmt: v => (v ? 'Timed' : 'Classic') },
-  { field: 'stencilPack',  label: 'Art',     values: ['plain', 'bugs', 'flowers', 'dragons', 'random'], fmt: v => (PACK_SHORT[v] || v) },
-  { field: 'blockerPct',   label: 'Stones',  values: [0, 10, 20, 30, 40, 50],                       fmt: v => (v === 0 ? 'No stones' : `${v}% stones`) },
-  { field: 'pattern',      label: 'Pattern', values: SEED_PATTERNS,                                 fmt: v => (PATTERN_LABEL[v] || v) },
-];
-
-// Draw a generated board's lanterns as colored dots, mapped from their
-// layout-independent (nx, ny) into the given box. nx runs 0..14 across 8
-// close-packed columns; ny is one packed-row (√3) per row.
-function drawBoardPreview(ctx, box, preview) {
-  ctx.save();
-  // Box background — a slice of night sky.
-  ctx.fillStyle = 'rgba(10, 15, 34, 0.55)';
-  roundedRectPath(ctx, box.x, box.y, box.w, box.h, 8);
-  ctx.fill();
-  ctx.strokeStyle = BORDER_SOFT;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  const lanterns = (preview && preview.lanterns) || [];
-  if (lanterns.length) {
-    let maxRow = 0;
-    for (const l of lanterns) maxRow = Math.max(maxRow, Math.round(l.ny / SEED_SQRT3));
-    // The board spans 14 nx-units wide and maxRow*√3 ny-units tall; add a
-    // 1-unit (one radius) margin all round so lanterns never kiss the border.
-    const spanW = 14 + 2;
-    const spanH = (maxRow * SEED_SQRT3) + 2;
-    const unit = Math.min(box.w / spanW, box.h / Math.max(spanH, 6));
-    const dotR = unit * 0.92;
-    // Center the board both axes so short boards sit in the middle, not the top.
-    const contentW = 14 * unit;
-    const contentH = maxRow * SEED_SQRT3 * unit;
-    const originX = box.x + (box.w - contentW) / 2;
-    const originY = box.y + (box.h - contentH) / 2;
-
-    // Clip so a tall board can't spill past the box.
-    roundedRectPath(ctx, box.x, box.y, box.w, box.h, 8);
-    ctx.clip();
-
-    for (const l of lanterns) {
-      const px = originX + l.nx * unit;
-      const py = originY + l.ny * unit;
-      ctx.fillStyle = l.isBlocker ? 'rgba(120, 120, 130, 0.85)' : (COLORS[l.color] || CREAM);
-      ctx.beginPath();
-      ctx.arc(px, py, dotR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  } else {
-    ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-    ctx.font = `italic 400 12px ${SERIF}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('shuffle to generate a board', box.x + box.w / 2, box.y + box.h / 2);
-  }
-  ctx.restore();
-}
-
-// A pill button used on the build screen. Registers its own hit.
-function drawSeedButton(ctx, r, label, action, opts = {}) {
-  const { primary = false, value } = opts;
-  ctx.save();
-  ctx.fillStyle = primary ? hexToRgba(GOLD, 0.16) : 'rgba(245, 233, 201, 0.05)';
-  roundedRectPath(ctx, r.x, r.y, r.w, r.h, 7);
-  ctx.fill();
-  ctx.strokeStyle = primary ? GOLD : hexToRgba(CREAM, 0.18);
-  ctx.lineWidth = primary ? 1.4 : 1;
-  ctx.stroke();
-  ctx.fillStyle = primary ? GOLD : CREAM;
-  ctx.font = `${primary ? 600 : 500} ${Math.round(r.fs ? 13 * r.fs : 13)}px ${SERIF}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);
-  ctx.restore();
-  menuState.hits.push({ x: r.x, y: r.y, w: r.w, h: r.h, action, value });
-}
-
-function drawExplorePanel(ctx, layout, settings) {
-  const fs = fontScaleOf(settings);
-  ensureExplore();
-  const preview = exploreState.preview;
-  const cfg = preview ? preview.config : null;
-
-  // Roomy on desktop (so big boards read clearly), full-width-ish on phones.
-  const maxW = Math.max(360 * fs, Math.min(580 * fs, layout.viewW * 0.6));
-  const rect = cardRect(layout, maxW, 720 * fs);
-  menuState.cardRect = rect;
-  menuState.maxScrollY = 0;   // fixed layout — no scrolling
-  drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Explore', { showBack: true, fs });
-
-  const padX = 24;
-  const innerW = rect.w - padX * 2;
-  let y = startY + 4;
-
-  // Subtitle.
-  ctx.save();
-  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-  ctx.font = `italic 400 ${Math.round(11 * fs)}px ${SERIF}`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText('shuffle a variant, then play — keepers are saved', rect.x + padX, y);
-  ctx.restore();
-  y += 20 * fs;
-
-  // Hits pushed up to here belong to the title bar. Everything the body adds
-  // below is discarded if a setting picker is open, so only the picker is live.
-  const titleHitCount = menuState.hits.length;
-
-  // Controls block lives at the bottom; the preview gets all the space between
-  // the subtitle and it — so large boards fill the card instead of cramping.
-  const rowH = Math.round(32 * fs);
-  const shufW = Math.round(96 * fs);
-  const valW = innerW - shufW - 8;
-  const playH = Math.round(44 * fs);
-
-  // ── Lay out the editable settings chips (wrap into rows within innerW) ──
-  const chipH = Math.round(28 * fs);
-  const chipGap = Math.round(8 * fs);
-  const chipPadX = Math.round(13 * fs);
-  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
-  const overrides = exploreState.overrides || {};
-  const chipItems = (cfg ? SETTING_DEFS : []).map(def => {
-    const label = def.fmt(cfg[def.field]);
-    const w = Math.ceil(ctx.measureText(label).width) + chipPadX * 2 + 10 * fs; // +caret room
-    return { def, label, w, overridden: def.field in overrides };
-  });
-  const chipRows = [];
-  let curRow = [], curW = 0;
-  for (const it of chipItems) {
-    if (curRow.length && curW + it.w > innerW) { chipRows.push(curRow); curRow = []; curW = 0; }
-    curRow.push(it); curW += it.w + chipGap;
-  }
-  if (curRow.length) chipRows.push(curRow);
-  const chipsH = chipRows.length ? chipRows.length * chipH + (chipRows.length - 1) * chipGap : 0;
-
-  const bottomBlockH = chipsH + 14 * fs + 2 * (rowH + 8 * fs) + 10 * fs + playH + 18 * fs;
-  const previewTop = y;
-  const previewBottom = rect.y + rect.h - bottomBlockH;
-  const previewH = Math.max(150 * fs, previewBottom - previewTop);
-  drawBoardPreview(ctx, { x: rect.x + padX, y: previewTop, w: innerW, h: previewH }, preview);
-  y = previewTop + previewH + 12 * fs;
-
-  // ── Draw the chips ──
-  const chipsTop = y;
-  for (const row of chipRows) {
-    let cx = rect.x + padX;
-    for (const it of row) {
-      drawSettingChip(ctx, { x: cx, y, w: it.w, h: chipH, fs }, it.label, it.overridden);
-      menuState.hits.push({ x: cx, y, w: it.w, h: chipH, action: 'explore-pick-field', value: it.def.field });
-      cx += it.w + chipGap;
-    }
-    y += chipH + chipGap;
-  }
-  y = chipsTop + chipsH + 14 * fs;
-
-  // ── Seed rows: [value (tap = manual entry)] [Shuffle] ──
-  const seedRow = (label, seed, manualAction, shuffleAction) => {
-    ctx.save();
-    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
-    roundedRectPath(ctx, rect.x + padX, y, valW, rowH, 7);
-    ctx.fill();
-    ctx.strokeStyle = hexToRgba(CREAM, 0.16);
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = hexToRgba(CREAM, 0.55);
-    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText(label.toUpperCase(), rect.x + padX + 10, y + rowH / 2);
-    ctx.fillStyle = CREAM;
-    ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
-    ctx.textAlign = 'right';
-    ctx.fillText(`#${seed >>> 0}`, rect.x + padX + valW - 10, y + rowH / 2);
-    ctx.restore();
-    menuState.hits.push({ x: rect.x + padX, y, w: valW, h: rowH, action: manualAction });
-    drawSeedButton(ctx, { x: rect.x + padX + valW + 8, y, w: shufW, h: rowH, fs }, '⟳ Shuffle', shuffleAction);
-    y += rowH + 8 * fs;
-  };
-  seedRow('Settings', exploreState.settingsSeed, 'seed-manual-settings', 'shuffle-settings');
-  seedRow('Board', exploreState.boardSeed, 'seed-manual-board', 'shuffle-board');
-
-  // Play button.
-  y += 6 * fs;
-  drawSeedButton(ctx, { x: rect.x + padX, y, w: innerW, h: playH, fs }, '▶  Play', 'seed-play', { primary: true });
-
-  // ── Setting picker overlay ── makes the body inert and lists alternatives.
-  if (menuState.explorePicker && cfg) {
-    const def = SETTING_DEFS.find(d => d.field === menuState.explorePicker);
-    if (def) {
-      menuState.hits.length = titleHitCount;   // discard body hits
-      drawSettingPicker(ctx, rect, startY, def, cfg, fs);
-    } else {
-      menuState.explorePicker = null;
-    }
-  }
-}
-
-// A tappable chip showing one editable setting's current value. Overridden
-// (hand-picked) settings get a gold tint so the player sees what they changed.
-function drawSettingChip(ctx, r, label, overridden) {
-  const fs = r.fs || 1;
-  ctx.save();
-  ctx.fillStyle = overridden ? hexToRgba(GOLD, 0.14) : 'rgba(245, 233, 201, 0.05)';
-  roundedRectPath(ctx, r.x, r.y, r.w, r.h, r.h / 2);
-  ctx.fill();
-  ctx.strokeStyle = overridden ? GOLD : hexToRgba(CREAM, 0.2);
-  ctx.lineWidth = overridden ? 1.3 : 1;
-  ctx.stroke();
-  ctx.fillStyle = overridden ? GOLD : CREAM;
-  ctx.font = `500 ${Math.round(12 * fs)}px ${SERIF}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, r.x + 13 * fs, r.y + r.h / 2 + 0.5);
-  // Down-caret hint that it opens a list.
-  const caretX = r.x + r.w - 11 * fs;
-  const caretY = r.y + r.h / 2;
-  ctx.strokeStyle = hexToRgba(overridden ? GOLD : CREAM, 0.6);
-  ctx.lineWidth = 1.3;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(caretX - 3 * fs, caretY - 1.5 * fs);
-  ctx.lineTo(caretX, caretY + 1.8 * fs);
-  ctx.lineTo(caretX + 3 * fs, caretY - 1.5 * fs);
-  ctx.stroke();
-  ctx.restore();
-}
-
-// Popover listing the alternatives for one setting. Tapping a value applies it
-// (setOverride); tapping anywhere else dismisses. Caller has already discarded
-// the body hits, so only what we push here is live.
-function drawSettingPicker(ctx, rect, bodyTop, def, cfg, fs) {
-  // Dim the whole card body.
-  ctx.save();
-  ctx.fillStyle = 'rgba(10, 15, 34, 0.62)';
-  roundedRectPath(ctx, rect.x + 2, rect.y + 2, rect.w - 4, rect.h - 4, 11);
-  ctx.fill();
-  ctx.restore();
-
-  const optH = Math.round(36 * fs);
-  const headerH = Math.round(34 * fs);
-  const padV = Math.round(12 * fs);
-  const boxW = Math.min(rect.w - 48, Math.round(300 * fs));
-  const boxH = headerH + def.values.length * optH + padV;
-  const boxX = Math.round(rect.x + (rect.w - boxW) / 2);
-  let boxY = Math.round(rect.y + (rect.h - boxH) / 2);
-  boxY = Math.max(Math.round(bodyTop), Math.min(boxY, Math.round(rect.y + rect.h - boxH - 12 * fs)));
-
-  // Box.
-  ctx.save();
-  ctx.fillStyle = 'rgba(24, 30, 56, 0.98)';
-  roundedRectPath(ctx, boxX, boxY, boxW, boxH, 10);
-  ctx.fill();
-  ctx.strokeStyle = BORDER;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Header.
-  ctx.fillStyle = GOLD;
-  ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`Choose ${def.label}`, boxX + 16 * fs, boxY + headerH / 2);
-  drawDashedRule(ctx, boxX + 14 * fs, boxY + headerH - 2, boxW - 28 * fs);
-  ctx.restore();
-
-  // Options.
-  const current = cfg[def.field];
-  let oy = boxY + headerH;
-  for (const value of def.values) {
-    const isCur = current === value;
-    ctx.save();
-    if (isCur) {
-      ctx.fillStyle = hexToRgba(GOLD, 0.1);
-      roundedRectPath(ctx, boxX + 8 * fs, oy + 3, boxW - 16 * fs, optH - 6, 6);
-      ctx.fill();
-    }
-    ctx.fillStyle = isCur ? GOLD : CREAM;
-    ctx.font = `${isCur ? 600 : 400} ${Math.round(13 * fs)}px ${SERIF}`;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(def.fmt(value), boxX + 20 * fs, oy + optH / 2);
-    if (isCur) {
-      // Check mark.
-      ctx.strokeStyle = GOLD;
-      ctx.lineWidth = 1.8;
-      ctx.lineCap = 'round';
-      const kx = boxX + boxW - 22 * fs, ky = oy + optH / 2;
-      ctx.beginPath();
-      ctx.moveTo(kx - 4 * fs, ky);
-      ctx.lineTo(kx - 1 * fs, ky + 3 * fs);
-      ctx.lineTo(kx + 4 * fs, ky - 3 * fs);
-      ctx.stroke();
-    }
-    ctx.restore();
-    menuState.hits.push({ x: boxX, y: oy, w: boxW, h: optH, action: 'explore-set-option', value: { field: def.field, value } });
-    oy += optH;
-  }
-
-  // Backdrop close — pushed LAST so option taps win.
-  menuState.hits.push({ x: rect.x, y: rect.y, w: rect.w, h: rect.h, action: 'explore-close-picker' });
-}
-
-// ─── Seeds history panel ────────────────────────────────────────────────────
-
-function drawSeedsPanel(ctx, layout, game, settings) {
-  const fs = fontScaleOf(settings);
-  const rect = cardRect(layout, 360 * fs, 480 * fs);
-  menuState.cardRect = rect;
-  drawCard(ctx, rect);
-  const startY = drawTitleBar(ctx, rect, 'Seeds', { showBack: true, fs });
-
-  const padX = 20;
-  const history = loadSeedHistory();
-  // Difficulty tier per seed pair, from the richer telemetry log (it carries
-  // endPhase, so a repeatedly-abandoned seed reads as the lost-cause top tier).
-  const tierMap = seedTierMap(loadTelemetry());
-
-  const subPx = Math.max(11, Math.round(11 * fs));
-  ctx.save();
-  ctx.fillStyle = hexToRgba(CREAM, HUD_OPACITY.soft);
-  ctx.font = `italic 400 ${subPx}px ${SERIF}`;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = 'left';
-  ctx.fillText(
-    history.length ? `${history.length} variant${history.length === 1 ? '' : 's'} mined · tap to replay, ⓘ for details` : 'no variants yet — play one in Explore',
-    rect.x + padX, startY
-  );
-  ctx.restore();
-
-  const viewportX = rect.x + padX;
-  const viewportY = startY + subPx + 12;
-  const viewportW = rect.w - padX * 2;
-  const viewportH = rect.y + rect.h - viewportY - 16;
-
-  const rowHeight = Math.round(48 * fs);
-  const totalHeight = history.length * rowHeight;
-
-  menuState.viewportY = viewportY;
-  menuState.viewportH = viewportH;
-  menuState.maxScrollY = Math.max(0, totalHeight - viewportH);
   menuState.scrollY = Math.max(0, Math.min(menuState.maxScrollY, menuState.scrollY));
 
   ctx.save();
@@ -1706,108 +1029,338 @@ function drawSeedsPanel(ctx, layout, game, settings) {
   ctx.rect(viewportX - 4, viewportY, viewportW + 8, viewportH);
   ctx.clip();
 
-  for (let i = 0; i < history.length; i++) {
+  const rightPad = menuState.maxScrollY > 0 ? 16 : 10;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     const rowY = viewportY + i * rowHeight - menuState.scrollY;
     if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) continue;
-    const e = history[i];
-    const isLostCause = seedKey(e) ? tierMap.get(seedKey(e)) === 'lost-cause' : false;
-
-    ctx.save();
-    ctx.fillStyle = isLostCause ? hexToRgba(EMBER, 0.06) : hexToRgba(CREAM, e.won ? 0.05 : 0.025);
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.fill();
-    ctx.strokeStyle = isLostCause ? hexToRgba(EMBER, 0.5) : e.won ? hexToRgba(GOLD, 0.4) : hexToRgba(CREAM, 0.12);
-    ctx.lineWidth = 1;
-    roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
-    ctx.stroke();
-
-    // Win star / loss dot — a lost cause gets a filled ember dot.
-    if (e.won) drawStar(ctx, viewportX + 14, rowY + rowHeight / 2, 3.4 * fs, GOLD);
-    else if (isLostCause) {
-      ctx.fillStyle = hexToRgba(EMBER, 0.85);
-      ctx.beginPath();
-      ctx.arc(viewportX + 14, rowY + rowHeight / 2, 2.8 * fs, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = hexToRgba(CREAM, 0.4);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(viewportX + 14, rowY + rowHeight / 2, 2.6 * fs, 0, Math.PI * 2);
-      ctx.stroke();
+    const infoHit = drawSelectionRow(ctx, item, viewportX, rowY, viewportW, rowHeight, rightPad, fs);
+    if (item.enabled === false) continue;
+    // Info hit pushed FIRST (first match wins) so tapping ⓘ opens the detail
+    // card; the rest of the row still triggers its primary action.
+    if (infoHit && item.infoAction) {
+      const pad = 4 * fs;
+      menuState.hits.push({
+        x: infoHit.cx - infoHit.r - pad, y: infoHit.cy - infoHit.r - pad,
+        w: (infoHit.r + pad) * 2, h: (infoHit.r + pad) * 2,
+        action: item.infoAction, value: item.infoValue,
+      });
     }
-
-    // Score.
-    ctx.fillStyle = CREAM;
-    ctx.font = `600 ${Math.round(15 * fs)}px ${SERIF}`;
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    const scoreText = fmtInt(e.score | 0);
-    ctx.fillText(scoreText, viewportX + 28, rowY + rowHeight * 0.38);
-    const scoreW = ctx.measureText(scoreText).width;
-
-    // Intrinsic difficulty badge — board hardness, just after the score. (The
-    // lost-cause accent above is the OUTCOME; these two read independently.)
-    const rating = difficultyRating(effectiveConfig(e.settingsSeed >>> 0, e.overrides));
-    drawDifficultyBadge(ctx, viewportX + 28 + scoreW + 8, rowY + rowHeight * 0.38, rating.key, fs);
-
-    // Summary line. Lost causes lead with a red tag, then a compact config.
-    const packName = STENCIL_PACKS[e.stencilPack]?.name || e.stencilPack || '';
-    const summaryY = rowY + rowHeight * 0.7;
-    let summaryX = viewportX + 28;
-    if (isLostCause) {
-      ctx.fillStyle = hexToRgba(EMBER, 0.95);
-      ctx.font = `700 ${Math.round(9.5 * fs)}px ${SANS}`;
-      const tag = 'LOST CAUSE';
-      ctx.fillText(tag, summaryX, summaryY);
-      summaryX += ctx.measureText(tag).width + 6;
+    if (item.action) {
+      menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: item.action, value: item.value });
     }
-    ctx.fillStyle = hexToRgba(CREAM, 0.5);
-    ctx.font = `400 ${Math.round(9.5 * fs)}px ${SANS}`;
-    const summary = isLostCause
-      ? `· ${e.colors}c ${e.isSpeedMode ? 'Timed' : 'Classic'}`
-      : `${e.colors} colors · ${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`;
-    ctx.fillText(summary, summaryX, summaryY);
-
-    // Info button (opens the detail card) on the far right; seeds tuck left of it.
-    const rightPad = menuState.maxScrollY > 0 ? 16 : 10;
-    const infoR = 9 * fs;
-    const infoCx = viewportX + viewportW - rightPad - infoR;
-    const infoCy = rowY + rowHeight / 2;
-    drawInfoButton(ctx, infoCx, infoCy, infoR, isLostCause ? EMBER : CREAM, 0.55);
-
-    // Seeds, right-aligned to the left of the info button.
-    ctx.fillStyle = hexToRgba(CREAM, 0.45);
-    ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
-    ctx.textAlign = 'right';
-    const seedRightX = infoCx - infoR - 8;
-    ctx.fillText(`s#${e.settingsSeed >>> 0}`, seedRightX, rowY + rowHeight * 0.38);
-    ctx.fillText(`b#${e.boardSeed >>> 0}`, seedRightX, rowY + rowHeight * 0.7);
-    ctx.restore();
-
-    // Info hit pushed FIRST (first match wins) so tapping ⓘ opens detail; the
-    // rest of the row still plays the seed instantly.
-    const infoPad = 4 * fs;
-    menuState.hits.push({ x: infoCx - infoR - infoPad, y: infoCy - infoR - infoPad,
-      w: (infoR + infoPad) * 2, h: (infoR + infoPad) * 2, action: 'show-seed-detail', value: e });
-    menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: 'pick-seed-history', value: e });
   }
   ctx.restore();
 
-  // Scrollbar.
-  if (menuState.maxScrollY > 0) {
-    const sbW = 3;
-    const sbX = viewportX + viewportW - sbW;
-    const thumbH = Math.max(16, viewportH * (viewportH / totalHeight));
-    const thumbY = viewportY + (viewportH - thumbH) * (menuState.scrollY / menuState.maxScrollY);
-    ctx.save();
-    ctx.fillStyle = 'rgba(245, 233, 201, 0.05)';
-    roundedRectPath(ctx, sbX, viewportY, sbW, viewportH, 2);
-    ctx.fill();
-    ctx.fillStyle = hexToRgba(GOLD, 0.7);
-    roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
-    ctx.fill();
-    ctx.restore();
+  drawListScrollbar(ctx, viewportX, viewportY, viewportW, viewportH, totalHeight);
+}
+
+// Draws one selection card. Returns the info-button geometry ({cx,cy,r}) when the
+// row has one (so the list can register its hit); otherwise null.
+function drawSelectionRow(ctx, item, x, rowY, w, h, rightPad, fs) {
+  const state = item.state || 'default';
+  const isCurrent = state === 'current';
+  const isLocked = state === 'locked';
+  const isEmber = item.accent === 'ember';
+  const strong = isCurrent || state === 'cleared' || state === 'played';
+
+  // ── Chrome: background + border.
+  ctx.save();
+  if (isEmber) {
+    ctx.fillStyle = hexToRgba(EMBER, 0.06);
+  } else {
+    const baseAlpha = isCurrent ? 0.08 : state === 'cleared' ? 0.05 : state === 'played' ? 0.03 : isLocked ? 0.015 : 0.02;
+    ctx.fillStyle = hexToRgba(CREAM, baseAlpha);
   }
+  roundedRectPath(ctx, x, rowY + 2, w, h - 4, 6);
+  ctx.fill();
+  if (isEmber) { ctx.strokeStyle = hexToRgba(EMBER, 0.5); ctx.lineWidth = 1; }
+  else if (isCurrent) { ctx.strokeStyle = GOLD; ctx.lineWidth = 1.4; }
+  else if (state === 'cleared') { ctx.strokeStyle = hexToRgba(GOLD, 0.4); ctx.lineWidth = 1; }
+  else if (isLocked) { ctx.strokeStyle = hexToRgba(CREAM, 0.06); ctx.lineWidth = 1; }
+  else { ctx.strokeStyle = hexToRgba(CREAM, 0.12); ctx.lineWidth = 1; }
+  roundedRectPath(ctx, x, rowY + 2, w, h - 4, 6);
+  ctx.stroke();
+
+  const cy1 = rowY + h * 0.36;   // top line
+  const cy2 = rowY + h * 0.69;   // bottom line
+  ctx.textBaseline = 'middle';
+
+  // ── Info button (far right). Right-aligned text tucks to its left.
+  let rightAnchorX = x + w - rightPad;
+  let infoHit = null;
+  if (item.hasInfo) {
+    const infoR = 9 * fs;
+    const infoCx = x + w - rightPad - infoR;
+    const infoCy = rowY + h / 2;
+    drawInfoButton(ctx, infoCx, infoCy, infoR, isEmber ? EMBER : CREAM, 0.55);
+    rightAnchorX = infoCx - infoR - 8;
+    infoHit = { cx: infoCx, cy: infoCy, r: infoR };
+  }
+
+  // ── Top line: label · status marker · difficulty badge.
+  const labelX = x + 14;
+  ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.3) : CREAM;
+  ctx.font = `600 ${Math.round(16 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'left';
+  let label = item.label || '';
+  const maxLabelW = rightAnchorX - labelX - 80 * fs;
+  if (maxLabelW > 24 && ctx.measureText(label).width > maxLabelW) {
+    while (label.length > 2 && ctx.measureText(label + '…').width > maxLabelW) label = label.slice(0, -1);
+    label += '…';
+  }
+  ctx.fillText(label, labelX, cy1);
+  let cursorX = labelX + ctx.measureText(label).width + 11 * fs;
+
+  cursorX += drawStatusMarker(ctx, item.statusMarker, cursorX, cy1, fs);
+
+  if (item.difficultyKey) {
+    drawDifficultyBadge(ctx, cursorX, cy1, item.difficultyKey, fs, { alpha: isLocked ? 0.4 : 1 });
+  }
+
+  // ── Right-aligned values (best score, or seed ids on two lines).
+  for (const rl of item.rightLines || []) {
+    if (!rl || rl.text == null) continue;
+    const cyR = rl.line === 'bottom' ? cy2 : cy1;
+    if (rl.small) {
+      ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
+      ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.18 : 0.45);
+    } else {
+      ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
+      ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.18 : strong ? 0.9 : 0.4);
+    }
+    ctx.textAlign = 'right';
+    ctx.fillText(rl.text, rightAnchorX, cyR);
+  }
+
+  // ── Bottom line: palette dots + optional tag + sub-label.
+  const dots = item.dots || [];
+  const dotR = 2.7 * fs;
+  const gap = dotR * 2.5;
+  const dotX0 = labelX + dotR;
+  for (let c = 0; c < dots.length; c++) {
+    ctx.fillStyle = hexToRgba(dots[c], strong ? 0.95 : isLocked ? 0.18 : 0.6);
+    ctx.beginPath();
+    ctx.arc(dotX0 + c * gap, cy2, dotR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  let subX = dots.length ? dotX0 + (dots.length - 1) * gap + dotR + 12 * fs : labelX;
+  ctx.textAlign = 'left';
+  if (item.subTag) {
+    ctx.fillStyle = hexToRgba(item.subTag.color, 0.95);
+    ctx.font = `700 ${Math.round(9.5 * fs)}px ${SANS}`;
+    ctx.fillText(item.subTag.text, subX, cy2);
+    subX += ctx.measureText(item.subTag.text).width + 6;
+  }
+  if (item.subLabel) {
+    ctx.font = `400 ${Math.round(11.5 * fs)}px ${SANS}`;
+    ctx.fillStyle = isCurrent ? hexToRgba(GOLD, 0.85) : hexToRgba(CREAM, isLocked ? 0.2 : 0.55);
+    ctx.fillText(item.subLabel, subX, cy2);
+  }
+
+  ctx.restore();
+  return infoHit;
+}
+
+// Status pip drawn just after a row's label; returns its x-advance so the caller
+// can place the difficulty badge after it.
+function drawStatusMarker(ctx, kind, x, cy, fs) {
+  if (kind === 'lock') {
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(CREAM, 0.28);
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.arc(x + 4 * fs, cy - 2.6 * fs, 2.7 * fs, Math.PI, 0);    // shackle
+    ctx.stroke();
+    ctx.fillStyle = hexToRgba(CREAM, 0.22);
+    ctx.fillRect(x + 0.5 * fs, cy - 1.6 * fs, 7 * fs, 5.6 * fs); // body
+    ctx.restore();
+    return 15 * fs;
+  }
+  if (kind === 'star') {
+    drawStar(ctx, x + 4 * fs, cy, 3.8 * fs, GOLD);
+    return 15 * fs;
+  }
+  if (kind === 'ring') {
+    ctx.strokeStyle = hexToRgba(CREAM, 0.45);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x + 3 * fs, cy, 2.7 * fs, 0, Math.PI * 2);
+    ctx.stroke();
+    return 13 * fs;
+  }
+  if (kind === 'emberDot') {
+    ctx.fillStyle = hexToRgba(EMBER, 0.9);
+    ctx.beginPath();
+    ctx.arc(x + 3 * fs, cy, 2.8 * fs, 0, Math.PI * 2);
+    ctx.fill();
+    return 13 * fs;
+  }
+  return 0;
+}
+
+function drawListScrollbar(ctx, vx, vy, vw, vh, totalHeight) {
+  if (menuState.maxScrollY <= 0) return;
+  const sbW = 4;
+  const sbX = vx + vw - sbW - 2;
+  const thumbH = Math.max(20, Math.round((vh / totalHeight) * vh));
+  const thumbY = vy + Math.round((menuState.scrollY / menuState.maxScrollY) * (vh - thumbH));
+  ctx.save();
+  ctx.fillStyle = 'rgba(232, 183, 112, 0.05)';
+  roundedRectPath(ctx, sbX, vy, sbW, vh, 2);
+  ctx.fill();
+  ctx.fillStyle = hexToRgba(GOLD, 0.7);
+  roundedRectPath(ctx, sbX, thumbY, sbW, thumbH, 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ─── Stages panel ───────────────────────────────────────────────────────────
+
+function drawStagesPanel(ctx, layout, game, settings, stats) {
+  const totalStages = LEVELS.length;
+  const reached = totalStages; // temporarily unlocked for testing
+
+  const items = [];
+  for (let i = 1; i <= totalStages; i++) {
+    const cfg = levelConfig(i);
+    const isCurrent = i === game.level;
+    const isLocked = i > reached;
+    const ld = (stats && stats.levels && stats.levels[String(i)]) || null;
+    const cleared = !!(ld && ld.cleared);
+    const played = !!(ld && ld.plays);
+    const bestScore = ld ? ld.bestScore | 0 : 0;
+    const dots = [];
+    for (let c = 0; c < cfg.colors; c++) dots.push(COLORS[COLOR_KEYS[c]]);
+    items.push({
+      state: isCurrent ? 'current' : isLocked ? 'locked' : cleared ? 'cleared' : played ? 'played' : 'default',
+      statusMarker: isLocked ? 'lock' : cleared ? 'star' : played ? 'ring' : null,
+      label: `Stage ${i}`,
+      difficultyKey: difficultyRating(cfg).key,
+      dots,
+      subLabel: `${STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack} · ${cfg.isSpeedMode ? 'Timed' : 'Classic'}`,
+      rightLines: [{ text: bestScore ? fmtInt(bestScore) : '—', line: 'top' }],
+      enabled: !isLocked,
+      action: 'pick-stage', value: i,
+    });
+  }
+
+  drawSelectionList(ctx, layout, settings, {
+    title: 'Choose a stage',
+    subtitle: `currently on stage ${game.level} · ${reached} reached`,
+    items,
+    scrollToIndex: game.level - 1,
+  });
+}
+
+// ─── Puzzles panel ──────────────────────────────────────────────────────────
+
+// Hand-crafted puzzles carry an authored board rather than generation params,
+// so difficultyRating()'s numeric inputs aren't present. Normalize a puzzle into
+// the shape difficultyRating expects (color count, board rows, blocker density,
+// timed flag) so its badge reads on the same scale as Stages and Seeds.
+function puzzleRatingKey(cfg) {
+  const board = cfg.board || [];
+  let cells = 0, blockers = 0;
+  for (const row of board) {
+    for (const ch of row.replace(/\s/g, '')) {
+      if (ch === '.') continue;
+      cells++;
+      if (ch === 'X') blockers++;
+    }
+  }
+  return difficultyRating({
+    colors: cfg.colors.length,
+    initialRows: board.length,
+    // 'none' descent has no time pressure → full grace; timed puzzles bite.
+    descentShots: cfg.descentType === 'time' ? 6 : 12,
+    isSpeedMode: cfg.descentType === 'time',
+    blockerPct: cells ? (blockers / cells) * 100 : 0,
+  }).key;
+}
+
+function drawPuzzlesPanel(ctx, layout, game, settings, stats) {
+  const unlockedCount = PUZZLE_COUNT; // temporarily unlocked for testing
+  let maxCleared = 0;
+  if (stats && stats.puzzles) {
+    for (let i = 1; i <= PUZZLE_COUNT; i++) {
+      if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) maxCleared = Math.max(maxCleared, i);
+    }
+  }
+
+  const items = [];
+  for (let i = 1; i <= PUZZLE_COUNT; i++) {
+    const cfg = puzzleConfig(i);
+    const isCurrent = game.isPuzzleMode && (i === game.puzzleId);
+    const isLocked = i > unlockedCount;
+    const pz = (stats && stats.puzzles && stats.puzzles[String(i)]) || null;
+    const cleared = !!(pz && pz.cleared);
+    const played = !!(pz && pz.plays);
+    const bestScore = pz ? pz.bestScore | 0 : 0;
+    const dots = cfg.colors.map(key => COLORS[key]);
+    items.push({
+      state: isCurrent ? 'current' : isLocked ? 'locked' : cleared ? 'cleared' : played ? 'played' : 'default',
+      statusMarker: isLocked ? 'lock' : cleared ? 'star' : played ? 'ring' : null,
+      label: `${i}. ${cfg.name}`,
+      difficultyKey: puzzleRatingKey(cfg),
+      dots,
+      subLabel: `${STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack} · ${cfg.goalType === 'clear-targets' ? 'Targets' : 'Clear all'}`,
+      rightLines: [{ text: bestScore ? fmtInt(bestScore) : '—', line: 'top' }],
+      enabled: !isLocked,
+      action: 'pick-puzzle', value: i,
+    });
+  }
+
+  const puzzleText = game.isPuzzleMode ? `currently on puzzle ${game.puzzleId}` : 'select a puzzle to play';
+  drawSelectionList(ctx, layout, settings, {
+    title: 'Choose a puzzle',
+    subtitle: `${puzzleText} · ${maxCleared} cleared`,
+    items,
+    scrollToIndex: game.puzzleId - 1,
+  });
+}
+
+// ─── Seeds panel ────────────────────────────────────────────────────────────
+
+function drawSeedsPanel(ctx, layout, game, settings) {
+  const history = loadSeedHistory();
+  // Difficulty tier per seed pair, from the richer telemetry log (it carries
+  // endPhase, so a repeatedly-abandoned seed reads as the lost-cause top tier).
+  const tierMap = seedTierMap(loadTelemetry());
+
+  const items = history.map(e => {
+    const isLostCause = seedKey(e) ? tierMap.get(seedKey(e)) === 'lost-cause' : false;
+    const cfg = effectiveConfig(e.settingsSeed >>> 0, e.overrides);
+    const dots = [];
+    for (let c = 0; c < (cfg.colors || 0); c++) dots.push(COLORS[COLOR_KEYS[c]]);
+    const packName = STENCIL_PACKS[e.stencilPack]?.name || e.stencilPack || '';
+    return {
+      state: e.won ? 'cleared' : 'played',
+      accent: isLostCause ? 'ember' : null,
+      statusMarker: e.won ? 'star' : isLostCause ? 'emberDot' : 'ring',
+      label: fmtInt(e.score | 0),
+      difficultyKey: difficultyRating(cfg).key,
+      dots,
+      subTag: isLostCause ? { text: 'LOST CAUSE', color: EMBER } : null,
+      subLabel: `${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`,
+      rightLines: [
+        { text: `s#${e.settingsSeed >>> 0}`, line: 'top', small: true },
+        { text: `b#${e.boardSeed >>> 0}`, line: 'bottom', small: true },
+      ],
+      hasInfo: true,
+      action: 'pick-seed-history', value: e,
+      infoAction: 'show-seed-detail', infoValue: e,
+    };
+  });
+
+  drawSelectionList(ctx, layout, settings, {
+    title: 'Seeds',
+    subtitle: history.length
+      ? `${history.length} variant${history.length === 1 ? '' : 's'} mined · tap to replay, ⓘ for details`
+      : 'no variants yet — play one in Explore',
+    items,
+    scrollToIndex: -1,
+  });
 }
 
 // ─── Seed detail card ────────────────────────────────────────────────────────
@@ -2108,92 +1661,6 @@ function drawCompactStencilRow(ctx, x, y, w, h, pack, isSelected, fs) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function drawMiniModeIcon(ctx, isSpeedMode, cx, cy, fs, color) {
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.strokeStyle = color;
-  if (isSpeedMode) {
-    // Lightning bolt
-    ctx.beginPath();
-    ctx.moveTo(cx + 1 * fs, cy - 5 * fs);
-    ctx.lineTo(cx - 3 * fs, cy + 0 * fs);
-    ctx.lineTo(cx - 1 * fs, cy + 0 * fs);
-    ctx.lineTo(cx - 2 * fs, cy + 5 * fs);
-    ctx.lineTo(cx + 3 * fs, cy - 0 * fs);
-    ctx.lineTo(cx + 1 * fs, cy - 0 * fs);
-    ctx.closePath();
-    ctx.fill();
-  } else {
-    // Crescent Moon
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
-    ctx.fill();
-    // crescent shadow
-    ctx.fillStyle = PANEL_BG;
-    ctx.beginPath();
-    ctx.arc(cx + 1.8 * fs, cy - 0.4 * fs, 3.6 * fs, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawMiniStencilIcon(ctx, stencilPack, cx, cy, fs, color) {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 1 * fs;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-
-  if (stencilPack === 'plain') {
-    // Circle outline
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.8 * fs, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (stencilPack === 'bugs') {
-    // Bug outline
-    ctx.beginPath();
-    // Body line
-    ctx.moveTo(cx, cy - 3.8 * fs);
-    ctx.lineTo(cx, cy + 3.8 * fs);
-    // Legs
-    ctx.moveTo(cx - 3.2 * fs, cy - 1 * fs);
-    ctx.lineTo(cx + 3.2 * fs, cy - 1 * fs);
-    ctx.moveTo(cx - 3.2 * fs, cy + 1.5 * fs);
-    ctx.lineTo(cx + 3.2 * fs, cy + 1.5 * fs);
-    ctx.stroke();
-    // Head dot
-    ctx.beginPath();
-    ctx.arc(cx, cy - 3.8 * fs, 0.9 * fs, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (stencilPack === 'flowers') {
-    // Simple flower
-    for (let a = 0; a < Math.PI * 2; a += (Math.PI * 2) / 5) {
-      const px = cx + Math.cos(a) * 2.2 * fs;
-      const py = cy + Math.sin(a) * 2.2 * fs;
-      ctx.beginPath();
-      ctx.arc(px, py, 1 * fs, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.beginPath();
-    ctx.arc(cx, cy, 0.9 * fs, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (stencilPack === 'dragons') {
-    // Wave/Snake
-    ctx.beginPath();
-    ctx.moveTo(cx - 2.8 * fs, cy - 2.8 * fs);
-    ctx.bezierCurveTo(cx + 2.8 * fs, cy - 2.8 * fs, cx - 2.8 * fs, cy + 2.8 * fs, cx + 2.8 * fs, cy + 2.8 * fs);
-    ctx.stroke();
-  } else if (stencilPack === 'random') {
-    // 2x2 dot grid
-    ctx.fillRect(cx - 2.2 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
-    ctx.fillRect(cx + 0.4 * fs, cy - 2.2 * fs, 1.8 * fs, 1.8 * fs);
-    ctx.fillRect(cx - 2.2 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
-    ctx.fillRect(cx + 0.4 * fs, cy + 0.4 * fs, 1.8 * fs, 1.8 * fs);
-  }
-  ctx.restore();
-}
 
 function roundedRectPath(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
