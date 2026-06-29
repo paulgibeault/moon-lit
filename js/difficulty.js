@@ -41,6 +41,42 @@ export function fairnessLabel(rows) {
   return 'easy';
 }
 
+// ─── Intrinsic difficulty ────────────────────────────────────────────────────
+// How hard the BOARD is, from its resolved config — independent of how you
+// actually fared. The same levers the seed curator scores: more colors, more
+// starting rows, less descent breathing room, speed mode, and stone blockers
+// all push a board harder. Outcome (cleared / lost-cause) is layered on top by
+// the caller, never folded in here. Used for the badge shown on every mode's
+// game listing, so the vocabulary is identical across campaign / seed / puzzle.
+
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+// 0..1 intrinsic difficulty. Weights mirror tools/curate-session.mjs so the
+// in-app badge and the offline session curation agree on "how hard".
+export function difficultyScore(config) {
+  if (!config) return 0;
+  const colors = clamp01(((config.colors ?? 4) - 3) / 3);            // 3 → 0, 6 → 1
+  const rows = clamp01(((config.initialRows ?? 4) - 3) / 4);          // 3 → 0, 7 → 1
+  const descent = clamp01((12 - (config.descentShots ?? 8)) / 7);     // 12 shots' grace → 0, 5 → 1
+  const speed = config.isSpeedMode ? 1 : 0;
+  const blockers = clamp01((config.blockerPct || 0) / 30);            // 0 → 0, 30% stones → 1
+  return 0.26 * colors + 0.20 * rows + 0.20 * descent + 0.14 * speed + 0.20 * blockers;
+}
+
+// Named tiers, easiest → hardest. Thresholds chosen so a real session spreads
+// across all five (gentle warm-ups through expert speed/blocker boards).
+export const DIFFICULTY_TIERS = ['gentle', 'easy', 'medium', 'hard', 'expert'];
+
+export function difficultyRating(config) {
+  const score = difficultyScore(config);
+  const key = score < 0.20 ? 'gentle'
+    : score < 0.34 ? 'easy'
+    : score < 0.48 ? 'medium'
+    : score < 0.62 ? 'hard'
+    : 'expert';
+  return { key, score: +score.toFixed(3) };
+}
+
 // Identity key for a seed variant. Mirrors the analyzer's seedPair so labels
 // line up across the in-app and offline views.
 export const seedKey = (r) => (r.settingsSeed != null && r.boardSeed != null)

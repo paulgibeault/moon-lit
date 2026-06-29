@@ -17,10 +17,11 @@ import { changeStencilPack } from '../assets.js';
 import { puzzleConfig, PUZZLE_COUNT } from '../puzzles.js';
 import {
   exploreState, ensureExplore, shuffleBoard, shuffleSettings, setSeeds, setOverride, loadSeedHistory,
+  effectiveConfig,
 } from '../seed-explore.js';
 import { SEED_PATTERNS } from '../seed-pattern.js';
 import { loadTelemetry } from '../telemetry.js';
-import { seedTierMap, seedKey } from '../difficulty.js';
+import { seedTierMap, seedKey, difficultyRating, fairnessLabel } from '../difficulty.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -31,8 +32,20 @@ const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
 const EMBER       = '#e0796b';   // warm danger tint — flags a lost-cause seed
 
+// Intrinsic-difficulty badge palette, easiest → hardest. Keyed by the tier
+// names from js/difficulty.js. A calm green ramps to deep orange; lost-cause
+// (an OUTCOME, not a difficulty) stays the separate EMBER accent above.
+const DIFFICULTY_BADGE = {
+  gentle: { label: 'Gentle', color: '#86c98f' },
+  easy:   { label: 'Easy',   color: '#b6d27a' },
+  medium: { label: 'Medium', color: '#e6c267' },
+  hard:   { label: 'Hard',   color: '#e29a55' },
+  expert: { label: 'Expert', color: '#dd7a5a' },
+};
+
 const menuState = {
-  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options' | 'explore' | 'seeds'
+  panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options' | 'explore' | 'seeds' | 'seed-detail'
+  detailSeed: null,    // the seed-history entry the 'seed-detail' panel describes
   fade: 0,             // 0..1
   fadeTarget: 0,
   hits: [],            // [{x, y, w, h, action, value}]
@@ -260,6 +273,8 @@ export function handleMenuPointerUp(x, y, actions, game) {
         return true;
       }
       case 'pick-seed-history': { closeMenu(); actions?.onPickSeedHistory?.(h.value); return true; }
+      case 'show-seed-detail': { menuState.detailSeed = h.value; setMenuPanel('seed-detail'); actions?.onInteract?.(); return true; }
+      case 'seed-detail-play': { closeMenu(); actions?.onPickSeedHistory?.(menuState.detailSeed); return true; }
       case 'pick-stencil': {
         const gameMode = Arcade.state.get('gameMode') || 'campaign';
         if (gameMode === 'zen' || gameMode === 'speed') {
@@ -328,6 +343,7 @@ export function drawMenu(ctx, layout, game, settings, stats, scores) {
   else if (menuState.panel === 'options') drawOptionsPanel(ctx, layout, settings);
   else if (menuState.panel === 'explore') drawExplorePanel(ctx, layout, settings);
   else if (menuState.panel === 'seeds')   drawSeedsPanel(ctx, layout, game, settings);
+  else if (menuState.panel === 'seed-detail') drawSeedDetailPanel(ctx, layout, game, settings);
   ctx.restore();
 }
 
@@ -414,8 +430,60 @@ function drawCard(ctx, rect) {
   ctx.restore();
 }
 
+// ── Reusable game-card primitives (shared by every mode's listing) ───────────
+// A small filled pill naming the board's intrinsic difficulty tier. Returns its
+// width so callers can lay out text after it. `ratingKey` is a DIFFICULTY_BADGE
+// key; unknown keys draw nothing.
+function drawDifficultyBadge(ctx, x, cy, ratingKey, fs, opts = {}) {
+  const badge = DIFFICULTY_BADGE[ratingKey];
+  if (!badge) return 0;
+  const { alpha = 1, scale = 1 } = opts;
+  const px = Math.round(8.5 * fs * scale);
+  ctx.save();
+  ctx.font = `700 ${px}px ${SANS}`;
+  const label = badge.label.toUpperCase();
+  const padX = Math.round(5 * fs * scale);
+  const w = ctx.measureText(label).width + padX * 2;
+  const h = Math.round(13 * fs * scale);
+  ctx.fillStyle = hexToRgba(badge.color, 0.18 * alpha);
+  roundedRectPath(ctx, x, cy - h / 2, w, h, h / 2);
+  ctx.fill();
+  ctx.strokeStyle = hexToRgba(badge.color, 0.55 * alpha);
+  ctx.lineWidth = 1;
+  roundedRectPath(ctx, x, cy - h / 2, w, h, h / 2);
+  ctx.stroke();
+  ctx.fillStyle = hexToRgba(badge.color, 0.95 * alpha);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + padX, cy + 0.5);
+  ctx.restore();
+  return w;
+}
+
+// A circled "i" affordance. Stateless — the caller registers the hit rect so
+// tapping it can open a detail screen without stealing the row's play tap.
+function drawInfoButton(ctx, cx, cy, r, color, alpha = 0.6) {
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(color, alpha);
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = hexToRgba(color, alpha + 0.15);
+  ctx.beginPath();
+  ctx.arc(cx, cy - r * 0.42, r * 0.16, 0, Math.PI * 2);   // dot of the i
+  ctx.fill();
+  ctx.lineWidth = Math.max(1, r * 0.22);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 0.12);
+  ctx.lineTo(cx, cy + r * 0.45);                          // stem of the i
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawTitleBar(ctx, rect, title, opts = {}) {
-  const { showBack = false } = opts;
+  const { showBack = false, backAction = 'show-root' } = opts;
   const padX = 18;
   const titleY = rect.y + 18;
   const titlePx = 18;
@@ -426,7 +494,7 @@ function drawTitleBar(ctx, rect, title, opts = {}) {
   if (showBack) {
     const bx = rect.x + padX;
     const by = titleY + 10;
-    const back = { x: bx - 6, y: by - 14, w: 28, h: 28, action: 'show-root' };
+    const back = { x: bx - 6, y: by - 14, w: 28, h: 28, action: backAction };
     menuState.hits.push(back);
     ctx.strokeStyle = hexToRgba(CREAM, 0.85);
     ctx.lineWidth = 1.8;
@@ -1633,7 +1701,7 @@ function drawSeedsPanel(ctx, layout, game, settings) {
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillText(
-    history.length ? `${history.length} variant${history.length === 1 ? '' : 's'} mined · tap to replay` : 'no variants yet — play one in Explore',
+    history.length ? `${history.length} variant${history.length === 1 ? '' : 's'} mined · tap to replay, ⓘ for details` : 'no variants yet — play one in Explore',
     rect.x + padX, startY
   );
   ctx.restore();
@@ -1691,7 +1759,14 @@ function drawSeedsPanel(ctx, layout, game, settings) {
     ctx.font = `600 ${Math.round(15 * fs)}px ${SERIF}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
-    ctx.fillText(fmtInt(e.score | 0), viewportX + 28, rowY + rowHeight * 0.38);
+    const scoreText = fmtInt(e.score | 0);
+    ctx.fillText(scoreText, viewportX + 28, rowY + rowHeight * 0.38);
+    const scoreW = ctx.measureText(scoreText).width;
+
+    // Intrinsic difficulty badge — board hardness, just after the score. (The
+    // lost-cause accent above is the OUTCOME; these two read independently.)
+    const rating = difficultyRating(effectiveConfig(e.settingsSeed >>> 0, e.overrides));
+    drawDifficultyBadge(ctx, viewportX + 28 + scoreW + 8, rowY + rowHeight * 0.38, rating.key, fs);
 
     // Summary line. Lost causes lead with a red tag, then a compact config.
     const packName = STENCIL_PACKS[e.stencilPack]?.name || e.stencilPack || '';
@@ -1711,15 +1786,27 @@ function drawSeedsPanel(ctx, layout, game, settings) {
       : `${e.colors} colors · ${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`;
     ctx.fillText(summary, summaryX, summaryY);
 
-    // Seeds, right-aligned.
+    // Info button (opens the detail card) on the far right; seeds tuck left of it.
+    const rightPad = menuState.maxScrollY > 0 ? 16 : 10;
+    const infoR = 9 * fs;
+    const infoCx = viewportX + viewportW - rightPad - infoR;
+    const infoCy = rowY + rowHeight / 2;
+    drawInfoButton(ctx, infoCx, infoCy, infoR, isLostCause ? EMBER : CREAM, 0.55);
+
+    // Seeds, right-aligned to the left of the info button.
     ctx.fillStyle = hexToRgba(CREAM, 0.45);
     ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
     ctx.textAlign = 'right';
-    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 16 : 10);
-    ctx.fillText(`s#${e.settingsSeed >>> 0}`, scoreRightX, rowY + rowHeight * 0.38);
-    ctx.fillText(`b#${e.boardSeed >>> 0}`, scoreRightX, rowY + rowHeight * 0.7);
+    const seedRightX = infoCx - infoR - 8;
+    ctx.fillText(`s#${e.settingsSeed >>> 0}`, seedRightX, rowY + rowHeight * 0.38);
+    ctx.fillText(`b#${e.boardSeed >>> 0}`, seedRightX, rowY + rowHeight * 0.7);
     ctx.restore();
 
+    // Info hit pushed FIRST (first match wins) so tapping ⓘ opens detail; the
+    // rest of the row still plays the seed instantly.
+    const infoPad = 4 * fs;
+    menuState.hits.push({ x: infoCx - infoR - infoPad, y: infoCy - infoR - infoPad,
+      w: (infoR + infoPad) * 2, h: (infoR + infoPad) * 2, action: 'show-seed-detail', value: e });
     menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: 'pick-seed-history', value: e });
   }
   ctx.restore();
@@ -1739,6 +1826,125 @@ function drawSeedsPanel(ctx, layout, game, settings) {
     ctx.fill();
     ctx.restore();
   }
+}
+
+// ─── Seed detail card ────────────────────────────────────────────────────────
+// The expanded game card for one Explore seed — difficulty, full config, and
+// your record on it — reached via the ⓘ on a Seeds row. Play replays the seed.
+const OUTCOME_ACCENT = {
+  'lost-cause': { label: 'Lost cause', color: EMBER },
+  unbeaten:     { label: 'Unbeaten',   color: EMBER },
+  brutal:       { label: 'Brutal',     color: '#e29a55' },
+  challenging:  { label: 'Challenging', color: GOLD },
+  easy:         { label: 'Cleared',    color: GOLD },
+  trivial:      { label: 'Cleared',    color: GOLD },
+};
+
+function drawSeedDetailPanel(ctx, layout, game, settings) {
+  const fs = fontScaleOf(settings);
+  const rect = cardRect(layout, 360 * fs, 480 * fs);
+  menuState.cardRect = rect;
+  drawCard(ctx, rect);
+  const startY = drawTitleBar(ctx, rect, 'Seed details', { showBack: true, backAction: 'show-seeds', fs });
+
+  const e = menuState.detailSeed;
+  const padX = 22;
+  const x = rect.x + padX;
+  const rightX = rect.x + rect.w - padX;
+  if (!e) {
+    ctx.save();
+    ctx.fillStyle = hexToRgba(CREAM, 0.5);
+    ctx.font = `400 ${Math.round(13 * fs)}px ${SANS}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('No seed selected.', x, startY + 8);
+    ctx.restore();
+    return;
+  }
+
+  const config = effectiveConfig(e.settingsSeed >>> 0, e.overrides);
+  const rating = difficultyRating(config);
+
+  // This seed's record, from the richer telemetry log.
+  const telem = loadTelemetry().filter(r => seedKey(r) === seedKey(e));
+  const plays = telem.length;
+  const wins = telem.filter(r => r.won).length;
+  const abandons = telem.filter(r => !r.won && r.endPhase === 'aiming').length;
+  const tier = plays ? fairnessLabel(telem) : null;
+  const bestScore = Math.max(e.score | 0, 0, ...telem.map(r => r.score | 0));
+  const bestCombo = Math.max(e.combo | 0, 0, ...telem.map(r => r.bestCombo | 0));
+
+  let y = startY + 6;
+
+  // Hero row: big difficulty badge + outcome accent.
+  ctx.save();
+  const badgeW = drawDifficultyBadge(ctx, x, y + 10 * fs, rating.key, fs, { scale: 1.7 });
+  const accent = tier ? OUTCOME_ACCENT[tier] : null;
+  if (accent) {
+    ctx.font = `700 ${Math.round(11 * fs)}px ${SANS}`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = hexToRgba(accent.color, 0.95);
+    ctx.fillText(accent.label.toUpperCase(), x + badgeW + 12, y + 10 * fs);
+  }
+  // Seeds, right-aligned in the hero row.
+  ctx.fillStyle = hexToRgba(CREAM, 0.5);
+  ctx.font = `400 ${Math.round(10 * fs)}px ${SANS}`;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.fillText(`s#${e.settingsSeed >>> 0}`, rightX, y + 3 * fs);
+  ctx.fillText(`b#${e.boardSeed >>> 0}`, rightX, y + 17 * fs);
+  ctx.restore();
+  y += 34 * fs;
+
+  drawDashedRule(ctx, x, y, rect.w - padX * 2);
+  y += 14 * fs;
+
+  // Config + record as label/value rows.
+  const packName = STENCIL_PACKS[config.stencilPack]?.name || config.stencilPack || '—';
+  const patternName = SEED_PATTERNS[config.pattern]?.name || config.pattern || 'random';
+  const rows = [
+    ['Difficulty', DIFFICULTY_BADGE[rating.key]?.label || rating.key],
+    ['Colors', `${config.colors}`],
+    ['Starting rows', `${config.initialRows}`],
+    ['Descent', `${config.descentShots} shots`],
+    ['Mode', config.isSpeedMode ? 'Timed' : 'Classic'],
+    ['Blockers', `${config.blockerPct || 0}%`],
+    ['Pattern', patternName],
+    ['Stencils', packName],
+    ['rule', ''],
+    ['Plays', plays ? `${plays} (${wins} won${abandons ? `, ${abandons} abandoned` : ''})` : 'first time'],
+    ['Best score', bestScore ? fmtInt(bestScore) : '—'],
+    ['Best combo', bestCombo ? `×${bestCombo}` : '—'],
+  ];
+  const lineH = 21 * fs;
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  for (const [label, value] of rows) {
+    if (label === 'rule') { drawDashedRule(ctx, x, y + lineH / 2, rect.w - padX * 2); y += lineH; continue; }
+    ctx.font = `400 ${Math.round(11 * fs)}px ${SANS}`;
+    ctx.fillStyle = hexToRgba(CREAM, 0.5);
+    ctx.textAlign = 'left';
+    ctx.fillText(label, x, y + lineH / 2);
+    ctx.font = `500 ${Math.round(11.5 * fs)}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(CREAM, 0.92);
+    ctx.textAlign = 'right';
+    ctx.fillText(value, rightX, y + lineH / 2);
+    y += lineH;
+  }
+  ctx.restore();
+
+  // Play button, pinned near the card bottom.
+  const btnH = 44 * fs;
+  const btnY = rect.y + rect.h - btnH - 18 * fs;
+  const btnW = rect.w - padX * 2;
+  ctx.save();
+  ctx.fillStyle = hexToRgba(GOLD, 0.92);
+  roundedRectPath(ctx, x, btnY, btnW, btnH, 10);
+  ctx.fill();
+  ctx.fillStyle = '#1a1430';
+  ctx.font = `700 ${Math.round(15 * fs)}px ${SERIF}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('Play this seed', x + btnW / 2, btnY + btnH / 2);
+  ctx.restore();
+  menuState.hits.push({ x, y: btnY, w: btnW, h: btnH, action: 'seed-detail-play' });
 }
 
 // ─── Options panel ──────────────────────────────────────────────────────────
