@@ -987,7 +987,7 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
   const viewportW = rect.w - padX * 2;
   const viewportH = rect.y + rect.h - viewportY - 16;
 
-  const rowHeight = Math.round(42 * fs);
+  const rowHeight = Math.round(58 * fs);
   const totalHeight = totalStages * rowHeight;
 
   menuState.viewportY = viewportY;
@@ -1046,95 +1046,77 @@ function drawStagesPanel(ctx, layout, game, settings, stats) {
     roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
     ctx.stroke();
 
-    // Label
-    const labelPx = Math.round(14 * fs);
-    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.25) : CREAM;
-    ctx.font = `600 ${labelPx}px ${SERIF}`;
+    const cfg = levelConfig(i);
+    const cy1 = rowY + rowHeight * 0.36;   // top line baseline
+    const cy2 = rowY + rowHeight * 0.69;   // bottom line baseline
     ctx.textBaseline = 'middle';
+
+    // ── Top line: stage name · status · difficulty, with best score on the
+    // far right in its own lane (the old layout let the score collide here).
+    ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.3) : CREAM;
+    ctx.font = `600 ${Math.round(16 * fs)}px ${SERIF}`;
     ctx.textAlign = 'left';
     const labelText = `Stage ${i}`;
-    ctx.fillText(labelText, viewportX + 12, rowY + rowHeight / 2);
-    const labelW = ctx.measureText(labelText).width;
+    ctx.fillText(labelText, viewportX + 14, cy1);
+    let cursorX = viewportX + 14 + ctx.measureText(labelText).width + 11 * fs;
 
-    const cfg = levelConfig(i);
-
-    // Draw Mini Icons next to number
-    const iconColor = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.75);
-    const modeCx = viewportX + 12 + labelW + 10 * fs;
-    const stencilCx = modeCx + 14 * fs;
-    drawMiniModeIcon(ctx, cfg.isSpeedMode, modeCx, rowY + rowHeight / 2, fs, iconColor);
-    drawMiniStencilIcon(ctx, cfg.stencilPack, stencilCx, rowY + rowHeight / 2, fs, iconColor);
-
-    // Cleared Star or Lock (shifted right to make room for mini icons)
-    const lockX = viewportX + 115 * fs;
+    // Status marker: cleared star / lock / played ring.
     if (isLocked) {
-      const lockY = rowY + rowHeight / 2;
       ctx.save();
-      ctx.strokeStyle = hexToRgba(CREAM, 0.25);
-      ctx.lineWidth = 1.2;
-      // draw lock shackle (loop)
+      ctx.strokeStyle = hexToRgba(CREAM, 0.28);
+      ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.arc(lockX, lockY - 2.5 * fs, 2.5 * fs, Math.PI, 0);
+      ctx.arc(cursorX + 4 * fs, cy1 - 2.6 * fs, 2.7 * fs, Math.PI, 0);   // shackle
       ctx.stroke();
-      // draw lock body
-      ctx.fillStyle = hexToRgba(CREAM, 0.2);
-      ctx.fillRect(lockX - 3.5 * fs, lockY - 1.5 * fs, 7 * fs, 5 * fs);
+      ctx.fillStyle = hexToRgba(CREAM, 0.22);
+      ctx.fillRect(cursorX + 0.5 * fs, cy1 - 1.6 * fs, 7 * fs, 5.6 * fs);  // body
       ctx.restore();
+      cursorX += 15 * fs;
     } else if (cleared) {
-      drawStar(ctx, lockX, rowY + rowHeight / 2, 3 * fs, GOLD);
+      drawStar(ctx, cursorX + 4 * fs, cy1, 3.8 * fs, GOLD);
+      cursorX += 15 * fs;
     } else if (played) {
       ctx.strokeStyle = hexToRgba(CREAM, 0.45);
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(lockX, rowY + rowHeight / 2, 2.4 * fs, 0, Math.PI * 2);
+      ctx.arc(cursorX + 3 * fs, cy1, 2.7 * fs, 0, Math.PI * 2);
       ctx.stroke();
+      cursorX += 13 * fs;
     }
 
-    // Palette Preview (shifted right to make room)
-    const dotR = 2 * fs;
-    const gap = dotR * 2.4;
-    const totalDots = cfg.colors;
-    const startDotX = viewportX + 145 * fs;
-    for (let c = 0; c < totalDots; c++) {
+    // Intrinsic difficulty badge.
+    drawDifficultyBadge(ctx, cursorX, cy1, difficultyRating(cfg).key, fs, { alpha: isLocked ? 0.4 : 1 });
+
+    // Best score — right-aligned, alone on the top line.
+    ctx.font = `600 ${Math.round(13 * fs)}px ${SERIF}`;
+    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.18 : played ? 0.9 : 0.32);
+    ctx.textAlign = 'right';
+    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 16 : 10);
+    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, cy1);
+
+    // ── Bottom line: palette dots + pack · mode (larger, on its own line).
+    const dotR = 2.7 * fs;
+    const gap = dotR * 2.5;
+    ctx.textAlign = 'left';
+    const dotX0 = viewportX + 14 + dotR;
+    for (let c = 0; c < cfg.colors; c++) {
       const key = COLOR_KEYS[c];
-      const cx = startDotX + c * gap;
-      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.15 : 0.55);
+      ctx.fillStyle = hexToRgba(COLORS[key], isCurrent || cleared ? 0.95 : isLocked ? 0.18 : 0.6);
       ctx.beginPath();
-      ctx.arc(cx, rowY + rowHeight / 2, dotR, 0, Math.PI * 2);
+      ctx.arc(dotX0 + c * gap, cy2, dotR, 0, Math.PI * 2);
       ctx.fill();
     }
-
-    // Text details (e.g. Insects · Timed) if viewport width allows it
-    if (viewportW > 280 * fs) {
-      const detailPx = Math.round(10 * fs);
-      ctx.font = `400 ${detailPx}px ${SANS}`;
-      ctx.fillStyle = isCurrent ? GOLD : isLocked ? hexToRgba(CREAM, 0.2) : hexToRgba(CREAM, 0.45);
-      ctx.textAlign = 'left';
-      const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
-      const modeName = cfg.isSpeedMode ? 'Timed' : 'Classic';
-      ctx.fillText(`${packName} · ${modeName}`, viewportX + 190 * fs, rowY + rowHeight / 2);
-    }
-
-    // Best Score
-    const scorePx = Math.round(11 * fs);
-    ctx.font = `500 ${scorePx}px ${SERIF}`;
-    ctx.fillStyle = hexToRgba(CREAM, isLocked ? 0.15 : played ? 0.85 : 0.3);
-    ctx.textAlign = 'right';
-    const scoreRightX = viewportX + viewportW - (menuState.maxScrollY > 0 ? 18 : 12);
-    ctx.fillText(bestScore ? fmtInt(bestScore) : '—', scoreRightX, rowY + rowHeight / 2);
+    const packName = STENCIL_PACKS[cfg.stencilPack]?.name || cfg.stencilPack;
+    const modeName = cfg.isSpeedMode ? 'Timed' : 'Classic';
+    ctx.font = `400 ${Math.round(11.5 * fs)}px ${SANS}`;
+    ctx.fillStyle = isCurrent ? hexToRgba(GOLD, 0.85) : hexToRgba(CREAM, isLocked ? 0.2 : 0.55);
+    ctx.fillText(`${packName} · ${modeName}`, dotX0 + (cfg.colors - 1) * gap + dotR + 12 * fs, cy2);
 
     ctx.restore();
 
     // Register hit target with scrolled coordinates (if unlocked)
     if (!isLocked) {
-      menuState.hits.push({
-        x: viewportX,
-        y: rowY,
-        w: viewportW,
-        h: rowHeight,
-        action: 'pick-stage',
-        value: i
-      });
+      menuState.hits.push({ x: viewportX, y: rowY, w: viewportW, h: rowHeight, action: 'pick-stage', value: i });
     }
   }
   ctx.restore();
