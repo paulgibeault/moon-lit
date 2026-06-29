@@ -19,6 +19,8 @@ import {
   exploreState, ensureExplore, shuffleBoard, shuffleSettings, setSeeds, setOverride, loadSeedHistory,
 } from '../seed-explore.js';
 import { SEED_PATTERNS } from '../seed-pattern.js';
+import { loadTelemetry } from '../telemetry.js';
+import { seedTierMap, seedKey } from '../difficulty.js';
 
 const PANEL_BG    = 'rgba(20, 26, 50, 0.94)';
 const SCRIM_BG    = 'rgba(10, 15, 34, 0.62)';
@@ -27,6 +29,7 @@ const BORDER_SOFT = `rgba(232, 183, 112, 0.18)`;
 const RULE        = `rgba(232, 183, 112, 0.16)`;
 const CREAM       = PALETTE.moon;
 const GOLD        = PALETTE.moonHalo;
+const EMBER       = '#e0796b';   // warm danger tint — flags a lost-cause seed
 
 const menuState = {
   panel: 'hidden',     // 'hidden' | 'root' | 'records' | 'stages' | 'puzzles' | 'options' | 'explore' | 'seeds'
@@ -1619,6 +1622,9 @@ function drawSeedsPanel(ctx, layout, game, settings) {
 
   const padX = 20;
   const history = loadSeedHistory();
+  // Difficulty tier per seed pair, from the richer telemetry log (it carries
+  // endPhase, so a repeatedly-abandoned seed reads as the lost-cause top tier).
+  const tierMap = seedTierMap(loadTelemetry());
 
   const subPx = Math.max(11, Math.round(11 * fs));
   ctx.save();
@@ -1654,19 +1660,25 @@ function drawSeedsPanel(ctx, layout, game, settings) {
     const rowY = viewportY + i * rowHeight - menuState.scrollY;
     if (rowY + rowHeight < viewportY || rowY > viewportY + viewportH) continue;
     const e = history[i];
+    const isLostCause = seedKey(e) ? tierMap.get(seedKey(e)) === 'lost-cause' : false;
 
     ctx.save();
-    ctx.fillStyle = hexToRgba(CREAM, e.won ? 0.05 : 0.025);
+    ctx.fillStyle = isLostCause ? hexToRgba(EMBER, 0.06) : hexToRgba(CREAM, e.won ? 0.05 : 0.025);
     roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
     ctx.fill();
-    ctx.strokeStyle = e.won ? hexToRgba(GOLD, 0.4) : hexToRgba(CREAM, 0.12);
+    ctx.strokeStyle = isLostCause ? hexToRgba(EMBER, 0.5) : e.won ? hexToRgba(GOLD, 0.4) : hexToRgba(CREAM, 0.12);
     ctx.lineWidth = 1;
     roundedRectPath(ctx, viewportX, rowY + 2, viewportW, rowHeight - 4, 6);
     ctx.stroke();
 
-    // Win star / loss dot.
+    // Win star / loss dot — a lost cause gets a filled ember dot.
     if (e.won) drawStar(ctx, viewportX + 14, rowY + rowHeight / 2, 3.4 * fs, GOLD);
-    else {
+    else if (isLostCause) {
+      ctx.fillStyle = hexToRgba(EMBER, 0.85);
+      ctx.beginPath();
+      ctx.arc(viewportX + 14, rowY + rowHeight / 2, 2.8 * fs, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
       ctx.strokeStyle = hexToRgba(CREAM, 0.4);
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -1681,11 +1693,23 @@ function drawSeedsPanel(ctx, layout, game, settings) {
     ctx.textAlign = 'left';
     ctx.fillText(fmtInt(e.score | 0), viewportX + 28, rowY + rowHeight * 0.38);
 
-    // Summary line.
+    // Summary line. Lost causes lead with a red tag, then a compact config.
     const packName = STENCIL_PACKS[e.stencilPack]?.name || e.stencilPack || '';
+    const summaryY = rowY + rowHeight * 0.7;
+    let summaryX = viewportX + 28;
+    if (isLostCause) {
+      ctx.fillStyle = hexToRgba(EMBER, 0.95);
+      ctx.font = `700 ${Math.round(9.5 * fs)}px ${SANS}`;
+      const tag = 'LOST CAUSE';
+      ctx.fillText(tag, summaryX, summaryY);
+      summaryX += ctx.measureText(tag).width + 6;
+    }
     ctx.fillStyle = hexToRgba(CREAM, 0.5);
     ctx.font = `400 ${Math.round(9.5 * fs)}px ${SANS}`;
-    ctx.fillText(`${e.colors} colors · ${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`, viewportX + 28, rowY + rowHeight * 0.7);
+    const summary = isLostCause
+      ? `· ${e.colors}c ${e.isSpeedMode ? 'Timed' : 'Classic'}`
+      : `${e.colors} colors · ${e.isSpeedMode ? 'Timed' : 'Classic'}${packName ? ' · ' + packName : ''}`;
+    ctx.fillText(summary, summaryX, summaryY);
 
     // Seeds, right-aligned.
     ctx.fillStyle = hexToRgba(CREAM, 0.45);
