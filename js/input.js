@@ -1,7 +1,7 @@
 import { setAim, fire, launcherTip, PHASE } from './game.js';
 import {
   handleMenuPointerDown, handleMenuPointerMove, handleMenuPointerUp, isMenuPanelOpen,
-  openMenu, closeMenu,
+  handleMenuWheel, rebaseMenuDrag, openMenu, closeMenu,
 } from './renderer/menu.js';
 import { getEndOverlayHit, getQuickRestartButtonRect, QUICK_RESTART_HIT_PAD } from './renderer/hud.js';
 
@@ -109,12 +109,24 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   // an end-screen dismiss can't accidentally fire in the new game.
   let aimingPointerId = null;
 
+  // Pointers currently down on an open menu, keyed by id → clientY. The menu
+  // list scrolls from the CENTROID of these, so a two-finger drag works and
+  // lifting one of two fingers re-anchors instead of jumping the list.
+  const menuPointers = new Map();
+  const menuCentroidY = (fallback) => {
+    if (menuPointers.size === 0) return fallback;
+    let sum = 0;
+    for (const v of menuPointers.values()) sum += v;
+    return sum / menuPointers.size;
+  };
+
   const onPointerMove = (e) => {
     bump();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
     if (isMenuPanelOpen()) {
-      if (handleMenuPointerMove(localX, localY, e.clientY)) {
+      if (menuPointers.has(e.pointerId)) menuPointers.set(e.pointerId, e.clientY);
+      if (handleMenuPointerMove(localX, localY, menuCentroidY(e.clientY))) {
         fireMenuChange();
       }
       e.preventDefault();
@@ -128,13 +140,19 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
     bump();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
-    if (handleMenuPointerDown(localX, localY, e.clientY)) {
+    // While the menu is open, register this pointer for centroid scrolling so a
+    // second finger re-anchors the drag (handleMenuPointerDown re-bases off the
+    // centroid we pass) instead of fighting the first.
+    const menuWasOpen = isMenuPanelOpen();
+    if (menuWasOpen) menuPointers.set(e.pointerId, e.clientY);
+    if (handleMenuPointerDown(localX, localY, menuCentroidY(e.clientY))) {
       aimingPointerId = e.pointerId;
       canvas.setPointerCapture?.(e.pointerId);
       fireMenuChange();
       e.preventDefault();
       return;
     }
+    if (menuWasOpen) menuPointers.delete(e.pointerId);
     const game = getGame();
     const layout = getLayout();
     if (game && layout && game.phase !== PHASE.WIN && game.phase !== PHASE.GAME_OVER && !game.showModeIntroCard) {
@@ -190,6 +208,15 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
         canvas.releasePointerCapture?.(e.pointerId);
         aimingPointerId = null;
       }
+      menuPointers.delete(e.pointerId);
+      // A finger remains down: keep the drag alive and just re-anchor it to the
+      // new centroid, so lifting one of two fingers doesn't jump or end scroll.
+      if (menuPointers.size > 0) {
+        rebaseMenuDrag(menuCentroidY(e.clientY));
+        fireMenuChange();
+        e.preventDefault();
+        return;
+      }
       const game = getGame();
       if (handleMenuPointerUp(localX, localY, menuActions, game)) {
         fireMenuChange();
@@ -217,6 +244,20 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
 
   const onPointerCancel = (e) => {
     if (aimingPointerId === e.pointerId) aimingPointerId = null;
+    if (menuPointers.delete(e.pointerId) && menuPointers.size > 0) {
+      rebaseMenuDrag(menuCentroidY(e.clientY));
+    }
+  };
+
+  // Mouse wheel / trackpad scroll over an open menu list. A two-finger trackpad
+  // swipe arrives here as wheel deltas (deltaMode 1 = lines → scale to px).
+  const onWheel = (e) => {
+    if (!isMenuPanelOpen()) return;
+    const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    if (handleMenuWheel(dy)) {
+      fireMenuChange();
+      e.preventDefault();
+    }
   };
 
   const onKeyDown = (e) => {
@@ -245,6 +286,7 @@ export function attachInput(canvas, getGame, getLayout, callbacks = {}) {
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointerup', onPointerUp);
   canvas.addEventListener('pointercancel', onPointerCancel);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('resize', refreshRect);
   window.addEventListener('scroll', refreshRect, { passive: true });
   window.addEventListener('keydown', onKeyDown);

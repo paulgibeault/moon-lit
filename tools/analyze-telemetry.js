@@ -19,6 +19,7 @@
 // existing tools/solver.js + tools/measure-difficulty.js.
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { fairnessLabel, TIER_RANK } from '../js/difficulty.js';
 
 // ─── args ────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -96,16 +97,9 @@ function difficultyIndex(rows) {
   return Math.round(100 * (0.5 + confidence * (raw - 0.5)));
 }
 
-function fairnessLabel(rows) {
-  const plays = rows.length;
-  const wins = rows.filter(r => r.won).length;
-  const winRate = wins / plays;
-  if (wins === 0) return 'unbeaten';   // 🏆 hardest — a trophy seed (confirm solvable before authoring)
-  if (winRate > 0.9) return 'trivial';
-  if (winRate >= 0.15 && winRate <= 0.6) return 'challenging';  // the sweet spot
-  if (winRate < 0.15) return 'brutal';
-  return 'easy';
-}
+// Difficulty tiers (incl. the lost-cause top tier) live in js/difficulty.js so
+// the in-app Seeds panel and this offline report agree. See that file for the
+// tier definitions.
 
 function summarize(rows) {
   const wins = rows.filter(r => r.won);
@@ -146,7 +140,10 @@ function rank(map, label) {
     if (rows.length < opts.minPlays) continue;
     out.push({ key, ...summarize(rows) });
   }
-  out.sort((a, b) => b.difficulty - a.difficulty || b.plays - a.plays);
+  out.sort((a, b) =>
+    b.difficulty - a.difficulty ||
+    TIER_RANK[a.fairness] - TIER_RANK[b.fairness] ||
+    b.plays - a.plays);
   return out;
 }
 
@@ -162,25 +159,30 @@ console.log(`\n▸ Hardest CONFIG signatures  (colors/rows/descent/mode/blocker%
 if (!bySig.length) console.log('  (none meet the play threshold)');
 for (const g of bySig.slice(0, opts.top)) {
   console.log(`  [${String(g.difficulty).padStart(3)}] ${g.fairness.padEnd(12)} ${g.key.padEnd(22)} ` +
-    `${g.wins}/${g.plays} won  med ${g.medShotsToWin ?? '–'} shots / ${g.medDurationSec}s${g.wins === 0 ? '  🏆' : ''}`);
+    `${g.wins}/${g.plays} won  med ${g.medShotsToWin ?? '–'} shots / ${g.medDurationSec}s${g.fairness === 'lost-cause' ? '  💀' : g.wins === 0 ? '  🏆' : ''}`);
 }
 
 const seedRows = games.filter(g => seedPair(g));
 const bySeed = rank(groupBy(seedRows, seedPair));   // sorted hardest → easiest
-const isHard = (g) => g.fairness === 'unbeaten' || g.fairness === 'challenging' || g.fairness === 'brutal';
+const isHard = (g) => g.fairness === 'lost-cause' || g.fairness === 'unbeaten' || g.fairness === 'challenging' || g.fairness === 'brutal';
 const isEasy = (g) => g.fairness === 'easy' || g.fairness === 'trivial';
 
-const unbeaten = bySeed.filter(g => g.wins === 0);
+const lostCauses = bySeed.filter(g => g.fairness === 'lost-cause');
+const unbeaten = bySeed.filter(g => g.fairness === 'unbeaten');
 console.log(`\n▸ Curation candidates — hardest SEED PAIRS  (settingsSeed:boardSeed, ≥${opts.minPlays} plays)`);
+if (lostCauses.length) {
+  console.log(`  💀 ${lostCauses.length} LOST CAUSE${lostCauses.length > 1 ? 'S' : ''} — the hardest tier: seeds you tried again and again`);
+  console.log(`     and abandoned every time. Confirm each is actually solvable before authoring it.`);
+}
 if (unbeaten.length) {
-  console.log(`  🏆 ${unbeaten.length} UNBEATEN seed${unbeaten.length > 1 ? 's' : ''} — your toughest. These beat you; wear it as a badge,`);
+  console.log(`  🏆 ${unbeaten.length} UNBEATEN seed${unbeaten.length > 1 ? 's' : ''} — never won, but not yet a lost cause; wear it as a badge,`);
   console.log(`     then confirm each is actually solvable before authoring it into a puzzle.`);
 }
 console.log('  late-level material — verify solvability with the solver before promoting.');
 if (!bySeed.length) console.log('  (no seed pairs meet the play threshold — play more Explore variants)');
 for (const g of bySeed.filter(isHard).slice(0, opts.top)) {
   const [s, b] = g.key.split(':');
-  const flag = g.wins === 0 ? '  🏆 UNBEATEN' : '';
+  const flag = g.fairness === 'lost-cause' ? '  💀 LOST CAUSE' : g.wins === 0 ? '  🏆 UNBEATEN' : '';
   console.log(`  [${String(g.difficulty).padStart(3)}] ${g.fairness.padEnd(12)} s#${s} b#${b}  ` +
     `${g.wins}/${g.plays} won  rows-left-on-loss ${g.avgRowsLeftOnLoss ?? '–'}${flag}`);
 }
