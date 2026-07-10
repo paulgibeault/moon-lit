@@ -59,8 +59,11 @@ function saveProgress(game) {
   const level = game.isPuzzleMode ? game.puzzleId : game.level;
   Arcade.state.set(key, { level });
 }
+// The all-time best is just the top of the scores list — Arcade.scores.add
+// already rolls that up, so there's no separate counter to keep in sync.
 function loadBest() {
-  return Arcade.state.get(BEST_KEY) | 0;
+  const best = Arcade.scores.best(SCORES_CATEGORY);
+  return best ? (best.score | 0) : 0;
 }
 function loadGameState(mode) {
   const m = mode || Arcade.state.get('gameMode') || 'campaign';
@@ -77,14 +80,6 @@ function saveGameState(g) {
   } catch (e) {
     console.warn(`[${GAME_ID}] failed to persist game state`, e);
   }
-}
-function commitBestIfHigher(score) {
-  const prev = loadBest();
-  if (score > prev) {
-    Arcade.state.set(BEST_KEY, score | 0);
-    return true;
-  }
-  return false;
 }
 function clearGameState() {
   const m = Arcade.state.get('gameMode') || 'campaign';
@@ -128,6 +123,18 @@ Arcade.state.migrate('v2', () => {
     }
     Arcade.state.remove(GAME_STATE_KEY);
   }
+});
+
+// v3: the standalone `bestScore` key was a redundant cache of the top of the
+// scores list — fold it in (only if it somehow exceeds the tracked best,
+// e.g. a score logged before Arcade.scores.add existed) and drop the key.
+Arcade.state.migrate('v3', () => {
+  const legacyBest = Arcade.state.get(BEST_KEY) | 0;
+  const currentBest = (Arcade.scores.best(SCORES_CATEGORY) || {}).score | 0;
+  if (legacyBest > currentBest) {
+    Arcade.scores.add(SCORES_CATEGORY, { score: legacyBest, meta: { migrated: true } });
+  }
+  Arcade.state.remove(BEST_KEY);
 });
 
 const gameMode = Arcade.state.get('gameMode') || 'campaign';
@@ -504,6 +511,10 @@ function recordOutcome(g, won) {
   // tracks games that actually scored.
   if (score <= 0) return;
 
+  // Snapshot the pre-outcome best before scores.add below folds this run in,
+  // so we can tell whether this run set a new one.
+  const prevBest = loadBest();
+
   if (g.gameMode === 'seed') {
     // Seed Explorer: a completed (won or lost) variant is mined into the Seeds
     // history so it can be replayed. Skipped/un-started variants never reach
@@ -595,7 +606,7 @@ function recordOutcome(g, won) {
     });
   }
 
-  const wasBest = commitBestIfHigher(score);
+  const wasBest = score > prevBest;
   if (wasBest) {
     bestScore = score;
     settings = readSettings();
