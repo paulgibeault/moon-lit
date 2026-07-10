@@ -791,6 +791,14 @@ Arcade.onSettingsChange(() => {
   requestFrame();
 });
 
+// Live-update the win-card name if the launcher profile changes mid-session,
+// instead of only picking it up at boot or on a save import.
+Arcade.player.onChange(() => {
+  playerName = Arcade.player.name() || '';
+  settings = readSettings();
+  requestFrame();
+});
+
 window.addEventListener('resize', () => { resize(); requestFrame(); });
 attachInput(canvas, () => game, () => layout, {
   onWinClick: nextLevel,
