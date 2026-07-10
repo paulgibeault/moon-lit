@@ -411,6 +411,19 @@ function syncButtons(root) {
   });
 }
 
+// Collapsed/expanded state per group, namespaced under the game's Arcade
+// state instead of raw localStorage keys — `admin-group-collapsed-<title>`
+// isn't namespaced by gameId, so it collides with the same panel in sibling
+// games on the shared origin.
+function loadCollapsed() {
+  return Arcade.state.get('adminCollapsed') || {};
+}
+function setCollapsed(key, collapsed) {
+  const c = loadCollapsed();
+  c[key] = collapsed;
+  Arcade.state.set('adminCollapsed', c, { exportable: false });
+}
+
 let root = null;
 
 function buildPanel() {
@@ -447,9 +460,8 @@ function buildPanel() {
     const g = document.createElement('div');
     g.className = 'ba-group';
     
-    // Check local storage for group expanded states
-    const collapsedKey = `admin-group-collapsed-${group.title}`;
-    const isCollapsed = localStorage.getItem(collapsedKey) === 'true';
+    // Check persisted group expanded states
+    const isCollapsed = !!loadCollapsed()[group.title];
     if (isCollapsed) {
       g.classList.add('collapsed');
     }
@@ -459,7 +471,7 @@ function buildPanel() {
     header.textContent = group.title;
     header.addEventListener('click', () => {
       g.classList.toggle('collapsed');
-      localStorage.setItem(collapsedKey, g.classList.contains('collapsed'));
+      setCollapsed(group.title, g.classList.contains('collapsed'));
     });
     g.appendChild(header);
 
@@ -500,8 +512,7 @@ function buildPanel() {
   // System controls group
   const sysGroup = document.createElement('div');
   sysGroup.className = 'ba-group';
-  const sysCollapsedKey = 'admin-group-collapsed-system';
-  if (localStorage.getItem(sysCollapsedKey) === 'true') {
+  if (loadCollapsed().system) {
     sysGroup.classList.add('collapsed');
   }
   
@@ -524,7 +535,7 @@ function buildPanel() {
   `;
   sysGroup.querySelector('.ba-group-header').addEventListener('click', () => {
     sysGroup.classList.toggle('collapsed');
-    localStorage.setItem(sysCollapsedKey, sysGroup.classList.contains('collapsed'));
+    setCollapsed('system', sysGroup.classList.contains('collapsed'));
   });
 
   // Handedness buttons event listeners
@@ -629,7 +640,27 @@ function togglePanel() {
   ensurePanel().classList.toggle('ba-hidden');
 }
 
+// One-shot: fold any pre-existing raw `admin-group-collapsed-*` keys (left
+// over from before this state was namespaced) into 'adminCollapsed', then
+// remove them so they stop sitting unnamespaced on the shared origin.
+function migrateLegacyCollapsedKeys() {
+  Arcade.state.migrate('admin-panel-v1', () => {
+    const collapsed = loadCollapsed();
+    const legacyTitles = [...PARAM_GROUPS.map(g => g.title), 'system'];
+    for (const title of legacyTitles) {
+      const legacyKey = `admin-group-collapsed-${title}`;
+      const raw = localStorage.getItem(legacyKey);
+      if (raw !== null) {
+        collapsed[title] = raw === 'true';
+        localStorage.removeItem(legacyKey);
+      }
+    }
+    Arcade.state.set('adminCollapsed', collapsed, { exportable: false });
+  });
+}
+
 export function initAdminPanel() {
+  migrateLegacyCollapsedKeys();
   const params = new URLSearchParams(window.location.search);
   if (params.get('admin') === '1') {
     ensurePanel();

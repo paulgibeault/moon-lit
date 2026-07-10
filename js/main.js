@@ -59,13 +59,16 @@ function saveProgress(game) {
   const level = game.isPuzzleMode ? game.puzzleId : game.level;
   Arcade.state.set(key, { level });
 }
+// The all-time best is just the top of the scores list — Arcade.scores.add
+// already rolls that up, so there's no separate counter to keep in sync.
 function loadBest() {
-  return Arcade.state.get(BEST_KEY) | 0;
+  const best = Arcade.scores.best(SCORES_CATEGORY);
+  return best ? (best.score | 0) : 0;
 }
 function loadGameState(mode) {
   const m = mode || Arcade.state.get('gameMode') || 'campaign';
   const key = `gameState_${m}`;
-  return Arcade.state.get(key) || Arcade.state.get(GAME_STATE_KEY);
+  return Arcade.state.get(key);
 }
 function saveGameState(g) {
   if (!g) return;
@@ -74,23 +77,13 @@ function saveGameState(g) {
     const key = `gameState_${m}`;
     const serialized = serializeGame(g);
     Arcade.state.set(key, serialized);
-    Arcade.state.set(GAME_STATE_KEY, serialized);
   } catch (e) {
     console.warn(`[${GAME_ID}] failed to persist game state`, e);
   }
 }
-function commitBestIfHigher(score) {
-  const prev = loadBest();
-  if (score > prev) {
-    Arcade.state.set(BEST_KEY, score | 0);
-    return true;
-  }
-  return false;
-}
 function clearGameState() {
   const m = Arcade.state.get('gameMode') || 'campaign';
   Arcade.state.remove(`gameState_${m}`);
-  Arcade.state.remove(GAME_STATE_KEY);
 }
 
 // Migration sentinel: nothing to migrate yet, but acceptance §13 looks for
@@ -98,33 +91,53 @@ function clearGameState() {
 // schema bumps slot in cleanly.
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
-// Initialize state keys and handle migrations
-const legacySaved = Arcade.state.get(GAME_STATE_KEY);
-if (!Arcade.state.get('gameMode')) {
-  if (legacySaved && legacySaved.isPuzzleMode) {
-    Arcade.state.set('gameMode', 'puzzle');
-  } else if (Arcade.state.get('speedMode')) {
-    Arcade.state.set('gameMode', 'speed');
-  } else {
-    Arcade.state.set('gameMode', 'campaign');
+// v2: fold the legacy non-namespaced `gameState`/`progress` keys into their
+// mode-specific keys, then delete the legacy keys — run-once, so this never
+// re-checks the migrated shape on later loads, and the legacy keys stop
+// doubling snapshot bytes in storage and exports.
+Arcade.state.migrate('v2', () => {
+  const legacySaved = Arcade.state.get(GAME_STATE_KEY);
+  if (!Arcade.state.get('gameMode')) {
+    if (legacySaved && legacySaved.isPuzzleMode) {
+      Arcade.state.set('gameMode', 'puzzle');
+    } else if (Arcade.state.get('speedMode')) {
+      Arcade.state.set('gameMode', 'speed');
+    } else {
+      Arcade.state.set('gameMode', 'campaign');
+    }
   }
-}
+  const mode = Arcade.state.get('gameMode') || 'campaign';
+
+  const legacyProgress = Arcade.state.get(PROGRESS_KEY);
+  if (legacyProgress && !Arcade.state.get('progress_campaign')) {
+    Arcade.state.set('progress_campaign', legacyProgress);
+  }
+  Arcade.state.remove(PROGRESS_KEY);
+
+  if (legacySaved) {
+    if (!Arcade.state.get(`gameState_${mode}`)) {
+      const isPuzzle = legacySaved.isPuzzleMode;
+      const isSpeed = !!Arcade.state.get('speedMode');
+      const matchedMode = isPuzzle ? 'puzzle' : isSpeed ? 'speed' : 'campaign';
+      Arcade.state.set(`gameState_${matchedMode}`, legacySaved);
+    }
+    Arcade.state.remove(GAME_STATE_KEY);
+  }
+});
+
+// v3: the standalone `bestScore` key was a redundant cache of the top of the
+// scores list — fold it in (only if it somehow exceeds the tracked best,
+// e.g. a score logged before Arcade.scores.add existed) and drop the key.
+Arcade.state.migrate('v3', () => {
+  const legacyBest = Arcade.state.get(BEST_KEY) | 0;
+  const currentBest = (Arcade.scores.best(SCORES_CATEGORY) || {}).score | 0;
+  if (legacyBest > currentBest) {
+    Arcade.scores.add(SCORES_CATEGORY, { score: legacyBest, meta: { migrated: true } });
+  }
+  Arcade.state.remove(BEST_KEY);
+});
+
 const gameMode = Arcade.state.get('gameMode') || 'campaign';
-
-// Migrate legacy progress to progress_campaign
-const legacyProgress = Arcade.state.get(PROGRESS_KEY);
-if (legacyProgress && !Arcade.state.get('progress_campaign')) {
-  Arcade.state.set('progress_campaign', legacyProgress);
-}
-
-// Migrate legacy gameState to the specific mode's gameState key if it matches
-if (legacySaved && !Arcade.state.get(`gameState_${gameMode}`)) {
-  const isPuzzle = legacySaved.isPuzzleMode;
-  const isSpeed = !!Arcade.state.get('speedMode');
-  const matchedMode = isPuzzle ? 'puzzle' : isSpeed ? 'speed' : 'campaign';
-  Arcade.state.set(`gameState_${matchedMode}`, legacySaved);
-}
-
 const saved = loadGameState(gameMode);
 
 if (!Arcade.state.get('customStencilPack')) {
@@ -168,7 +181,14 @@ let lastReportedMs = sessionTimer.elapsedMs();
 
 let layout = null;
 let game = null;
-let suspended = false;
+// Two independent suspend sources: launcherSuspended is only ever touched by
+// onSuspend/onResume (a deliberate launcher-driven hide), docHidden tracks
+// the DOM's own visibility. The rAF loop runs only when both are false, and
+// browser lifecycle handlers may wake the loop only when !launcherSuspended
+// — otherwise a tab-switch-and-back while the launcher has us suspended
+// would resurrect a hidden iframe's animation loop.
+let launcherSuspended = false;
+let docHidden = document.visibilityState === 'hidden';
 let lastTime = 0;
 let rafId = 0;
 let bestScore = loadBest();
@@ -491,6 +511,10 @@ function recordOutcome(g, won) {
   // tracks games that actually scored.
   if (score <= 0) return;
 
+  // Snapshot the pre-outcome best before scores.add below folds this run in,
+  // so we can tell whether this run set a new one.
+  const prevBest = loadBest();
+
   if (g.gameMode === 'seed') {
     // Seed Explorer: a completed (won or lost) variant is mined into the Seeds
     // history so it can be replayed. Skipped/un-started variants never reach
@@ -582,7 +606,7 @@ function recordOutcome(g, won) {
     });
   }
 
-  const wasBest = commitBestIfHigher(score);
+  const wasBest = score > prevBest;
   if (wasBest) {
     bestScore = score;
     settings = readSettings();
@@ -612,7 +636,7 @@ function isQuiescent() {
 
 function frame(now) {
   lastFrameTimeMs = performance.now();
-  if (suspended || !layout) { rafId = 0; return; }
+  if (launcherSuspended || docHidden || !layout) { rafId = 0; return; }
   const limitMs = targetFrameMs();
   if (limitMs && (now - lastFrameMs) < limitMs - 1) {
     rafId = requestAnimationFrame(frame);
@@ -652,7 +676,7 @@ function frame(now) {
 // callback. Anything that mutates view-relevant state while the loop is
 // asleep MUST call this so the change is actually drawn.
 function requestFrame() {
-  if (suspended) return;
+  if (launcherSuspended || docHidden) return;
   if (rafId) {
     if (performance.now() - lastFrameTimeMs > 500) {
       console.warn(`[${GAME_ID}] rAF loop appears stuck (rafId=${rafId}, last frame ${Math.round(performance.now() - lastFrameTimeMs)}ms ago). Forcing wake-up.`);
@@ -668,7 +692,7 @@ function requestFrame() {
 // requestAnimationFrame ID from the browser before scheduling a new one.
 // Essential for resuming reliably after device locks / tab suspensions.
 function forceRequestFrame() {
-  if (suspended) return;
+  if (launcherSuspended || docHidden) return;
   if (rafId) {
     cancelAnimationFrame(rafId);
     rafId = 0;
@@ -701,13 +725,13 @@ function stopLoop() {
 }
 
 Arcade.onSuspend(() => {
-  suspended = true;
+  launcherSuspended = true;
   stopLoop();
   flushPersist();
 });
 Arcade.onResume(() => {
-  suspended = false;
-  forceRequestFrame();
+  launcherSuspended = false;
+  if (!docHidden) forceRequestFrame();
 });
 window.addEventListener('pagehide', () => {
   flushPersist();
@@ -717,25 +741,26 @@ window.addEventListener('pagehide', () => {
 // rAF outright rather than relying on the browser's hidden-tab throttle, and
 // wake the loop the moment we're visible again. (Browsers already throttle
 // rAF in hidden tabs, but explicitly cancelling drops us off the animation
-// budget entirely and lets the system schedule other work.)
+// budget entirely and lets the system schedule other work.) Gated on
+// !launcherSuspended so a tab-switch-and-back doesn't resurrect a game the
+// launcher deliberately suspended.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
+  docHidden = document.visibilityState === 'hidden';
+  if (docHidden) {
     flushPersist();
     stopLoop();
-  } else {
-    suspended = false;
+  } else if (!launcherSuspended) {
     forceRequestFrame();
   }
 });
 
 window.addEventListener('pageshow', () => {
-  suspended = false;
-  forceRequestFrame();
+  docHidden = document.visibilityState === 'hidden';
+  if (!launcherSuspended) forceRequestFrame();
 });
 
 window.addEventListener('focus', () => {
-  suspended = false;
-  forceRequestFrame();
+  if (!launcherSuspended && !docHidden) forceRequestFrame();
 });
 
 // When the launcher imports a save, re-hydrate in place. Reset HUD tween
@@ -744,6 +769,10 @@ Arcade.onStateReplaced(() => {
   bestScore = loadBest();
   playerName = Arcade.player.name() || '';
   bootstrapGame();
+  // Re-baseline the play-time accounting against the imported session clock —
+  // otherwise the next recordOutcome() diffs against a stale pre-import
+  // baseline and either undercounts or spuriously inflates totalPlayMs.
+  lastReportedMs = sessionTimer.elapsedMs();
   settings = readSettings();
   resetHudState(game.score, bestScore);
   refreshMenuData();
@@ -759,6 +788,14 @@ Arcade.onSettingsChange(() => {
       ? SYSTEM_OVERRIDES.handedness
       : settings.handedness;
   }
+  requestFrame();
+});
+
+// Live-update the win-card name if the launcher profile changes mid-session,
+// instead of only picking it up at boot or on a save import.
+Arcade.player.onChange(() => {
+  playerName = Arcade.player.name() || '';
+  settings = readSettings();
   requestFrame();
 });
 

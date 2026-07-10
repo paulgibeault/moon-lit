@@ -14,7 +14,7 @@ import { seededConfig, levelConfig } from './constants.js';
 import { puzzleConfig } from './puzzles.js';
 
 const LOG_KEY = 'telemetryLog';
-const LOG_CAP = 500;            // ring buffer; most-recent first
+const LOG_CAP = 150;            // ring buffer; most-recent first
 export const TELEMETRY_SCHEMA = 1;
 
 // ─── Store ───────────────────────────────────────────────────────────────────
