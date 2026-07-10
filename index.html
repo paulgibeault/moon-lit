@@ -17,8 +17,12 @@
     // Moon-lit does not register a service worker. A SW from the launcher
     // (or a sibling game's `./ago`) may still be registered on this origin
     // from an earlier dev session and intercept fetches. Wipe it on every
-    // load so dev sessions stay self-healing.
-    if ('serviceWorker' in navigator) {
+    // load so dev sessions stay self-healing. Loopback-only: getRegistrations()/
+    // caches are origin-scoped, so doing this in production would also unregister
+    // the launcher's own service worker and delete its caches.
+    var isLoopback = ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
+      location.hostname.startsWith('127.');
+    if (isLoopback && 'serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations()
         .then(rs => rs.forEach(r => r.unregister()))
         .catch(() => {});
