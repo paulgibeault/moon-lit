@@ -174,7 +174,14 @@ let lastReportedMs = sessionTimer.elapsedMs();
 
 let layout = null;
 let game = null;
-let suspended = false;
+// Two independent suspend sources: launcherSuspended is only ever touched by
+// onSuspend/onResume (a deliberate launcher-driven hide), docHidden tracks
+// the DOM's own visibility. The rAF loop runs only when both are false, and
+// browser lifecycle handlers may wake the loop only when !launcherSuspended
+// — otherwise a tab-switch-and-back while the launcher has us suspended
+// would resurrect a hidden iframe's animation loop.
+let launcherSuspended = false;
+let docHidden = document.visibilityState === 'hidden';
 let lastTime = 0;
 let rafId = 0;
 let bestScore = loadBest();
@@ -618,7 +625,7 @@ function isQuiescent() {
 
 function frame(now) {
   lastFrameTimeMs = performance.now();
-  if (suspended || !layout) { rafId = 0; return; }
+  if (launcherSuspended || docHidden || !layout) { rafId = 0; return; }
   const limitMs = targetFrameMs();
   if (limitMs && (now - lastFrameMs) < limitMs - 1) {
     rafId = requestAnimationFrame(frame);
@@ -658,7 +665,7 @@ function frame(now) {
 // callback. Anything that mutates view-relevant state while the loop is
 // asleep MUST call this so the change is actually drawn.
 function requestFrame() {
-  if (suspended) return;
+  if (launcherSuspended || docHidden) return;
   if (rafId) {
     if (performance.now() - lastFrameTimeMs > 500) {
       console.warn(`[${GAME_ID}] rAF loop appears stuck (rafId=${rafId}, last frame ${Math.round(performance.now() - lastFrameTimeMs)}ms ago). Forcing wake-up.`);
@@ -674,7 +681,7 @@ function requestFrame() {
 // requestAnimationFrame ID from the browser before scheduling a new one.
 // Essential for resuming reliably after device locks / tab suspensions.
 function forceRequestFrame() {
-  if (suspended) return;
+  if (launcherSuspended || docHidden) return;
   if (rafId) {
     cancelAnimationFrame(rafId);
     rafId = 0;
@@ -707,13 +714,13 @@ function stopLoop() {
 }
 
 Arcade.onSuspend(() => {
-  suspended = true;
+  launcherSuspended = true;
   stopLoop();
   flushPersist();
 });
 Arcade.onResume(() => {
-  suspended = false;
-  forceRequestFrame();
+  launcherSuspended = false;
+  if (!docHidden) forceRequestFrame();
 });
 window.addEventListener('pagehide', () => {
   flushPersist();
@@ -723,25 +730,26 @@ window.addEventListener('pagehide', () => {
 // rAF outright rather than relying on the browser's hidden-tab throttle, and
 // wake the loop the moment we're visible again. (Browsers already throttle
 // rAF in hidden tabs, but explicitly cancelling drops us off the animation
-// budget entirely and lets the system schedule other work.)
+// budget entirely and lets the system schedule other work.) Gated on
+// !launcherSuspended so a tab-switch-and-back doesn't resurrect a game the
+// launcher deliberately suspended.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
+  docHidden = document.visibilityState === 'hidden';
+  if (docHidden) {
     flushPersist();
     stopLoop();
-  } else {
-    suspended = false;
+  } else if (!launcherSuspended) {
     forceRequestFrame();
   }
 });
 
 window.addEventListener('pageshow', () => {
-  suspended = false;
-  forceRequestFrame();
+  docHidden = document.visibilityState === 'hidden';
+  if (!launcherSuspended) forceRequestFrame();
 });
 
 window.addEventListener('focus', () => {
-  suspended = false;
-  forceRequestFrame();
+  if (!launcherSuspended && !docHidden) forceRequestFrame();
 });
 
 // When the launcher imports a save, re-hydrate in place. Reset HUD tween
