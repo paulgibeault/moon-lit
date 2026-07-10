@@ -758,6 +758,10 @@ Arcade.onStateReplaced(() => {
   bestScore = loadBest();
   playerName = Arcade.player.name() || '';
   bootstrapGame();
+  // Re-baseline the play-time accounting against the imported session clock —
+  // otherwise the next recordOutcome() diffs against a stale pre-import
+  // baseline and either undercounts or spuriously inflates totalPlayMs.
+  lastReportedMs = sessionTimer.elapsedMs();
   settings = readSettings();
   resetHudState(game.score, bestScore);
   refreshMenuData();
