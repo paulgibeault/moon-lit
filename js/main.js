@@ -65,7 +65,7 @@ function loadBest() {
 function loadGameState(mode) {
   const m = mode || Arcade.state.get('gameMode') || 'campaign';
   const key = `gameState_${m}`;
-  return Arcade.state.get(key) || Arcade.state.get(GAME_STATE_KEY);
+  return Arcade.state.get(key);
 }
 function saveGameState(g) {
   if (!g) return;
@@ -74,7 +74,6 @@ function saveGameState(g) {
     const key = `gameState_${m}`;
     const serialized = serializeGame(g);
     Arcade.state.set(key, serialized);
-    Arcade.state.set(GAME_STATE_KEY, serialized);
   } catch (e) {
     console.warn(`[${GAME_ID}] failed to persist game state`, e);
   }
@@ -90,7 +89,6 @@ function commitBestIfHigher(score) {
 function clearGameState() {
   const m = Arcade.state.get('gameMode') || 'campaign';
   Arcade.state.remove(`gameState_${m}`);
-  Arcade.state.remove(GAME_STATE_KEY);
 }
 
 // Migration sentinel: nothing to migrate yet, but acceptance §13 looks for
@@ -98,33 +96,41 @@ function clearGameState() {
 // schema bumps slot in cleanly.
 Arcade.state.migrate('v1', () => { /* nothing yet */ });
 
-// Initialize state keys and handle migrations
-const legacySaved = Arcade.state.get(GAME_STATE_KEY);
-if (!Arcade.state.get('gameMode')) {
-  if (legacySaved && legacySaved.isPuzzleMode) {
-    Arcade.state.set('gameMode', 'puzzle');
-  } else if (Arcade.state.get('speedMode')) {
-    Arcade.state.set('gameMode', 'speed');
-  } else {
-    Arcade.state.set('gameMode', 'campaign');
+// v2: fold the legacy non-namespaced `gameState`/`progress` keys into their
+// mode-specific keys, then delete the legacy keys — run-once, so this never
+// re-checks the migrated shape on later loads, and the legacy keys stop
+// doubling snapshot bytes in storage and exports.
+Arcade.state.migrate('v2', () => {
+  const legacySaved = Arcade.state.get(GAME_STATE_KEY);
+  if (!Arcade.state.get('gameMode')) {
+    if (legacySaved && legacySaved.isPuzzleMode) {
+      Arcade.state.set('gameMode', 'puzzle');
+    } else if (Arcade.state.get('speedMode')) {
+      Arcade.state.set('gameMode', 'speed');
+    } else {
+      Arcade.state.set('gameMode', 'campaign');
+    }
   }
-}
+  const mode = Arcade.state.get('gameMode') || 'campaign';
+
+  const legacyProgress = Arcade.state.get(PROGRESS_KEY);
+  if (legacyProgress && !Arcade.state.get('progress_campaign')) {
+    Arcade.state.set('progress_campaign', legacyProgress);
+  }
+  Arcade.state.remove(PROGRESS_KEY);
+
+  if (legacySaved) {
+    if (!Arcade.state.get(`gameState_${mode}`)) {
+      const isPuzzle = legacySaved.isPuzzleMode;
+      const isSpeed = !!Arcade.state.get('speedMode');
+      const matchedMode = isPuzzle ? 'puzzle' : isSpeed ? 'speed' : 'campaign';
+      Arcade.state.set(`gameState_${matchedMode}`, legacySaved);
+    }
+    Arcade.state.remove(GAME_STATE_KEY);
+  }
+});
+
 const gameMode = Arcade.state.get('gameMode') || 'campaign';
-
-// Migrate legacy progress to progress_campaign
-const legacyProgress = Arcade.state.get(PROGRESS_KEY);
-if (legacyProgress && !Arcade.state.get('progress_campaign')) {
-  Arcade.state.set('progress_campaign', legacyProgress);
-}
-
-// Migrate legacy gameState to the specific mode's gameState key if it matches
-if (legacySaved && !Arcade.state.get(`gameState_${gameMode}`)) {
-  const isPuzzle = legacySaved.isPuzzleMode;
-  const isSpeed = !!Arcade.state.get('speedMode');
-  const matchedMode = isPuzzle ? 'puzzle' : isSpeed ? 'speed' : 'campaign';
-  Arcade.state.set(`gameState_${matchedMode}`, legacySaved);
-}
-
 const saved = loadGameState(gameMode);
 
 if (!Arcade.state.get('customStencilPack')) {
