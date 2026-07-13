@@ -20,15 +20,26 @@
     // load so dev sessions stay self-healing. Loopback-only: getRegistrations()/
     // caches are origin-scoped, so doing this in production would also unregister
     // the launcher's own service worker and delete its caches.
-    var isLoopback = ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
-      location.hostname.startsWith('127.');
-    if (isLoopback && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations()
-        .then(rs => rs.forEach(r => r.unregister()))
-        .catch(() => {});
-      if (window.caches) {
-        caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+    // try/catch, not just the `in` check: this runs BEFORE the Arcade SDK
+    // loads, and in a launcher-sandboxed (opaque-origin) frame the
+    // navigator.serviceWorker GETTER itself throws SecurityError — no SW
+    // can control such a frame anyway, so there is nothing to wipe there.
+    try {
+      var isLoopback = ['localhost', '127.0.0.1', '::1'].includes(location.hostname) ||
+        location.hostname.startsWith('127.');
+      if (isLoopback && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations()
+          .then(rs => rs.forEach(r => r.unregister()))
+          .catch(() => {});
+        if (window.caches) {
+          caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
+        }
       }
+    } catch (e) {
+      // Expected inside the launcher's sandboxed dev frames (the
+      // serviceWorker getter throws there); logged, not swallowed, so
+      // anything unexpected still surfaces.
+      console.info('[moon-lit] dev SW wipe skipped:', e.message);
     }
   </script>
   <script src="/arcade-sdk.js"></script>
