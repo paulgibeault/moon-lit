@@ -121,6 +121,12 @@ async function getCachedImage(src) {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    // The launcher mounts games in an opaque-origin iframe (sandbox without
+    // allow-same-origin), where a non-CORS image load taints any canvas it's
+    // drawn to and kills every getImageData below. Request CORS mode — the
+    // dev servers and GitHub Pages all send Access-Control-Allow-Origin: *,
+    // and same-origin standalone loads ignore the attribute.
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error(`failed to load ${src}`));
     img.src = src;
