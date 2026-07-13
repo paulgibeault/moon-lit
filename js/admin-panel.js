@@ -649,10 +649,14 @@ function migrateLegacyCollapsedKeys() {
     const legacyTitles = [...PARAM_GROUPS.map(g => g.title), 'system'];
     for (const title of legacyTitles) {
       const legacyKey = `admin-group-collapsed-${title}`;
-      const raw = localStorage.getItem(legacyKey);
+      // Guarded: in a launcher-sandboxed (opaque-origin) frame localStorage
+      // access throws — legacy raw keys are unreachable there by design,
+      // so there is nothing to fold in.
+      let raw = null;
+      try { raw = localStorage.getItem(legacyKey); } catch (e) {}
       if (raw !== null) {
         collapsed[title] = raw === 'true';
-        localStorage.removeItem(legacyKey);
+        try { localStorage.removeItem(legacyKey); } catch (e) {}
       }
     }
     Arcade.state.set('adminCollapsed', collapsed, { exportable: false });
