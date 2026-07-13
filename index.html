@@ -35,7 +35,12 @@
           caches.keys().then(ks => ks.forEach(k => caches.delete(k))).catch(() => {});
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // Expected inside the launcher's sandboxed dev frames (the
+      // serviceWorker getter throws there); logged, not swallowed, so
+      // anything unexpected still surfaces.
+      console.info('[moon-lit] dev SW wipe skipped:', e.message);
+    }
   </script>
   <script src="/arcade-sdk.js"></script>
   <script>Arcade.init({ gameId: 'moon-lit' });</script>
