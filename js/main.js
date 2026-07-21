@@ -18,6 +18,7 @@ import {
   exploreState, ensureExplore, shuffleAll, setSeeds, pushSeedHistory, effectiveConfig,
 } from './seed-explore.js';
 import { buildGameRecord, recordGame } from './telemetry.js';
+import { sfx, matchFreq } from './sfx.js';
 
 await Arcade.ready;
 
@@ -135,6 +136,33 @@ Arcade.state.migrate('v3', () => {
     Arcade.scores.add(SCORES_CATEGORY, { score: legacyBest, meta: { migrated: true } });
   }
   Arcade.state.remove(BEST_KEY);
+});
+
+// records-v1: seed the launcher-formatted personal records (Records sheet) from
+// the bests long-time players already accumulated, so history isn't lost when a
+// player first opens the Records sheet. Idempotent — `best()` never regresses,
+// and `migrate` itself runs once. Source stats stay in place (they remain the
+// game-formatted view; records are the launcher-formatted view). See R1/R3.
+Arcade.state.migrate('records-v1', () => {
+  if (!Arcade.records) return;
+  const s = Arcade.stats.get(STATS_KEY);
+  if (s) {
+    if (Number.isFinite(s.bestScore) && s.bestScore > 0) {
+      Arcade.records.best('best_score', { value: s.bestScore, direction: 'higher', format: 'integer', label: 'Best score' });
+    }
+    if (Number.isFinite(s.bestCombo) && s.bestCombo > 0) {
+      Arcade.records.best('best_combo', { value: s.bestCombo, direction: 'higher', format: 'integer', label: 'Best chain' });
+    }
+    if (Number.isFinite(s.bestLevel) && s.bestLevel > 0) {
+      Arcade.records.best('best_level', { value: s.bestLevel, direction: 'higher', format: 'integer', label: 'Best level' });
+    }
+  }
+  // Also seed best_score from the leaderboard top, which can exceed the stats
+  // mirror (e.g. seed/puzzle runs that scored but never touched campaign stats).
+  const top = (Arcade.scores.best(SCORES_CATEGORY) || {}).score | 0;
+  if (top > 0) {
+    Arcade.records.best('best_score', { value: top, direction: 'higher', format: 'integer', label: 'Best score' });
+  }
 });
 
 const gameMode = Arcade.state.get('gameMode') || 'campaign';
@@ -606,6 +634,21 @@ function recordOutcome(g, won) {
     });
   }
 
+  // Promote this run's genuine single-bests to launcher-formatted personal
+  // records, alongside the existing scores leaderboard (R4 — the leaderboard
+  // stays; records add the single-best framing the Records sheet renders).
+  // `best()` is idempotent and never regresses, so writing the run values every
+  // time yields the all-time best (R2/R5). Best level is a campaign-only notion.
+  if (Arcade.records) {
+    Arcade.records.best('best_score', { value: score, direction: 'higher', format: 'integer', label: 'Best score' });
+    if ((g.bestCombo | 0) > 0) {
+      Arcade.records.best('best_combo', { value: g.bestCombo | 0, direction: 'higher', format: 'integer', label: 'Best chain' });
+    }
+    if (!g.isPuzzleMode && g.gameMode !== 'seed') {
+      Arcade.records.best('best_level', { value: (g.level + (won ? 1 : 0)) | 0, direction: 'higher', format: 'integer', label: 'Best level' });
+    }
+  }
+
   const wasBest = score > prevBest;
   if (wasBest) {
     bestScore = score;
@@ -634,6 +677,71 @@ function isQuiescent() {
   return true;
 }
 
+// ─── Gameplay audio ─────────────────────────────────────────────────────────
+// The gameplay events that deserve cues (lantern launch, match/clear,
+// chain-drop, trellis advance, dead-line warning, win/loss) all happen inside
+// step() in game.js. Rather than thread callbacks through the game core, we
+// observe the resulting state each frame right after step() and fire cues on
+// the transitions. Counters (shotsFired, counts.popped/dropped) are cumulative,
+// so per-frame deltas catch every event even when several land in one step.
+let sfxTrackedGame = null;
+let sfxPrevShots = 0;
+let sfxPrevPopped = 0;
+let sfxPrevDropped = 0;
+let sfxPrevPhase = null;
+let sfxPrevShotsUntil = 0;
+
+function emitGameSfx(g) {
+  if (!g) return;
+  // A freshly loaded game instance: adopt its counters as the baseline without
+  // firing (a level load / restore is not a gameplay event).
+  if (sfxTrackedGame !== g) {
+    sfxTrackedGame = g;
+    sfxPrevShots = g.shotsFired | 0;
+    sfxPrevPopped = g.counts.popped | 0;
+    sfxPrevDropped = g.counts.dropped | 0;
+    sfxPrevPhase = g.phase;
+    sfxPrevShotsUntil = g.shotsUntilDescent | 0;
+    return;
+  }
+
+  const shots = g.shotsFired | 0;
+  const popped = g.counts.popped | 0;
+  const dropped = g.counts.dropped | 0;
+  const phase = g.phase;
+  const shotsUntil = g.shotsUntilDescent | 0;
+
+  // Lantern launch — one per fired shot (covers speed-mode fast-launch too).
+  if (shots > sfxPrevShots) sfx('lantern-launch');
+
+  // Match / clear — pitch rises with the size of the cluster that just popped.
+  const poppedDelta = popped - sfxPrevPopped;
+  if (poppedDelta > 0) sfx('match', { freq: matchFreq(poppedDelta) });
+
+  // Chain-drop — lanterns cut loose and fall to the river.
+  if (dropped > sfxPrevDropped) sfx('drop');
+
+  // Trellis advance — the trellis descends a row.
+  if (phase === PHASE.DESCENDING && sfxPrevPhase !== PHASE.DESCENDING) sfx('trellis');
+
+  // Dead-line warning — a descent is imminent (design: the trellis creaks at
+  // N-2). Shots-driven modes only; speed mode counts down time, not shots.
+  if (!g.isSpeedMode && (g.descentShots | 0) >= 2 &&
+      shotsUntil === 2 && sfxPrevShotsUntil !== 2) {
+    sfx('dead-line-warning');
+  }
+
+  // End of game.
+  if (phase === PHASE.WIN && sfxPrevPhase !== PHASE.WIN) sfx('win');
+  if (phase === PHASE.GAME_OVER && sfxPrevPhase !== PHASE.GAME_OVER) sfx('game-over');
+
+  sfxPrevShots = shots;
+  sfxPrevPopped = popped;
+  sfxPrevDropped = dropped;
+  sfxPrevPhase = phase;
+  sfxPrevShotsUntil = shotsUntil;
+}
+
 function frame(now) {
   lastFrameTimeMs = performance.now();
   if (launcherSuspended || docHidden || !layout) { rafId = 0; return; }
@@ -655,6 +763,7 @@ function frame(now) {
   const needsStep = phaseAnimating || shotsInFlight || hasActiveEffects(game) || (game.isSpeedMode && game.phase === PHASE.AIMING) || (game.isPuzzleMode && game.queue.current === null && game.phase === PHASE.AIMING);
   if (!menuOpen && needsStep) {
     step(game, dt, layout);
+    emitGameSfx(game);
   }
   maybePersistOnPhaseChange();
   tickMenu(settings);
@@ -800,10 +909,17 @@ Arcade.player.onChange(() => {
 });
 
 window.addEventListener('resize', () => { resize(); requestFrame(); });
+
+// Wrap a discrete menu / end-overlay button handler so it plays the UI-click
+// cue before running (A2/A4). Only used on deliberate button taps — the
+// continuous onInteract / onMenuChange hooks (which also fire on aim drift)
+// stay unwrapped so we don't click on every pointer move (A7).
+const withClick = (fn) => (...args) => { sfx('menu-click'); return fn && fn(...args); };
+
 attachInput(canvas, () => game, () => layout, {
-  onWinClick: nextLevel,
-  onLossClick: restartLevel,
-  onPrevClick: () => {
+  onWinClick: withClick(nextLevel),
+  onLossClick: withClick(restartLevel),
+  onPrevClick: withClick(() => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
     if (game.gameMode === 'seed') {
@@ -811,8 +927,8 @@ attachInput(canvas, () => game, () => layout, {
     } else {
       openMenuToLevelSelector(game);
     }
-  },
-  onRestartClick: () => {
+  }),
+  onRestartClick: withClick(() => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
     if (game.gameMode === 'seed') {
@@ -822,8 +938,8 @@ attachInput(canvas, () => game, () => layout, {
     } else {
       loadAndStartLevel(game.level);
     }
-  },
-  onNextClick: () => {
+  }),
+  onNextClick: withClick(() => {
     const won = game.phase === PHASE.WIN;
     recordOutcome(game, won);
     if (game.gameMode === 'seed') {
@@ -836,21 +952,21 @@ attachInput(canvas, () => game, () => layout, {
     } else {
       loadAndStartLevel(game.level + 1);
     }
-  },
-  onDismissClick: () => {
+  }),
+  onDismissClick: withClick(() => {
     game.endOverlayDismissed = true;
     saveGameState(game);
     requestFrame();
-  },
-  onRestoreClick: () => {
+  }),
+  onRestoreClick: withClick(() => {
     game.endOverlayDismissed = false;
     saveGameState(game);
     requestFrame();
-  },
+  }),
   onInteract: bumpInteraction,
-  onStartLevel: startLevel,
-  onStartPuzzle: loadAndStartPuzzle,
-  onChangeGameMode: (mode) => {
+  onStartLevel: withClick(startLevel),
+  onStartPuzzle: withClick(loadAndStartPuzzle),
+  onChangeGameMode: withClick((mode) => {
     let msg = 'Campaign mode active';
     if (mode === 'zen') msg = 'Zen mode active — untimed';
     else if (mode === 'speed') msg = 'Speed mode active — timed';
@@ -871,28 +987,28 @@ attachInput(canvas, () => game, () => layout, {
       const lvl = loadProgressLevel(mode);
       loadAndStartLevel(lvl);
     }
-  },
-  onToggleFastLaunch: (active) => {
+  }),
+  onToggleFastLaunch: withClick((active) => {
     Arcade.ui.toast(active ? 'Fast launch enabled' : 'Fast launch disabled', { kind: 'info' });
     restartLevel();
-  },
+  }),
   // ─── Seed Explorer build-screen + history actions ───
-  onStartSeed: () => {
+  onStartSeed: withClick(() => {
     // Play the variant currently shown on the build screen.
     loadAndStartSeed({ settingsSeed: exploreState.settingsSeed, boardSeed: exploreState.boardSeed, overrides: exploreState.overrides });
-  },
-  onShuffleBoard: () => { requestFrame(); },
-  onShuffleSettings: () => { requestFrame(); },
-  onSetSeeds: (which) => {
+  }),
+  onShuffleBoard: withClick(() => { requestFrame(); }),
+  onShuffleSettings: withClick(() => { requestFrame(); }),
+  onSetSeeds: withClick((which) => {
     // Manual seed entry. The menu layer already validated/applied via setSeeds;
     // here we just wake the loop so the new preview draws.
     void which;
     requestFrame();
-  },
-  onPickSeedHistory: (entry) => {
+  }),
+  onPickSeedHistory: withClick((entry) => {
     if (!entry) return;
     loadAndStartSeed({ settingsSeed: entry.settingsSeed, boardSeed: entry.boardSeed, overrides: entry.overrides });
-  },
+  }),
   // Menu open/close needs to wake the rAF loop so the fade tween + panel
   // body actually draw. Also refresh the cached leaderboard/stats on every
   // open so the panel reflects the latest run without a reload.
