@@ -434,6 +434,14 @@ support for `data-theme="light"` and `data-theme="dark"`.
 
 ## 8. Audio direction
 
+> **Implementation note (2026-07-21):** shipped audio (`js/sfx.js`) is
+> synth-only via the launcher's managed `Arcade.audio` (SDK 3.5.0+), not the
+> sample-based instruments this section describes — there is no ambient bed
+> (one-shot voices only, no looping layer) and no manual `audioVolume()`
+> read or `AudioContext` suspend/resume (§10.5/§10.6 below); the SDK owns
+> all of that now. The bullets below remain the *aesthetic* reference —
+> `js/sfx.js` approximates each one with short noise/sine/triangle voices.
+
 - **Ambient bed:** soft river water, distant taiko at irregular intervals
   (every ~30s), occasional koto note. No melody, no loop seam.
 - **Lantern release:** soft "shh" (paper).
@@ -576,6 +584,17 @@ if (run) showContinuePrompt(run);
 | `endless`            | `{ seed, shotsFired }`                  |
 | `daily-YYYY-MM-DD`   | `{ seed }` (one entry per player per day) |
 | `master-{chapter}`   | `{ stars }`                             |
+
+### Personal records (`Arcade.records.best`, shipped 2026-07-21)
+
+Alongside the leaderboards above, three single-best categories via
+`Arcade.records`:
+
+| Category      | Direction | Format    | Label          |
+| -------------- | --------- | --------- | -------------- |
+| `best_score`   | higher    | integer   | Best score     |
+| `best_combo`   | higher    | integer   | Best chain      |
+| `best_level`   | higher    | integer   | Best level (campaign) |
 
 ### 10.4 Stats (`Arcade.stats.update`)
 

@@ -49,6 +49,8 @@ without losing your place.
 - Swappable lantern stencil packs (with a "random" pack that mixes designs per shot)
 - Deterministic seeds: same inputs always produce the same board
 - Daily leaderboard via the [Paul's Arcade SDK](https://paulgibeault.github.io/)
+- Synthesized SFX (lantern release, match/chain, trellis, win/loss) via `Arcade.audio`
+- Personal bests (best score, best chain, best campaign level) via `Arcade.records`
 
 ## Run locally
 
