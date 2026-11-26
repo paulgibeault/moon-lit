@@ -14,6 +14,10 @@ visual plan.
   implementation has diverged in places (individual bamboo silhouette
   sprites instead of atlases), but the scene composition and palette
   guidance remain authoritative.
+- [puzzle-rubric.md](puzzle-rubric.md) — the Puzzle mode quality checklist
+  (luck, depth, temptation, late insight, intent), per-chapter targets, and
+  the authoring loop. Baseline numbers in
+  [puzzle-rubric-baseline.json](puzzle-rubric-baseline.json).
 
 For art-asset prompts (the source-of-truth instructions used to generate
 the bamboo silhouettes and lantern SVG markup), see
