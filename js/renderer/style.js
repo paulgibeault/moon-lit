@@ -36,8 +36,11 @@ export function mixHex(a, b, t) {
   return `rgb(${r}, ${g}, ${bl})`;
 }
 
+// One formatter for the life of the page: toLocaleString builds (and throws
+// away) a fresh one on every call, and the score HUD formats every frame.
+const SCORE_FORMAT = new Intl.NumberFormat('en-US');
 export function formatScore(n) {
-  return n.toLocaleString('en-US');
+  return SCORE_FORMAT.format(n);
 }
 
 // Common HUD text sizing: layout-relative with a floor, multiplied by the
