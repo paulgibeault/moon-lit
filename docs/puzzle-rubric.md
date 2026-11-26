@@ -105,14 +105,14 @@ Why these values:
 - **Luck caps tighten from 20% to 12% to 8% to 4%.** The 8% and 4% caps for
   Chapters 6 and 7 are the existing targets from the `js/puzzles.js` header.
   The 20% and 12% caps for Chapters 4 and 5 continue the curve. Most puzzles
-  in those chapters already sit at 1–12%; the outliers are #19 (30%), #27
-  (45.8%) and #29 (92.9%).
+  in those chapters already sit at 1–12%; the outlier is #19 (30%). (#27 and
+  #29 were 45.8% and 92.9% before their rework.)
 - **Depth ≥ 2 from Chapter 4 on.** Depth 1 is often only the finishing shot
   (see Caveats). Two tight decisions means the player has to plan at least one
   of them.
 - **Temptation ≥ 1 from Chapter 4 on.** This is the "won the battle, lost the
   war" moment the design language aims for. Only #49 has one today, so this is
-  the main rework signal.
+  the main rework signal (#27, #29 and #49 have one).
 - **Intent ≤ 3 from Chapter 4 on.** A puzzle should have one idea, with one or
   two variants at most. 20+ means spare shots or loose geometry let almost
   anything win.
@@ -124,16 +124,17 @@ Why these values:
 
 ## Baseline (`docs/puzzle-rubric-baseline.json`)
 
-18 of 50 puzzles pass: all of Chapters 1–3, and none of Chapters 4–7.
+20 of 50 puzzles pass: all of Chapters 1–3, plus #27 and #29 (reworked with
+the rubric; see Reworks below). The original baseline was 18/50.
 
 - **Temptation is missing almost everywhere.** It is 0 in every Chapter 4–7
-  puzzle except #49. This is the dominant failure.
-- **Intent is too high:** 20+ on #26, #27, #29, #37, #40 and #43; between 5 and
+  puzzle except #27, #29 and #49. This is the dominant failure.
+- **Intent is too high:** 20+ on #26, #37, #40 and #43; between 5 and
   10 on #22, #24, #28, #30, #39 and #49.
-- **Depth is too low (below 2):** #19, #20, #22, #23, #25–#31, #34, #36, #37
+- **Depth is too low (below 2):** #19, #20, #22, #23, #25, #26, #28, #30, #31, #34, #36, #37
   and #43.
-- **Luck is over the cap:** #19 (30%), #27 (45.8%), #29 (92.9%), #31 (8.3%,
-  just over) and #43 (4.3%, just over).
+- **Luck is over the cap:** #19 (30%), #31 (8.3%, just over) and #43 (4.3%,
+  just over).
 - **Single-shot puzzles:** #2, #4, #5, #9, #10, #12, #13 and #17 are in
   Chapters 1–3, which have no minimum queue length, so they pass. #20 (Chapter
   4) and #31 (Chapter 6) fail on shots, depth and temptation, and #31 also
@@ -159,3 +160,22 @@ Why these values:
    `node tools/measure-difficulty.js --rubric --json docs/puzzle-rubric-baseline.json`.
    To experiment with `CHAPTER_TARGETS`, use `--regrade` on the saved JSON
    instead of re-measuring.
+
+## Reworks
+
+Both reworks use the orphan-seam pattern from #49. An anchored single can
+only leave through the one seam that joins it to a companion. The bait is a
+bigger pop that removes the companion first, so the single is stranded.
+
+- **#27 Midnight Cascade:** before: luck 45.8%, depth 0, temptation 0,
+  intent 20+ (4 shots, 2 of them spare). After: queue `yellow, red, blue`
+  (zero slack), luck 0.1%, depth 3, temptation 1 at shot 1 (the fat yellow
+  tail, rm5, beats the wall seam, rm4), intent 1. Sunk 8 rows so the seam has
+  a 3° window on a timed board. Luck is cruelty-set low, but the only real read
+  is shot 1. Shots 2–3 each have one productive pocket, and a random park loses.
+- **#29 Last Light:** before: luck 92.9%, depth 0, temptation 0, intent 20+
+  (and `SUNK(5)` was odd, which flipped row parity). After: queue
+  `blue, green`, luck 2.4%, depth 2, tightest decision at shot 2, temptation 1
+  at shot 1 (the anchor pair, rm6, drops the hanging spirit, which was the
+  wall spirit's only companion), intent 1. Three blue groups (veil, anchor,
+  decoy). Only the low veil is right.

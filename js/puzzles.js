@@ -514,16 +514,21 @@ const HAND_CRAFTED_PUZZLES = [
     name: 'Midnight Cascade',
     description: 'Two anchors, two falling tails, and a clock made of water.',
     colors: ['red', 'blue', 'yellow'],
-    queue: ['red', 'blue', 'red', 'blue'],
+    queue: ['yellow', 'red', 'blue'],
     stencilPack: 'dragons',
     descentType: 'time',
     goalType: 'clear-all',
     env: { glowIntensity: 2.0 },
+    // The left-wall yellow is an orphan: only the seam beside it joins her to
+    // the yellow pair, so the one yellow must go there. The fat yellow tail
+    // under the anchors is the bait (it pops more) and leaves her stranded;
+    // the anchors' own pops drop that tail for free. Zero slack.
     board: [
-      ...SUNK(6),
-      '. R R . . B B .',
-      ' Y . . . . . Y ',
-      '. Y . . . . Y .',
+      ...SUNK(8),
+      'Y . Y . R R B B',
+      ' . Y . . . Y . ',
+      '. . . . . Y Y .',
+      ' . . . . . B . ',
     ],
   },
   {
@@ -548,16 +553,21 @@ const HAND_CRAFTED_PUZZLES = [
     name: 'Last Light',
     description: 'Lift the veil and free the spirits before the moon sets.',
     colors: ['green', 'blue', 'paper'],
-    queue: ['blue', 'green', 'green'],
+    queue: ['blue', 'green'],
     stencilPack: 'flowers',
     descentType: 'time',
     goalType: 'clear-targets',
     targetColor: 'green',
     moon: { phase: 0.07, position: 0.8 },
+    // Three blues, one veil. The low pair hides the wall seam; pop it. The
+    // anchor pair pops bigger and even drops a spirit, but the hanging spirit
+    // was the wall spirit's only companion — with one green left, she's
+    // stranded. The right-hand pair is a harmless decoy that leaves the veil.
     board: [
-      ...SUNK(5),
-      'P P P T T P P P',
-      ' . . B B B . . ',
+      ...SUNK(8),
+      'T . B B P P P P',
+      ' . T . . . B B ',
+      '. B B . . . . .',
     ],
   },
   {
