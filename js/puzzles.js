@@ -33,7 +33,9 @@
 // puzzle's blind-luck win probability (random fair pocket every shot) and
 // per-shot viable-opening counts. Chapter 6 targets luck <= ~8%, Chapter 7
 // targets <= ~4% (most below 1.5%); the campaign chapters sit anywhere up
-// to 100% (tutorials should be forgiving).
+// to 100% (tutorials should be forgiving). The full quality checklist
+// (depth, temptation, late insight, intent; per-chapter targets) is
+// `node tools/measure-difficulty.js --rubric` — see docs/puzzle-rubric.md.
 //
 // More solver-taught geometry (learned tuning Chapter 6):
 //   - A shot's flight path is blocked by any lantern within 2 radii of the

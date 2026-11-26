@@ -1,0 +1,3657 @@
+{
+  "generated": "2026-11-26T05:39:35.501Z",
+  "elapsedSec": 3,
+  "jobs": 11,
+  "targets": {
+    "1": {},
+    "2": {},
+    "3": {
+      "maxLuck": 0.25,
+      "minDepth": 1
+    },
+    "4": {
+      "minShots": 2,
+      "maxLuck": 0.2,
+      "minDepth": 2,
+      "minTemptation": 1,
+      "maxIntent": 3
+    },
+    "5": {
+      "minShots": 2,
+      "maxLuck": 0.12,
+      "minDepth": 2,
+      "minTemptation": 1,
+      "maxIntent": 3
+    },
+    "6": {
+      "minShots": 2,
+      "maxLuck": 0.08,
+      "minDepth": 2,
+      "minTemptation": 1,
+      "maxIntent": 3,
+      "notFrontLoaded": true
+    },
+    "7": {
+      "minShots": 2,
+      "maxLuck": 0.04,
+      "minDepth": 2,
+      "minTemptation": 1,
+      "maxIntent": 3,
+      "notFrontLoaded": true
+    }
+  },
+  "puzzles": [
+    {
+      "id": 1,
+      "name": "Yi Peng Path",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.09697,
+      "depth": 0,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "4/11",
+        "4/9",
+        "3/5"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 4,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx2",
+            "angle": -22.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx3",
+            "angle": -9,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 4,
+          "total": 9,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 1.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 5,
+          "played": {
+            "cell": "r1 nx14",
+            "angle": 10,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx14",
+            "angle": 10,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 17
+    },
+    {
+      "id": 2,
+      "name": "Cut the Stem",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.125,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 1,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 6
+    },
+    {
+      "id": 3,
+      "name": "Twin Wings",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05714,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/7",
+        "2/5"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx3",
+            "angle": 32.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx3",
+            "angle": 32.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "orange",
+          "viable": 2,
+          "total": 5,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 39
+    },
+    {
+      "id": 4,
+      "name": "Lantern Heart",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.1,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 6
+    },
+    {
+      "id": 5,
+      "name": "The Go-Between",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.1,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 19
+    },
+    {
+      "id": 6,
+      "name": "Paper Chandelier",
+      "chapter": 1,
+      "chapterTitle": "First Light",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05195,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/11",
+        "2/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx4",
+            "angle": -26,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -5.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 2,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": -32.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx10",
+            "angle": 23.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 30
+    },
+    {
+      "id": 7,
+      "name": "Spirit Lights",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 1,
+      "luck": 1,
+      "depth": 0,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 9,
+      "intentCapped": false,
+      "openings": [
+        "10/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 10,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 52
+    },
+    {
+      "id": 8,
+      "name": "Behind the Veil",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.2,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "6/10",
+        "3/9"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 6,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": 21.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 3.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 3,
+          "total": 9,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": 2,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 2,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 41
+    },
+    {
+      "id": 9,
+      "name": "Cut Lanterns Free",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.14286,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 11
+    },
+    {
+      "id": 10,
+      "name": "Off the Wall",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.27273,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "3/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 11,
+          "played": {
+            "cell": "r3 nx13",
+            "angle": 20.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 23
+    },
+    {
+      "id": 11,
+      "name": "Do No Harm",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05303,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 7,
+      "intentCapped": false,
+      "openings": [
+        "7/11",
+        "1/12"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 7,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx14",
+            "angle": 10,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 12,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 63
+    },
+    {
+      "id": 12,
+      "name": "Falling Petals",
+      "chapter": 2,
+      "chapterTitle": "Golden Targets",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.1,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 13
+    },
+    {
+      "id": 13,
+      "name": "Stone Garden",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.14286,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 8
+    },
+    {
+      "id": 14,
+      "name": "Stone Curtain",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.00893,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/14",
+        "1/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 1,
+          "total": 14,
+          "played": {
+            "cell": "r1 nx5",
+            "angle": 30,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": 30,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "orange",
+          "viable": 1,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": -32.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": -32.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 17
+    },
+    {
+      "id": 15,
+      "name": "The Stone Arch",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05455,
+      "depth": 2,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "3/11",
+        "2/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx3",
+            "angle": -24.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx2",
+            "angle": -10.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 2,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": 21.5,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r1 nx13",
+            "angle": 8.5,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 16
+    },
+    {
+      "id": 16,
+      "name": "The Millstone",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05556,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 4,
+      "intentCapped": false,
+      "openings": [
+        "4/9",
+        "1/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 9,
+          "played": {
+            "cell": "r3 nx6",
+            "angle": -31,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 26
+    },
+    {
+      "id": 17,
+      "name": "Hanging by a Thread",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.09091,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 1,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx14",
+            "angle": 18.5,
+            "removed": 11
+          },
+          "obvious": {
+            "cell": "r2 nx14",
+            "angle": 18.5,
+            "removed": 11,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 12
+    },
+    {
+      "id": 18,
+      "name": "Atlas Sets Down the Sky",
+      "chapter": 3,
+      "chapterTitle": "Stone Lanterns",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05357,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "3/14",
+        "3/12"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 14,
+          "played": {
+            "cell": "r1 nx3",
+            "angle": -24.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx2",
+            "angle": -10.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 12,
+          "played": {
+            "cell": "r1 nx13",
+            "angle": 19,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r1 nx13",
+            "angle": 8.5,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": true,
+      "fails": [],
+      "ms": 17
+    },
+    {
+      "id": 19,
+      "name": "Shield and Spear",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.3,
+      "depth": 0,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "6/10",
+        "4/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 6,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": 21.5,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r1 nx11",
+            "angle": 21.5,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 4,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 1.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "luck 30.0%>20%",
+        "depth 0<2",
+        "temptation 0<1"
+      ],
+      "ms": 23
+    },
+    {
+      "id": 20,
+      "name": "Keystone",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.07692,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/13"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "orange",
+          "viable": 1,
+          "total": 13,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 10
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 10,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "shots 1<2",
+        "depth 1<2",
+        "temptation 0<1"
+      ],
+      "ms": 24
+    },
+    {
+      "id": 21,
+      "name": "Switchback",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.0355,
+      "depth": 2,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "3/13",
+        "2/13"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 13,
+          "played": {
+            "cell": "r2 nx0",
+            "angle": -20.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 13,
+          "played": {
+            "cell": "r2 nx14",
+            "angle": 17.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 116
+    },
+    {
+      "id": 22,
+      "name": "Ash Before Ember",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.06944,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 5,
+      "intentCapped": false,
+      "openings": [
+        "5/9",
+        "2/8",
+        "4/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "orange",
+          "viable": 5,
+          "total": 9,
+          "played": {
+            "cell": "r3 nx6",
+            "angle": -31,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "paper",
+          "viable": 2,
+          "total": 8,
+          "played": {
+            "cell": "r2 nx10",
+            "angle": 24,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r2 nx8",
+            "angle": 0.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "orange",
+          "viable": 4,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 1.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "intent 5>3"
+      ],
+      "ms": 342
+    },
+    {
+      "id": 23,
+      "name": "The Ferry Crossing",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.08501,
+      "depth": 0,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "6/12",
+        "9/11",
+        "4/11",
+        "4/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 6,
+          "total": 12,
+          "played": {
+            "cell": "r2 nx4",
+            "angle": -28,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -2,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 9,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx12",
+            "angle": -38,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r2 nx14",
+            "angle": 17.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 4,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx4",
+            "angle": -25.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -5.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx13",
+            "angle": 8.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 0<2",
+        "temptation 0<1"
+      ],
+      "ms": 397
+    },
+    {
+      "id": 24,
+      "name": "Three Locks",
+      "chapter": 4,
+      "chapterTitle": "Deep Water",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.00918,
+      "depth": 2,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 5,
+      "intentCapped": false,
+      "openings": [
+        "5/9",
+        "2/11",
+        "1/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 5,
+          "total": 9,
+          "played": {
+            "cell": "r3 nx8",
+            "angle": 0,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx6",
+            "angle": -29.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 24,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "intent 5>3"
+      ],
+      "ms": 305
+    },
+    {
+      "id": 25,
+      "name": "The Sinking Trellis",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.03636,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "1/11",
+        "7/10",
+        "4/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 11,
+          "played": {
+            "cell": "r11 nx3",
+            "angle": -43.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r11 nx3",
+            "angle": -43.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 7,
+          "total": 10,
+          "played": {
+            "cell": "r12 nx8",
+            "angle": 0,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r12 nx8",
+            "angle": 0,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 7,
+          "played": {
+            "cell": "r12 nx12",
+            "angle": 15,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r12 nx9",
+            "angle": 5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1"
+      ],
+      "ms": 23
+    },
+    {
+      "id": 26,
+      "name": "Ember Rush",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-all",
+      "descentType": "time",
+      "queueLength": 7,
+      "shotsUsed": 3,
+      "luck": 0.06346,
+      "depth": 1,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "11/13",
+        "6/10",
+        "1/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 11,
+          "total": 13,
+          "played": {
+            "cell": "r5 nx-1",
+            "angle": -22.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r5 nx-1",
+            "angle": -22.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 6,
+          "total": 10,
+          "played": {
+            "cell": "r5 nx9",
+            "angle": 1.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r5 nx9",
+            "angle": 1.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 1,
+          "total": 8,
+          "played": {
+            "cell": "r5 nx15",
+            "angle": 19,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r5 nx15",
+            "angle": 19,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 1078
+    },
+    {
+      "id": 27,
+      "name": "Midnight Cascade",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-all",
+      "descentType": "time",
+      "queueLength": 4,
+      "shotsUsed": 2,
+      "luck": 0.45833,
+      "depth": 0,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "11/15",
+        "5/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 11,
+          "total": 15,
+          "played": {
+            "cell": "r7 nx5",
+            "angle": -8,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r7 nx5",
+            "angle": -8,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 5,
+          "total": 8,
+          "played": {
+            "cell": "r7 nx9",
+            "angle": 3,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r7 nx9",
+            "angle": 3,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "luck 45.8%>12%",
+        "depth 0<2",
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 575
+    },
+    {
+      "id": 28,
+      "name": "Stones in the River",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.0625,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 5,
+      "intentCapped": false,
+      "openings": [
+        "5/8",
+        "1/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 5,
+          "total": 8,
+          "played": {
+            "cell": "r13 nx5",
+            "angle": -55.5,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 10,
+          "played": {
+            "cell": "r12 nx9",
+            "angle": 47.5,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r12 nx9",
+            "angle": 47.5,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "intent 5>3"
+      ],
+      "ms": 40
+    },
+    {
+      "id": 29,
+      "name": "Last Light",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-targets",
+      "descentType": "time",
+      "queueLength": 3,
+      "shotsUsed": 2,
+      "luck": 0.92857,
+      "depth": 0,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "13/14",
+        "12/12"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 13,
+          "total": 14,
+          "played": {
+            "cell": "r6 nx10",
+            "angle": 30.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r7 nx9",
+            "angle": 2,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 12,
+          "total": 12,
+          "played": {
+            "cell": "r6 nx10",
+            "angle": 4.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r6 nx8",
+            "angle": 0,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "luck 92.9%>12%",
+        "depth 0<2",
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 268
+    },
+    {
+      "id": 30,
+      "name": "Moonset",
+      "chapter": 5,
+      "chapterTitle": "Night Pressure",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.11667,
+      "depth": 1,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 7,
+      "intentCapped": false,
+      "openings": [
+        "7/9",
+        "3/10",
+        "3/6"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 7,
+          "total": 9,
+          "played": {
+            "cell": "r13 nx7",
+            "angle": -4,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 10,
+          "played": {
+            "cell": "r14 nx5",
+            "angle": -17.5,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r14 nx5",
+            "angle": -17.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 3,
+          "total": 6,
+          "played": {
+            "cell": "r14 nx5",
+            "angle": -14,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r14 nx8",
+            "angle": -1,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "intent 7>3"
+      ],
+      "ms": 134
+    },
+    {
+      "id": 31,
+      "name": "Three Birds",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 1,
+      "shotsUsed": 1,
+      "luck": 0.08333,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/12"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 12,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 9
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 9,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "shots 1<2",
+        "luck 8.3%>8%",
+        "depth 1<2",
+        "temptation 0<1"
+      ],
+      "ms": 18
+    },
+    {
+      "id": 32,
+      "name": "False Feast",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.02778,
+      "depth": 2,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "2/12",
+        "1/6"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 12,
+          "played": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 6,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx11",
+            "angle": -35,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 73
+    },
+    {
+      "id": 33,
+      "name": "Toll Gate",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.01786,
+      "depth": 2,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/7",
+        "1/8"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r3 nx8",
+            "angle": 0,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -27,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 28
+    },
+    {
+      "id": 34,
+      "name": "The Ferry Returns",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.0411,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "4/14",
+        "9/13",
+        "4/11",
+        "4/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 14,
+          "played": {
+            "cell": "r2 nx5",
+            "angle": -28.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -2,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 9,
+          "total": 13,
+          "played": {
+            "cell": "r2 nx10",
+            "angle": 3,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 3,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 4,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx4",
+            "angle": -25.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx5",
+            "angle": -5.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx13",
+            "angle": 8.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 837
+    },
+    {
+      "id": 35,
+      "name": "The Keyhole",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.03333,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/12",
+        "2/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 12,
+          "played": {
+            "cell": "r4 nx8",
+            "angle": 30,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r3 nx9",
+            "angle": 27,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 10,
+          "played": {
+            "cell": "r2 nx6",
+            "angle": -30,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx4",
+            "angle": -7,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 170
+    },
+    {
+      "id": 36,
+      "name": "Cold Hearth",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.06494,
+      "depth": 1,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/11",
+        "5/8",
+        "4/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 5,
+          "total": 8,
+          "played": {
+            "cell": "r2 nx12",
+            "angle": -38,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r2 nx14",
+            "angle": 17.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx13",
+            "angle": 8.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 1<2",
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 112
+    },
+    {
+      "id": 37,
+      "name": "The Procession",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 6,
+      "shotsUsed": 6,
+      "luck": 0.03526,
+      "depth": 0,
+      "lateInsight": 4,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "4/10",
+        "11/11",
+        "10/11",
+        "4/11",
+        "4/9",
+        "3/5"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 4,
+          "total": 10,
+          "played": {
+            "cell": "r2 nx2",
+            "angle": -25,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx4",
+            "angle": -7.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 11,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx10",
+            "angle": 3.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 3.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 10,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx12",
+            "angle": -38,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 4,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 4,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx2",
+            "angle": -22.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx3",
+            "angle": -9,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 4,
+          "total": 9,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 1.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 5,
+          "played": {
+            "cell": "r1 nx14",
+            "angle": 10,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx14",
+            "angle": 10,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "depth 0<2",
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 2996
+    },
+    {
+      "id": 38,
+      "name": "Hungry Ghosts",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.05,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/10",
+        "2/8"
+      ],
+      "baitShots": [
+        2
+      ],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx14",
+            "angle": 10.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx14",
+            "angle": 10.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 2,
+          "total": 8,
+          "played": {
+            "cell": "r2 nx0",
+            "angle": -22,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx1",
+            "angle": -12,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 4
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 83
+    },
+    {
+      "id": 39,
+      "name": "The Ninth Wave",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.01684,
+      "depth": 2,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 10,
+      "intentCapped": false,
+      "openings": [
+        "10/12",
+        "2/11",
+        "1/9"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 10,
+          "total": 12,
+          "played": {
+            "cell": "r16 nx6",
+            "angle": -71,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r17 nx10",
+            "angle": 23,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r17 nx10",
+            "angle": 23,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 9,
+          "played": {
+            "cell": "r16 nx8",
+            "angle": 0,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r16 nx8",
+            "angle": 0,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "intent 10>3"
+      ],
+      "ms": 249
+    },
+    {
+      "id": 40,
+      "name": "The Weaver's Knot",
+      "chapter": 6,
+      "chapterTitle": "The Weaver's Knots",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.01531,
+      "depth": 2,
+      "lateInsight": 4,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "9/12",
+        "11/14",
+        "4/14",
+        "1/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 9,
+          "total": 12,
+          "played": {
+            "cell": "r16 nx8",
+            "angle": -70,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 11,
+          "total": 14,
+          "played": {
+            "cell": "r14 nx6",
+            "angle": -61,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r14 nx3",
+            "angle": -24.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 4,
+          "total": 14,
+          "played": {
+            "cell": "r16 nx7",
+            "angle": -68.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r15 nx10",
+            "angle": 57.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 11,
+          "played": {
+            "cell": "r14 nx7",
+            "angle": -8,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r14 nx7",
+            "angle": -8,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 1589
+    },
+    {
+      "id": 41,
+      "name": "The Orphan",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.03175,
+      "depth": 2,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "2/9",
+        "1/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 2,
+          "total": 9,
+          "played": {
+            "cell": "r2 nx6",
+            "angle": -29.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r2 nx6",
+            "angle": -29.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 278
+    },
+    {
+      "id": 42,
+      "name": "Double Lock",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.0101,
+      "depth": 3,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/12",
+        "3/9",
+        "2/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 12,
+          "played": {
+            "cell": "r5 nx3",
+            "angle": -29.5,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r4 nx2",
+            "angle": -26.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 9,
+          "played": {
+            "cell": "r4 nx8",
+            "angle": -36.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r4 nx6",
+            "angle": -4,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx6",
+            "angle": -30,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx4",
+            "angle": -7,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 1517
+    },
+    {
+      "id": 43,
+      "name": "Drowned Bell",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.04274,
+      "depth": 1,
+      "lateInsight": 4,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 20,
+      "intentCapped": true,
+      "openings": [
+        "10/14",
+        "7/13",
+        "4/9",
+        "1/4"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "paper",
+          "viable": 10,
+          "total": 14,
+          "played": {
+            "cell": "r16 nx10",
+            "angle": -74.5,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 7,
+          "total": 13,
+          "played": {
+            "cell": "r18 nx12",
+            "angle": 52,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r18 nx12",
+            "angle": 52,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 4,
+          "total": 9,
+          "played": {
+            "cell": "r16 nx6",
+            "angle": -18.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r17 nx7",
+            "angle": -7.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 4,
+          "played": {
+            "cell": "r18 nx5",
+            "angle": -41.5,
+            "removed": 5
+          },
+          "obvious": {
+            "cell": "r18 nx5",
+            "angle": -41.5,
+            "removed": 5,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "luck 4.3%>4%",
+        "depth 1<2",
+        "temptation 0<1",
+        "intent 20+>3"
+      ],
+      "ms": 257
+    },
+    {
+      "id": 44,
+      "name": "The Vine",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.00661,
+      "depth": 3,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "2/11",
+        "3/11",
+        "2/6",
+        "2/5"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx4",
+            "angle": -27,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r2 nx4",
+            "angle": -27,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx12",
+            "angle": -38,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 24,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 2,
+          "total": 6,
+          "played": {
+            "cell": "r1 nx8",
+            "angle": 25.5,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx8",
+            "angle": 25.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 2,
+          "total": 5,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 349
+    },
+    {
+      "id": 45,
+      "name": "The Poisoned Seat",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.02143,
+      "depth": 3,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "3/10",
+        "2/8",
+        "2/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "green",
+          "viable": 3,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 2,
+          "total": 8,
+          "played": {
+            "cell": "r1 nx11",
+            "angle": -35,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx15",
+            "angle": 15,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 7,
+          "played": {
+            "cell": "r2 nx8",
+            "angle": 27,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx9",
+            "angle": 24.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 187
+    },
+    {
+      "id": 46,
+      "name": "The Inner Gate",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-targets",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.01202,
+      "depth": 2,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "4/11",
+        "2/11",
+        "2/11"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "red",
+          "viable": 4,
+          "total": 11,
+          "played": {
+            "cell": "r5 nx5",
+            "angle": -34,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r5 nx7",
+            "angle": -2.5,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r4 nx6",
+            "angle": 33,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r3 nx7",
+            "angle": -1.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "green",
+          "viable": 2,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx6",
+            "angle": -30,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r2 nx4",
+            "angle": -7,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 1156
+    },
+    {
+      "id": 47,
+      "name": "Twin Rivers",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 2,
+      "shotsUsed": 2,
+      "luck": 0.00909,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "1/11",
+        "1/10"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx1",
+            "angle": -21.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 1,
+          "total": 10,
+          "played": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx7",
+            "angle": -30,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1",
+        "tightest at shot 1"
+      ],
+      "ms": 71
+    },
+    {
+      "id": 48,
+      "name": "The Last Pillar",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "none",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.02479,
+      "depth": 3,
+      "lateInsight": 2,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "3/11",
+        "3/11",
+        "2/6"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 3,
+          "total": 11,
+          "played": {
+            "cell": "r1 nx3",
+            "angle": -9,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r1 nx3",
+            "angle": -9,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 3,
+          "total": 11,
+          "played": {
+            "cell": "r2 nx12",
+            "angle": -38,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r2 nx10",
+            "angle": 24,
+            "removed": 8,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 2,
+          "total": 6,
+          "played": {
+            "cell": "r1 nx9",
+            "angle": -32.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r1 nx10",
+            "angle": 23.5,
+            "removed": 4,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 293
+    },
+    {
+      "id": 49,
+      "name": "Widow's Lantern",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 3,
+      "shotsUsed": 3,
+      "luck": 0.00712,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 1,
+      "temptationShots": [
+        1
+      ],
+      "intent": 5,
+      "intentCapped": false,
+      "openings": [
+        "1/13",
+        "5/9",
+        "1/6"
+      ],
+      "baitShots": [
+        1
+      ],
+      "steps": [
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 13,
+          "played": {
+            "cell": "r15 nx1",
+            "angle": -57.5,
+            "removed": 4
+          },
+          "obvious": {
+            "cell": "r15 nx5",
+            "angle": -21,
+            "removed": 7,
+            "viable": false
+          },
+          "temptation": true,
+          "bait": 1
+        },
+        {
+          "color": "paper",
+          "viable": 5,
+          "total": 9,
+          "played": {
+            "cell": "r17 nx6",
+            "angle": -76,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 6,
+          "played": {
+            "cell": "r17 nx5",
+            "angle": -73.5,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r17 nx5",
+            "angle": -73.5,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "intent 5>3",
+        "tightest at shot 1"
+      ],
+      "ms": 301
+    },
+    {
+      "id": 50,
+      "name": "The Moonless Hour",
+      "chapter": 7,
+      "chapterTitle": "The Moonless Hour",
+      "goalType": "clear-all",
+      "descentType": "shot",
+      "queueLength": 5,
+      "shotsUsed": 5,
+      "luck": 0.00106,
+      "depth": 5,
+      "lateInsight": 5,
+      "frontLoaded": false,
+      "temptation": 0,
+      "temptationShots": [],
+      "intent": 2,
+      "intentCapped": false,
+      "openings": [
+        "3/10",
+        "2/9",
+        "3/9",
+        "2/6",
+        "1/7"
+      ],
+      "baitShots": [],
+      "steps": [
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 10,
+          "played": {
+            "cell": "r15 nx2",
+            "angle": -34,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r15 nx2",
+            "angle": -34,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "red",
+          "viable": 2,
+          "total": 9,
+          "played": {
+            "cell": "r15 nx3",
+            "angle": -59.5,
+            "removed": 7
+          },
+          "obvious": {
+            "cell": "r16 nx10",
+            "angle": 20.5,
+            "removed": 7,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "blue",
+          "viable": 3,
+          "total": 9,
+          "played": {
+            "cell": "r16 nx7",
+            "angle": -69,
+            "removed": 3
+          },
+          "obvious": {
+            "cell": "r16 nx7",
+            "angle": -6,
+            "removed": 3,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "paper",
+          "viable": 2,
+          "total": 6,
+          "played": {
+            "cell": "r16 nx9",
+            "angle": -73.5,
+            "removed": 0
+          },
+          "obvious": null,
+          "temptation": false,
+          "bait": 0
+        },
+        {
+          "color": "yellow",
+          "viable": 1,
+          "total": 7,
+          "played": {
+            "cell": "r17 nx15",
+            "angle": 62.5,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r17 nx15",
+            "angle": 62.5,
+            "removed": 6,
+            "viable": true
+          },
+          "temptation": false,
+          "bait": 0
+        }
+      ],
+      "pass": false,
+      "fails": [
+        "temptation 0<1"
+      ],
+      "ms": 156
+    }
+  ]
+}
