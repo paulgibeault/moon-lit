@@ -1,6 +1,6 @@
 {
-  "generated": "2026-11-26T19:36:36.172Z",
-  "elapsedSec": 3,
+  "generated": "2026-11-26T20:16:54.956Z",
+  "elapsedSec": 2,
   "jobs": 11,
   "targets": {
     "1": {},
@@ -122,7 +122,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 21
+      "ms": 17
     },
     {
       "id": 2,
@@ -167,7 +167,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 13
+      "ms": 8
     },
     {
       "id": 3,
@@ -231,7 +231,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 21
+      "ms": 18
     },
     {
       "id": 4,
@@ -276,7 +276,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 11
+      "ms": 7
     },
     {
       "id": 5,
@@ -321,7 +321,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 11
+      "ms": 14
     },
     {
       "id": 6,
@@ -385,7 +385,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 14
+      "ms": 22
     },
     {
       "id": 7,
@@ -430,7 +430,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 37
+      "ms": 53
     },
     {
       "id": 8,
@@ -494,7 +494,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 57
+      "ms": 53
     },
     {
       "id": 9,
@@ -539,7 +539,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 9
+      "ms": 14
     },
     {
       "id": 10,
@@ -643,7 +643,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 52
+      "ms": 57
     },
     {
       "id": 12,
@@ -688,7 +688,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 9
+      "ms": 15
     },
     {
       "id": 13,
@@ -733,7 +733,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 16
+      "ms": 8
     },
     {
       "id": 14,
@@ -797,7 +797,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 14
+      "ms": 17
     },
     {
       "id": 15,
@@ -861,7 +861,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 22
+      "ms": 24
     },
     {
       "id": 16,
@@ -920,7 +920,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 46
+      "ms": 45
     },
     {
       "id": 17,
@@ -965,7 +965,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 13
+      "ms": 19
     },
     {
       "id": 18,
@@ -1029,7 +1029,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 27
+      "ms": 25
     },
     {
       "id": 19,
@@ -1097,7 +1097,7 @@
         "depth 0<2",
         "temptation 0<1"
       ],
-      "ms": 34
+      "ms": 43
     },
     {
       "id": 20,
@@ -1212,7 +1212,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 132
+      "ms": 118
     },
     {
       "id": 22,
@@ -1294,7 +1294,7 @@
         "temptation 0<1",
         "intent 5>3"
       ],
-      "ms": 276
+      "ms": 258
     },
     {
       "id": 23,
@@ -1399,7 +1399,7 @@
         "depth 0<2",
         "temptation 0<1"
       ],
-      "ms": 315
+      "ms": 242
     },
     {
       "id": 24,
@@ -1480,7 +1480,7 @@
         "temptation 0<1",
         "intent 5>3"
       ],
-      "ms": 327
+      "ms": 264
     },
     {
       "id": 25,
@@ -1491,51 +1491,55 @@
       "descentType": "shot",
       "queueLength": 3,
       "shotsUsed": 3,
-      "luck": 0.03636,
-      "depth": 1,
-      "lateInsight": 1,
-      "frontLoaded": true,
-      "temptation": 0,
-      "temptationShots": [],
-      "intent": 2,
+      "luck": 0.03704,
+      "depth": 3,
+      "lateInsight": 3,
+      "frontLoaded": false,
+      "temptation": 1,
+      "temptationShots": [
+        1
+      ],
+      "intent": 1,
       "intentCapped": false,
       "openings": [
-        "1/11",
-        "7/10",
-        "4/7"
+        "4/12",
+        "4/12",
+        "3/9"
       ],
-      "baitShots": [],
+      "baitShots": [
+        1
+      ],
       "steps": [
         {
-          "color": "red",
-          "viable": 1,
-          "total": 11,
+          "color": "yellow",
+          "viable": 4,
+          "total": 12,
           "played": {
-            "cell": "r11 nx3",
-            "angle": -43.5,
+            "cell": "r12 nx13",
+            "angle": 19,
             "removed": 3
           },
           "obvious": {
-            "cell": "r11 nx3",
-            "angle": -43.5,
-            "removed": 3,
-            "viable": true
+            "cell": "r13 nx7",
+            "angle": -4,
+            "removed": 5,
+            "viable": false
           },
-          "temptation": false,
-          "bait": 0
+          "temptation": true,
+          "bait": 5
         },
         {
-          "color": "yellow",
-          "viable": 7,
-          "total": 10,
+          "color": "blue",
+          "viable": 4,
+          "total": 12,
           "played": {
-            "cell": "r12 nx8",
-            "angle": 0,
+            "cell": "r12 nx11",
+            "angle": 13,
             "removed": 4
           },
           "obvious": {
-            "cell": "r12 nx8",
-            "angle": 0,
+            "cell": "r12 nx11",
+            "angle": 13,
             "removed": 4,
             "viable": true
           },
@@ -1543,30 +1547,27 @@
           "bait": 0
         },
         {
-          "color": "blue",
-          "viable": 4,
-          "total": 7,
+          "color": "red",
+          "viable": 3,
+          "total": 9,
           "played": {
-            "cell": "r12 nx12",
-            "angle": 15,
-            "removed": 3
+            "cell": "r13 nx4",
+            "angle": -53.5,
+            "removed": 8
           },
           "obvious": {
-            "cell": "r12 nx9",
-            "angle": 5,
-            "removed": 3,
+            "cell": "r13 nx3",
+            "angle": -22.5,
+            "removed": 8,
             "viable": true
           },
           "temptation": false,
           "bait": 0
         }
       ],
-      "pass": false,
-      "fails": [
-        "depth 1<2",
-        "temptation 0<1"
-      ],
-      "ms": 30
+      "pass": true,
+      "fails": [],
+      "ms": 48
     },
     {
       "id": 26,
@@ -1575,54 +1576,59 @@
       "chapterTitle": "Night Pressure",
       "goalType": "clear-all",
       "descentType": "time",
-      "queueLength": 7,
-      "shotsUsed": 3,
-      "luck": 0.06346,
-      "depth": 1,
-      "lateInsight": 3,
+      "queueLength": 4,
+      "shotsUsed": 4,
+      "luck": 0.02098,
+      "depth": 2,
+      "lateInsight": 4,
       "frontLoaded": false,
-      "temptation": 0,
-      "temptationShots": [],
-      "intent": 20,
-      "intentCapped": true,
-      "openings": [
-        "11/13",
-        "6/10",
-        "1/8"
+      "temptation": 1,
+      "temptationShots": [
+        3
       ],
-      "baitShots": [],
+      "intent": 1,
+      "intentCapped": false,
+      "openings": [
+        "5/13",
+        "6/11",
+        "4/12",
+        "3/10"
+      ],
+      "baitShots": [
+        3
+      ],
       "steps": [
         {
           "color": "red",
-          "viable": 11,
+          "viable": 5,
           "total": 13,
           "played": {
-            "cell": "r5 nx-1",
-            "angle": -22.5,
-            "removed": 5
+            "cell": "r7 nx3",
+            "angle": -34.5,
+            "removed": 6
           },
           "obvious": {
-            "cell": "r5 nx-1",
-            "angle": -22.5,
-            "removed": 5,
+            "cell": "r7 nx2",
+            "angle": -14,
+            "removed": 6,
             "viable": true
           },
           "temptation": false,
           "bait": 0
         },
         {
-          "color": "yellow",
+          "color": "green",
           "viable": 6,
-          "total": 10,
+          "total": 11,
           "played": {
-            "cell": "r5 nx9",
-            "angle": 1.5,
-            "removed": 3
+            "cell": "r6 nx14",
+            "angle": 22.5,
+            "removed": 5
           },
           "obvious": {
-            "cell": "r5 nx9",
-            "angle": 1.5,
-            "removed": 3,
+            "cell": "r6 nx8",
+            "angle": 0.5,
+            "removed": 5,
             "viable": true
           },
           "temptation": false,
@@ -1630,30 +1636,44 @@
         },
         {
           "color": "blue",
-          "viable": 1,
-          "total": 8,
+          "viable": 4,
+          "total": 12,
           "played": {
-            "cell": "r5 nx15",
-            "angle": 19,
-            "removed": 5
+            "cell": "r5 nx14",
+            "angle": 12.5,
+            "removed": 3
           },
           "obvious": {
-            "cell": "r5 nx15",
-            "angle": 19,
-            "removed": 5,
+            "cell": "r5 nx7",
+            "angle": -1.5,
+            "removed": 4,
+            "viable": false
+          },
+          "temptation": true,
+          "bait": 4
+        },
+        {
+          "color": "yellow",
+          "viable": 3,
+          "total": 10,
+          "played": {
+            "cell": "r5 nx9",
+            "angle": 30.5,
+            "removed": 6
+          },
+          "obvious": {
+            "cell": "r5 nx7",
+            "angle": -1.5,
+            "removed": 6,
             "viable": true
           },
           "temptation": false,
           "bait": 0
         }
       ],
-      "pass": false,
-      "fails": [
-        "depth 1<2",
-        "temptation 0<1",
-        "intent 20+>3"
-      ],
-      "ms": 1081
+      "pass": true,
+      "fails": [],
+      "ms": 32
     },
     {
       "id": 27,
@@ -1740,7 +1760,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 54
+      "ms": 32
     },
     {
       "id": 28,
@@ -1751,59 +1771,64 @@
       "descentType": "shot",
       "queueLength": 2,
       "shotsUsed": 2,
-      "luck": 0.0625,
-      "depth": 1,
-      "lateInsight": 2,
-      "frontLoaded": false,
-      "temptation": 0,
-      "temptationShots": [],
-      "intent": 5,
+      "luck": 0.10256,
+      "depth": 2,
+      "lateInsight": 1,
+      "frontLoaded": true,
+      "temptation": 1,
+      "temptationShots": [
+        1
+      ],
+      "intent": 1,
       "intentCapped": false,
       "openings": [
-        "5/8",
-        "1/10"
+        "4/13",
+        "3/9"
       ],
-      "baitShots": [],
+      "baitShots": [
+        1
+      ],
       "steps": [
         {
           "color": "blue",
-          "viable": 5,
-          "total": 8,
+          "viable": 4,
+          "total": 13,
           "played": {
-            "cell": "r13 nx5",
-            "angle": -55.5,
-            "removed": 0
+            "cell": "r12 nx13",
+            "angle": 19,
+            "removed": 3
           },
-          "obvious": null,
-          "temptation": false,
-          "bait": 0
+          "obvious": {
+            "cell": "r14 nx4",
+            "angle": -23.5,
+            "removed": 4,
+            "viable": false
+          },
+          "temptation": true,
+          "bait": 3
         },
         {
           "color": "red",
-          "viable": 1,
-          "total": 10,
+          "viable": 3,
+          "total": 9,
           "played": {
-            "cell": "r12 nx9",
-            "angle": 47.5,
-            "removed": 8
+            "cell": "r12 nx7",
+            "angle": -3,
+            "removed": 7
           },
           "obvious": {
-            "cell": "r12 nx9",
-            "angle": 47.5,
-            "removed": 8,
+            "cell": "r12 nx7",
+            "angle": -3,
+            "removed": 7,
             "viable": true
           },
           "temptation": false,
           "bait": 0
         }
       ],
-      "pass": false,
-      "fails": [
-        "depth 1<2",
-        "temptation 0<1",
-        "intent 5>3"
-      ],
-      "ms": 41
+      "pass": true,
+      "fails": [],
+      "ms": 20
     },
     {
       "id": 29,
@@ -1871,7 +1896,7 @@
       ],
       "pass": true,
       "fails": [],
-      "ms": 22
+      "ms": 56
     },
     {
       "id": 30,
@@ -1882,47 +1907,38 @@
       "descentType": "shot",
       "queueLength": 3,
       "shotsUsed": 3,
-      "luck": 0.11667,
-      "depth": 1,
+      "luck": 0.02083,
+      "depth": 2,
       "lateInsight": 2,
       "frontLoaded": false,
-      "temptation": 0,
-      "temptationShots": [],
-      "intent": 7,
+      "temptation": 1,
+      "temptationShots": [
+        2
+      ],
+      "intent": 1,
       "intentCapped": false,
       "openings": [
-        "7/9",
-        "3/10",
-        "3/6"
+        "6/12",
+        "1/8",
+        "3/9"
       ],
-      "baitShots": [],
+      "baitShots": [
+        2
+      ],
       "steps": [
         {
           "color": "paper",
-          "viable": 7,
-          "total": 9,
+          "viable": 6,
+          "total": 12,
           "played": {
-            "cell": "r13 nx7",
-            "angle": -4,
-            "removed": 0
-          },
-          "obvious": null,
-          "temptation": false,
-          "bait": 0
-        },
-        {
-          "color": "red",
-          "viable": 3,
-          "total": 10,
-          "played": {
-            "cell": "r14 nx5",
-            "angle": -17.5,
-            "removed": 7
+            "cell": "r15 nx3",
+            "angle": -59.5,
+            "removed": 8
           },
           "obvious": {
-            "cell": "r14 nx5",
-            "angle": -17.5,
-            "removed": 7,
+            "cell": "r14 nx6",
+            "angle": -12,
+            "removed": 8,
             "viable": true
           },
           "temptation": false,
@@ -1930,30 +1946,44 @@
         },
         {
           "color": "yellow",
-          "viable": 3,
-          "total": 6,
+          "viable": 1,
+          "total": 8,
           "played": {
-            "cell": "r14 nx5",
-            "angle": -14,
-            "removed": 3
+            "cell": "r13 nx6",
+            "angle": -8.5,
+            "removed": 0
           },
           "obvious": {
-            "cell": "r14 nx8",
-            "angle": -1,
-            "removed": 3,
+            "cell": "r14 nx5",
+            "angle": -15,
+            "removed": 5,
+            "viable": false
+          },
+          "temptation": true,
+          "bait": 3
+        },
+        {
+          "color": "yellow",
+          "viable": 3,
+          "total": 9,
+          "played": {
+            "cell": "r15 nx5",
+            "angle": -17.5,
+            "removed": 8
+          },
+          "obvious": {
+            "cell": "r15 nx7",
+            "angle": -6,
+            "removed": 8,
             "viable": true
           },
           "temptation": false,
           "bait": 0
         }
       ],
-      "pass": false,
-      "fails": [
-        "depth 1<2",
-        "temptation 0<1",
-        "intent 7>3"
-      ],
-      "ms": 137
+      "pass": true,
+      "fails": [],
+      "ms": 36
     },
     {
       "id": 31,
@@ -2003,7 +2033,7 @@
         "depth 1<2",
         "temptation 0<1"
       ],
-      "ms": 13
+      "ms": 16
     },
     {
       "id": 32,
@@ -2069,7 +2099,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 68
+      "ms": 50
     },
     {
       "id": 33,
@@ -2130,7 +2160,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 31
+      "ms": 29
     },
     {
       "id": 34,
@@ -2236,7 +2266,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 723
+      "ms": 493
     },
     {
       "id": 35,
@@ -2303,7 +2333,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 174
+      "ms": 130
     },
     {
       "id": 36,
@@ -2390,7 +2420,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 94
+      "ms": 73
     },
     {
       "id": 37,
@@ -2534,7 +2564,7 @@
         "temptation 0<1",
         "intent 20+>3"
       ],
-      "ms": 2786
+      "ms": 1812
     },
     {
       "id": 38,
@@ -2603,7 +2633,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 89
+      "ms": 66
     },
     {
       "id": 39,
@@ -2684,7 +2714,7 @@
         "temptation 0<1",
         "intent 10>3"
       ],
-      "ms": 208
+      "ms": 176
     },
     {
       "id": 40,
@@ -2784,7 +2814,7 @@
         "temptation 0<1",
         "intent 20+>3"
       ],
-      "ms": 1199
+      "ms": 1388
     },
     {
       "id": 41,
@@ -2850,7 +2880,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 265
+      "ms": 181
     },
     {
       "id": 42,
@@ -2936,7 +2966,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 1216
+      "ms": 1298
     },
     {
       "id": 43,
@@ -3038,7 +3068,7 @@
         "temptation 0<1",
         "intent 20+>3"
       ],
-      "ms": 322
+      "ms": 263
     },
     {
       "id": 44,
@@ -3143,7 +3173,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 391
+      "ms": 303
     },
     {
       "id": 45,
@@ -3228,7 +3258,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 241
+      "ms": 236
     },
     {
       "id": 46,
@@ -3313,7 +3343,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 1117
+      "ms": 1006
     },
     {
       "id": 47,
@@ -3380,7 +3410,7 @@
         "temptation 0<1",
         "tightest at shot 1"
       ],
-      "ms": 110
+      "ms": 121
     },
     {
       "id": 48,
@@ -3465,7 +3495,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 272
+      "ms": 242
     },
     {
       "id": 49,
@@ -3550,7 +3580,7 @@
         "intent 5>3",
         "tightest at shot 1"
       ],
-      "ms": 343
+      "ms": 314
     },
     {
       "id": 50,
@@ -3668,7 +3698,7 @@
       "fails": [
         "temptation 0<1"
       ],
-      "ms": 206
+      "ms": 145
     }
   ]
 }

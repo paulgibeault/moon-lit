@@ -481,16 +481,21 @@ const HAND_CRAFTED_PUZZLES = [
     name: 'The Sinking Trellis',
     description: 'The trellis slips with your shots. Three colors, no waste.',
     colors: ['red', 'yellow', 'blue'],
-    queue: ['red', 'yellow', 'blue'],
+    queue: ['yellow', 'blue', 'red'],
     stencilPack: 'plain',
     descentType: 'shot',
     descentEvery: 2,
     goalType: 'clear-all',
     introCard: 'sinking',
+    // One yellow, two yellow families. The big one in the middle hangs from
+    // the anchor pairs and falls when they pop; the corner yellow is anchored
+    // and can only go now. Spend the yellow on the corner, the blue on its pair, and
+    // let the trellis sink once before the red brings the rest down.
     board: [
       ...SUNK(10),
-      '. . R R . B B .',
-      ' . . Y Y Y . . ',
+      '. . R R . B B Y',
+      ' . R . Y Y B Y ',
+      '. . . Y Y . . .',
     ],
   },
   {
@@ -498,15 +503,19 @@ const HAND_CRAFTED_PUZZLES = [
     name: 'Ember Rush',
     description: 'The river runs fast tonight. Five clusters before the water.',
     colors: ['red', 'yellow', 'blue', 'green'],
-    queue: ['red', 'yellow', 'blue', 'green', 'green', 'red', 'yellow'],
+    queue: ['red', 'green', 'blue', 'yellow'],
     stencilPack: 'bugs',
     descentType: 'time',
     goalType: 'clear-all',
     introCard: 'timed',
+    // A gentle clock: red and green pop almost anywhere. The read is the
+    // blue — the bigger blue knot on the left hangs from red and yellow and
+    // will fall with them; the anchored pair on the right will not.
     board: [
       ...SUNK(4),
-      'R R . Y Y . B B',
-      ' G G . . . G G ',
+      'R R R Y Y G B B',
+      ' R Y B . G G G ',
+      '. R B . . . . .',
     ],
   },
   {
@@ -534,18 +543,22 @@ const HAND_CRAFTED_PUZZLES = [
   {
     id: 28,
     name: 'Stones in the River',
-    description: 'Bed the spare on the stones — the trellis will not wait.',
+    description: 'The stone rides the red. Spend the blue where the river cannot help.',
     colors: ['red', 'blue', 'paper'],
     queue: ['blue', 'red'],
     stencilPack: 'bugs',
     descentType: 'shot',
     descentEvery: 1,
     goalType: 'clear-all',
+    // The low blues and the stone all hang from the red tendril and fall with
+    // it; popping them is the big, useless shot. The anchored blue on the
+    // right can only leave by the one blue.
     board: [
       ...SUNK(10),
-      '. . . R R . . .',
-      ' . . X X . . . ',
-      '. . X X . . . .',
+      '. . . R R . B .',
+      ' . . R . . . B ',
+      '. . B . . . . .',
+      ' . B X . . . . ',
     ],
   },
   {
@@ -573,20 +586,24 @@ const HAND_CRAFTED_PUZZLES = [
   {
     id: 30,
     name: 'Moonset',
-    description: 'Everything you have learned, two rows above the water.',
+    description: 'Everything you have learned, with the river at your heels.',
     colors: ['yellow', 'red', 'paper'],
-    queue: ['paper', 'red', 'yellow'],
+    queue: ['paper', 'yellow', 'yellow'],
     stencilPack: 'random',
     descentType: 'shot',
     descentEvery: 1,
     goalType: 'clear-all',
     env: { glowIntensity: 2.5, windSpeed: 1.5 },
     moon: { phase: 0.02, position: 0.5 },
+    // Paper brings most of the board down. Then: don't spend the first yellow
+    // on the low pair — park it beside the anchored yellow so the last one
+    // takes both families at once. Popping the pair leaves her alone.
     board: [
       ...SUNK(11),
-      ' . . Y Y . . . ',
-      '. . R R R . . .',
-      ' X X . . . . . ',
+      ' . . Y P . . . ',
+      'X . R P . . . .',
+      ' Y Y P P P . . ',
+      'R . P . R . . .',
     ],
   },
 

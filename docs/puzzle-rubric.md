@@ -106,13 +106,13 @@ Why these values:
   Chapters 6 and 7 are the existing targets from the `js/puzzles.js` header.
   The 20% and 12% caps for Chapters 4 and 5 continue the curve. Most puzzles
   in those chapters already sit at 1–12%; the outlier is #19 (30%). (#27 and
-  #29 were 45.8% and 92.9% before their rework.)
+  #29 were 45.8% and 92.9% before the Chapter 5 rework.)
 - **Depth ≥ 2 from Chapter 4 on.** Depth 1 is often only the finishing shot
   (see Caveats). Two tight decisions means the player has to plan at least one
   of them.
 - **Temptation ≥ 1 from Chapter 4 on.** This is the "won the battle, lost the
   war" moment the design language aims for. Only #49 has one today, so this is
-  the main rework signal (#27, #29 and #49 have one).
+  the main rework signal (all of Chapter 5 and #49 have one).
 - **Intent ≤ 3 from Chapter 4 on.** A puzzle should have one idea, with one or
   two variants at most. 20+ means spare shots or loose geometry let almost
   anything win.
@@ -124,15 +124,15 @@ Why these values:
 
 ## Baseline (`docs/puzzle-rubric-baseline.json`)
 
-20 of 50 puzzles pass: all of Chapters 1–3, plus #27 and #29 (reworked with
-the rubric; see Reworks below). The original baseline was 18/50.
+24 of 50 puzzles pass: all of Chapters 1–3 and all of Chapter 5 (reworked
+with the rubric; see Reworks below). The original baseline was 18/50.
 
-- **Temptation is missing almost everywhere.** It is 0 in every Chapter 4–7
-  puzzle except #27, #29 and #49. This is the dominant failure.
-- **Intent is too high:** 20+ on #26, #37, #40 and #43; between 5 and
-  10 on #22, #24, #28, #30, #39 and #49.
-- **Depth is too low (below 2):** #19, #20, #22, #23, #25, #26, #28, #30, #31, #34, #36, #37
-  and #43.
+- **Temptation is missing almost everywhere else.** It is 0 in every Chapter
+  4, 6 and 7 puzzle except #49. This is the dominant failure.
+- **Intent is too high:** 20+ on #37, #40 and #43; between 5 and 10 on #22,
+  #24, #39 and #49.
+- **Depth is too low (below 2):** #19, #20, #22, #23, #31, #34, #36, #37 and
+  #43.
 - **Luck is over the cap:** #19 (30%), #31 (8.3%, just over) and #43 (4.3%,
   just over).
 - **Single-shot puzzles:** #2, #4, #5, #9, #10, #12, #13 and #17 are in
@@ -163,9 +163,17 @@ the rubric; see Reworks below). The original baseline was 18/50.
 
 ## Reworks
 
-Both reworks use the orphan-seam pattern from #49. An anchored single can
-only leave through the one seam that joins it to a companion. The bait is a
-bigger pop that removes the companion first, so the single is stranded.
+All of Chapter 5 was reworked. Three trap types appear:
+
+- **Orphan seam** (#27, #29, from #49). An anchored single can only leave
+  through the one seam that joins it to a companion. The bait is a bigger pop
+  that removes the companion first, so the single is stranded.
+- **Anchored before hanging** (#25, #26, #28). Two groups of the shot's color:
+  a big one that hangs and will fall later for free, and a smaller anchored
+  one that only this shot can clear. The bait is the big hanging pop.
+- **Park, don't pop** (#30). The bait pops a low pair. The right move pops
+  nothing: it parks beside an anchored lantern so the next shot of that color
+  clears both families at once.
 
 - **#27 Midnight Cascade:** before: luck 45.8%, depth 0, temptation 0,
   intent 20+ (4 shots, 2 of them spare). After: queue `yellow, red, blue`
@@ -179,3 +187,23 @@ bigger pop that removes the companion first, so the single is stranded.
   at shot 1 (the anchor pair, rm6, drops the hanging spirit, which was the
   wall spirit's only companion), intent 1. Three blue groups (veil, anchor,
   decoy). Only the low veil is right.
+- **#25 The Sinking Trellis:** before: luck 3.6%, depth 1, temptation 0. After:
+  queue `yellow, blue, red`, luck 3.7%, depth 3, tightest decision at shot 3,
+  temptation 1 at shot 1 (the central yellows, rm6, hang and fall later; the
+  anchored corner yellow, rm4, is the only win). Still 3 shots with
+  `descentEvery: 2`, so the tutorial board sinks once mid-puzzle.
+- **#26 Ember Rush:** before: 7-shot queue, luck 6.3%, depth 1, intent 20+.
+  After: queue `red, green, blue, yellow` (zero slack), luck 2.1%, depth 2,
+  tightest decision at shot 4, temptation 1 at shot 3, intent 1. Shots 1–2 are
+  deliberately open, since this is the timed-mode intro.
+- **#28 Stones in the River:** before: luck 6.3%, depth 1, intent 5. After:
+  luck 10.3%, depth 2, temptation 1 at shot 1 (the low blues pop 3 and drop the
+  stone, rm4, but hang from the red and fall later anyway), intent 1. The
+  "bed the spare" idea is gone; the description changed to match.
+- **#30 Moonset:** before: luck 11.7%, depth 1, intent 7. After: queue
+  `paper, yellow, yellow`, luck 2.1%, depth 2, temptation 1 at shot 2, intent
+  1. The description no longer says "two rows" (the board is now four).
+
+#25, #26, #28 and #30 started from candidates found by a local mutation search
+over each original board, scored on this rubric. Each was then checked by hand
+for an explainable trap, and stray lanterns attached to nothing were removed.
