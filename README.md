@@ -44,7 +44,6 @@ without losing your place.
 
 - Four play modes — Campaign, Zen, Speed, and Puzzle — each with its own saved game and progress
 - Hex grid with snap-to-place physics and one-bounce aim assist
-- Shot-queue swap — the iconic *Bust-A-Move* "fix a bad shot" tap
 - Fast Launch option in Zen for quicker projectile and settle timing
 - Swappable lantern stencil packs (with a "random" pack that mixes designs per shot)
 - Deterministic seeds: same inputs always produce the same board

@@ -14,9 +14,10 @@
   <link rel="apple-touch-icon" href="img/icon-192.png">
   <link rel="stylesheet" href="css/style.css">
   <script>
-    // Moon-lit does not register a service worker. A SW from the launcher
-    // (or a sibling game's `./ago`) may still be registered on this origin
-    // from an earlier dev session and intercept fetches. Wipe it on every
+    // Moon-lit registers its own service worker (sw.js, at the bottom of
+    // <body>) but never on loopback. On a dev origin, though, a SW from the
+    // launcher (or a sibling game's `./ago`) may still be registered from an
+    // earlier session and intercept fetches. Wipe it on every loopback
     // load so dev sessions stay self-healing. Loopback-only: getRegistrations()/
     // caches are origin-scoped, so doing this in production would also unregister
     // the launcher's own service worker and delete its caches.

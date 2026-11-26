@@ -69,9 +69,6 @@ const menuState = {
 
 exposeDebug('menuState', menuState);
 
-export function isMenuOpen() {
-  return menuState.panel !== 'hidden' || menuState.fade > 0;
-}
 export function isMenuPanelOpen() {
   return menuState.panel !== 'hidden';
 }

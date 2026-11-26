@@ -1,6 +1,6 @@
 import { PALETTE, PERF_CONFIG, levelConfig, COLOR_KEYS, COLORS, COMBO_POWERS } from '../constants.js';
 import { PHASE, comboPowersActive, QUICK_RESTART_ARM_SEC } from '../game.js';
-import { puzzleConfig } from '../puzzles.js';
+import { puzzleConfig, PUZZLE_COUNT } from '../puzzles.js';
 import {
   SERIF, SANS, HUD_OPACITY,
   formatScore, hudPx, fontScaleOf, hexToRgba, PERF_MODE,
@@ -186,6 +186,13 @@ export function drawDescentMeter(ctx, layout, game, settings) {
   const cy = descentMetrics(layout, game, settings).cy;
   const rowCx = (left + right) / 2;
 
+  // Every pip shares one colour, so build its strings once per frame rather
+  // than once per pip.
+  const haloIn = hexToRgba(moonHex, 0.45);
+  const haloOut = hexToRgba(moonHex, 0);
+  const discFill = hexToRgba(moonHex, HUD_OPACITY.strong);
+  const spentStroke = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
+
   ctx.save();
   for (let i = 0; i < pipCount; i++) {
     const px = left + pipR + i * step;
@@ -199,20 +206,20 @@ export function drawDescentMeter(ctx, layout, game, settings) {
         ctx.shadowBlur = imminent ? 5 * (0.5 + pulse) : 3;
       }
       const halo = ctx.createRadialGradient(px, cy, 0, px, cy, rr * 2.1);
-      halo.addColorStop(0, hexToRgba(moonHex, 0.45));
-      halo.addColorStop(1, hexToRgba(moonHex, 0));
+      halo.addColorStop(0, haloIn);
+      halo.addColorStop(1, haloOut);
       ctx.fillStyle = halo;
       ctx.beginPath();
       ctx.arc(px, cy, rr * 2.1, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.fillStyle = hexToRgba(moonHex, HUD_OPACITY.strong);
+      ctx.fillStyle = discFill;
       ctx.beginPath();
       ctx.arc(px, cy, rr, 0, Math.PI * 2);
       ctx.fill();
     } else {
       // A spent moon: a faint empty ring holding its place in the row.
-      ctx.strokeStyle = hexToRgba(PALETTE.moon, HUD_OPACITY.faint);
+      ctx.strokeStyle = spentStroke;
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(px, cy, pipR, 0, Math.PI * 2);
@@ -826,7 +833,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   if (isSeed) {
     nextCfg = null;
   } else if (isPuzzle) {
-    nextCfg = nextNum <= 50 ? puzzleConfig(nextNum) : null;
+    nextCfg = nextNum <= PUZZLE_COUNT ? puzzleConfig(nextNum) : null;
   } else {
     nextCfg = nextNum <= 1000 ? levelConfig(nextNum) : null;
   }
@@ -874,7 +881,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     ctx.fillStyle = 'rgba(245, 233, 201, 0.5)';
     ctx.font = `400 ${Math.round(9 * fs)}px ${SANS}`;
     ctx.fillText(`s#${game.settingsSeed >>> 0} · b#${game.boardSeed >>> 0}`, boxX + boxW / 2, boxY + boxH - 10 * fs);
-  } else if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= 50 && nextCfg)) {
+  } else if ((!isPuzzle && nextNum <= 1000 && nextCfg) || (isPuzzle && nextNum <= PUZZLE_COUNT && nextCfg)) {
     ctx.fillText(isPuzzle ? `PUZZLE ${nextNum} PREVIEW` : `STAGE ${nextNum} PREVIEW`, boxX + 12 * fs, boxY + 10 * fs);
 
     const innerW = boxW - 20 * fs;
@@ -945,13 +952,13 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
   if (isPuzzle) {
     let maxCleared = 0;
     if (stats && stats.puzzles) {
-      for (let i = 1; i <= 50; i++) {
+      for (let i = 1; i <= PUZZLE_COUNT; i++) {
         if (stats.puzzles[String(i)] && stats.puzzles[String(i)].cleared) {
           maxCleared = Math.max(maxCleared, i);
         }
       }
     }
-    reached = 50; // temporarily unlocked for testing
+    reached = PUZZLE_COUNT; // temporarily unlocked for testing
   } else {
     reached = 1000; // temporarily unlocked for testing
   }
@@ -983,7 +990,7 @@ export function drawEndOverlay(ctx, layout, game, settings, stats) {
     h: btnH,
     label: isSeed ? 'New' : 'Next',
     action: 'next',
-    enabled: isSeed ? true : (isPuzzle ? (nextNum <= 50 && nextNum <= reached) : (nextNum <= 1000 && nextNum <= reached)),
+    enabled: isSeed ? true : (isPuzzle ? (nextNum <= PUZZLE_COUNT && nextNum <= reached) : (nextNum <= 1000 && nextNum <= reached)),
   };
 
   // Push all to hit list so coordinates are checked on click
@@ -1526,7 +1533,7 @@ export function drawQuickRestartButton(ctx, layout, game, settings) {
     ctx.lineWidth = 1.5;
     
     // Add gold glow
-    if (typeof PERF_CONFIG !== 'undefined' && !(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
+    if (!(PERF_CONFIG.disableMobileShadows && PERF_MODE)) {
       ctx.shadowColor = '#E8B770';
       ctx.shadowBlur = 8;
     }

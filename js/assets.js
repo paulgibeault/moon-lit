@@ -775,7 +775,6 @@ export function getBambooBaseSprites()    { return bambooSprites.base;    }
 export function getBambooTipSprites()     { return bambooSprites.tip;     }
 export function getBambooStalkSprites()   { return bambooSprites.stalk;   }
 export function getBambooClusterSprites() { return bambooSprites.cluster; }
-export function getBambooLeafSprites()    { return bambooSprites.leaf;    }
 
 // Returns the loaded moon surface image (or null if not yet loaded / missing).
 // The renderer checks this each frame and draws a flat warm disc as fallback.
