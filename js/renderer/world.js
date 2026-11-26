@@ -18,6 +18,10 @@ import {
 } from './style.js';
 import { renderClock, ambientTickIndex } from '../clock.js';
 import { countDebug, debugFlags } from '../debug.js';
+import {
+  setShoreOutline, shoreCrest, fillCrest, paintReeds,
+  bambooPad, blitSwayed, drawLivingWaterline,
+} from './nature.js';
 
 // ─── Sky, moon, bamboo ──────────────────────────────────────────────────────
 
@@ -358,15 +362,17 @@ function drawCelestialLayer(ctx, layout, game, settings) {
   drawStars(cCtx, layout, settings);
   drawMoon(cCtx, layout, game, settings);
   drawReflections(cCtx, layout, game, settings);
-  drawWaterline(cCtx, layout);
+  drawLivingWaterline(cCtx, layout, ambientClock());
 
   // B. Erase the bamboo silhouette perfectly
   const level = (BAMBOO_PARAMS.levelOverride | 0) || ((game && game.level) | 0) || 1;
   const mask = getBambooMaskCanvas(viewW, viewH, dpr, level);
 
+  // Erased with the same wind bend the visible grove is drawn with, so the
+  // cut-out tracks the swaying stalks exactly.
   cCtx.save();
   cCtx.globalCompositeOperation = 'destination-out';
-  cCtx.drawImage(mask, 0, 0, viewW, viewH);
+  blitSwayed(cCtx, mask, viewW, viewH, bambooCache.pad, ambientClock());
   cCtx.restore();
 
   // C. Draw the celestial layers back onto the main screen
@@ -899,7 +905,9 @@ function paintBleed(canvas, m, viewW, viewH, deadLineY, handedness) {
   // those pixels.
   if (bambooCache.maskCanvas) {
     bx.globalCompositeOperation = 'destination-out';
-    bx.drawImage(bambooCache.maskCanvas, 0, 0, viewW, viewH);
+    // Unswayed: the bleed is cached on the moon's position, and its faint
+    // wash cannot show a few px of canopy drift.
+    blitSwayed(bx, bambooCache.maskCanvas, viewW, viewH, bambooCache.pad, 0);
     bx.globalCompositeOperation = 'source-over';
   }
 }
@@ -1048,12 +1056,12 @@ export function applyBambooProfile(name) {
   invalidateBambooCache();
 }
 
-let bambooCache = { key: '', canvas: null, maskCanvas: null };
+let bambooCache = { key: '', canvas: null, maskCanvas: null, pad: 0 };
 
 // Called by the admin panel when a BAMBOO_PARAMS value changes. Drops the
 // cached canvas so the next render rebuilds with the new params.
 export function invalidateBambooCache() {
-  bambooCache = { key: '', canvas: null, maskCanvas: null };
+  bambooCache = { key: '', canvas: null, maskCanvas: null, pad: 0 };
 }
 
 function ensureBambooCache(w, h, dpr, level) {
@@ -1062,23 +1070,27 @@ function ensureBambooCache(w, h, dpr, level) {
     return bambooCache;
   }
   
+  // Both canvases carry `pad` px of extra grove either side, so the wind can
+  // bend the layer sideways (blitSwayed) without baring the screen edge.
+  const pad = bambooPad(w, h);
+
   // 1. Build Visual Canvas (with atmospheric transparencies/depth)
   const c = document.createElement('canvas');
-  c.width  = Math.max(1, Math.floor(w * dpr));
+  c.width  = Math.max(1, Math.floor((w + pad * 2) * dpr));
   c.height = Math.max(1, Math.floor(h * dpr));
   const cx = c.getContext('2d');
-  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cx.setTransform(dpr, 0, 0, dpr, pad * dpr, 0);
   paintBamboo(cx, w, h, level, false); // isMask = false
 
   // 2. Build Mask Canvas (solid silhouettes for blocking the moon/stars/water/etc.)
   const mc = document.createElement('canvas');
-  mc.width  = Math.max(1, Math.floor(w * dpr));
+  mc.width  = Math.max(1, Math.floor((w + pad * 2) * dpr));
   mc.height = Math.max(1, Math.floor(h * dpr));
   const mcx = mc.getContext('2d');
-  mcx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mcx.setTransform(dpr, 0, 0, dpr, pad * dpr, 0);
   paintBamboo(mcx, w, h, level, true); // isMask = true
 
-  bambooCache = { key, canvas: c, maskCanvas: mc };
+  bambooCache = { key, canvas: c, maskCanvas: mc, pad };
   return bambooCache;
 }
 
@@ -1092,7 +1104,10 @@ function drawBamboo(ctx, w, h, game, settings) {
   const gameLevel = ((game && game.level) | 0) || 1;
   const level = (BAMBOO_PARAMS.levelOverride | 0) || gameLevel;
   const cache = ensureBambooCache(w, h, dpr, level);
-  ctx.drawImage(cache.canvas, 0, 0, w, h);
+  // Bent by the wind on the ambient clock (0 under stillness = plain blit).
+  // The scene already repaints on every ambient tick, so the sway adds strip
+  // blits to a repaint that was happening anyway, not repaints.
+  blitSwayed(ctx, cache.canvas, w, h, cache.pad, ambientClock());
 }
 
 // Moon on the right.
@@ -1104,9 +1119,15 @@ function drawBamboo(ctx, w, h, game, settings) {
 // own grove composition — different stalk count picks, different cluster
 // placements, different canopy density patterns — while remaining stable on
 // refresh within a level.
+let shapeRng = () => 0.5;  // reseeded by paintBamboo before any read
+
 function paintBamboo(ctx, w, h, level, isMask) {
   const seed = (BAMBOO_SEED ^ (((level | 0) || 1) * BAMBOO_LEVEL_MULT)) >>> 0;
   const rng = mulberry32(seed);
+  // A second stream for the organic shaping (stalk lean and bend, the bank's
+  // bumps, the reeds). Kept apart from `rng` so the grove's composition —
+  // which stalks and clusters each stage gets — is exactly what it was.
+  shapeRng = mulberry32((seed ^ 0x5EED0B1E) >>> 0);
   paintSide(ctx, rng, w, h, 'left',  false, isMask);
   paintSide(ctx, rng, w, h, 'right', true, isMask);
   paintTopCanopy(ctx, rng, w, h, isMask);
@@ -1140,7 +1161,14 @@ function paintSpriteStalk(ctx, rng, startX, startY, wBase, height, side, isMoonS
   ctx.globalAlpha = isMask ? 1.0 : (isForeground ? 1.0 : 0.45);
 
   ctx.translate(startX, startY);
-  
+  // Organic growth: a root tilt (mostly toward the clearing, sometimes away)
+  // and a steady bend added at every joint, so each cane arcs instead of
+  // standing ruler-straight. The per-joint wobble below stays on top.
+  const inward = side === 'left' ? 1 : -1;
+  const tilt = inward * (0.025 + shapeRng() * 0.075) + (shapeRng() - 0.5) * 0.07;
+  const bend = inward * (shapeRng() - 0.25) * (isForeground ? 0.045 : 0.06);
+  ctx.rotate(tilt);
+
   let currentSprite = baseSprite;
   const bottomW = baseSprite.sw * (baseSprite.bottomFrac || 0.5);
   let currentScale = wBase / bottomW;
@@ -1174,7 +1202,7 @@ function paintSpriteStalk(ctx, rng, startX, startY, wBase, height, side, isMoonS
 
     // Apply lean
     const lean = (rng() - 0.5) * (isForeground ? 0.03 : 0.06);
-    ctx.rotate(lean);
+    ctx.rotate(lean + bend);
 
     // Update scale
     const nextScale = getNextTransition(currentSprite, nextSprite, currentScale);
@@ -1224,43 +1252,47 @@ function paintTallStalk(ctx, rng, startX, startY, wBase, height, side, isMoonSid
 
   ctx.translate(startX, startY);
   
-  // Apply minor lean angle
+  // Apply minor lean angle (kept: it is part of the composition's rng stream)
   const lean = (rng() - 0.5) * (isForeground ? 0.02 : 0.05);
-  ctx.rotate(lean);
+  const inward = side === 'left' ? 1 : -1;
+  const tilt = inward * (0.02 + shapeRng() * 0.06) + (shapeRng() - 0.5) * 0.06;
+  ctx.rotate(lean + tilt);
 
   // We want the tall sprite to span the desired height
   const scale = height / tallSprite.sh;
 
   ctx.scale(scale, scale);
-  ctx.drawImage(tallSprite.image, tallSprite.sx, tallSprite.sy, tallSprite.sw, tallSprite.sh,
-                -tallSprite.sw * tallSprite.bottomCenterFrac, -tallSprite.sh, tallSprite.sw, tallSprite.sh);
+  // Drawn in horizontal slices, each shifted along a quadratic, so the single
+  // tall sprite arcs like a growing cane. The bend is a few degrees at most,
+  // where slicing is indistinguishable from a true curve.
+  const bendPx = inward * (shapeRng() - 0.15) * tallSprite.sh * 0.10;
+  const slices = 16;
+  const x0 = -tallSprite.sw * tallSprite.bottomCenterFrac;
+  for (let i = 0; i < slices; i++) {
+    const syA = Math.floor((i / slices) * tallSprite.sh);
+    const syB = Math.floor(((i + 1) / slices) * tallSprite.sh);
+    const fromTop = (syA + syB) * 0.5 / tallSprite.sh;     // 0 at tip, 1 at root
+    const dx = bendPx * Math.pow(1 - fromTop, 2);
+    const shH = Math.min(tallSprite.sh - syA, syB - syA + 1);
+    ctx.drawImage(tallSprite.image, tallSprite.sx, tallSprite.sy + syA, tallSprite.sw, shH,
+                  x0 + dx, -tallSprite.sh + syA, tallSprite.sw, shH);
+  }
   ctx.restore();
 }
 
 function paintSide(ctx, rng, w, h, side, isMoonSide, isMask) {
-  const isLeft = side === 'left';
-  const edgeFrac = 1 / 3; // Exactly cover left/right thirds (leaving center third open)
-  const shoreW = w * edgeFrac;
 
   const colorBg = isMask ? '#000000' : '#0A122E'; // Deep background mound
   const colorFg = isMask ? '#000000' : '#040816'; // Very dark foreground mound
 
-  // 1. Draw Background Shore Mound (Minor height adjustment to h * 0.88)
+  // 1. Draw Background Shore Mound — an irregular bank rather than a ruled
+  // curve. Its crest is recorded so the live stream stops at the bank.
+  const bankCrest = shoreCrest(side, w, h, 0.88, 0.40, shapeRng);
+  if (!isMask) setShoreOutline(w, h, side, bankCrest);
   ctx.save();
   ctx.fillStyle = colorBg;
   ctx.globalAlpha = isMask ? 1.0 : 0.65;
-  ctx.beginPath();
-  if (isLeft) {
-    ctx.moveTo(-10, h * 1.05);
-    ctx.lineTo(-10, h * 0.88); // Elegantly raised background hill
-    ctx.quadraticCurveTo(shoreW * 0.40, h * 0.88, shoreW, h * 1.05);
-  } else {
-    ctx.moveTo(w + 10, h * 1.05);
-    ctx.lineTo(w + 10, h * 0.88);
-    ctx.quadraticCurveTo(w - shoreW * 0.40, h * 0.88, w - shoreW, h * 1.05);
-  }
-  ctx.closePath();
-  ctx.fill();
+  fillCrest(ctx, bankCrest, side, w, h);
   ctx.restore();
 
   const basePool = getBambooBaseSprites();
@@ -1300,22 +1332,13 @@ function paintSide(ctx, rng, w, h, side, isMoonSide, isMask) {
     }
   }
 
-  // 3. Draw Foreground Shore Mound (Minor height adjustment to h * 0.91)
+  // 3. Draw Foreground Shore Mound, then reeds and cattails along the bank
+  // where it meets the water.
   ctx.save();
   ctx.fillStyle = colorFg;
   ctx.globalAlpha = 1.0;
-  ctx.beginPath();
-  if (isLeft) {
-    ctx.moveTo(-10, h * 1.05);
-    ctx.lineTo(-10, h * 0.91); // Elegantly raised foreground hill
-    ctx.quadraticCurveTo(shoreW * 0.45, h * 0.91, shoreW, h * 1.05);
-  } else {
-    ctx.moveTo(w + 10, h * 1.05);
-    ctx.lineTo(w + 10, h * 0.91);
-    ctx.quadraticCurveTo(w - shoreW * 0.45, h * 0.91, w - shoreW, h * 1.05);
-  }
-  ctx.closePath();
-  ctx.fill();
+  fillCrest(ctx, shoreCrest(side, w, h, 0.91, 0.45, shapeRng), side, w, h);
+  paintReeds(ctx, shapeRng, bankCrest, side, w, h, isMoonSide, isMask);
   ctx.restore();
 
   // 4. Draw Layer 2: Foreground Bamboo Flanks (Thick, highly textured, moonlit)
@@ -1773,23 +1796,7 @@ function drawHangingSprite(ctx, sprite, cx, yAnchor, drawW, drawH, rotation, hFl
 // static between resizes — cache it instead of rebuilding 60×/sec for a 1px
 // line. Keyed by context too, since the celestial offscreen (non-PERF) and the
 // main canvas (PERF) are distinct; only one is used per session.
-let waterlineGrad = { ctx: null, w: 0, grad: null };
-
-function drawWaterline(ctx, layout) {
-  const { viewW, deadLineY } = layout;
-  ctx.save();
-  if (waterlineGrad.ctx !== ctx || waterlineGrad.w !== viewW) {
-    const g = ctx.createLinearGradient(0, 0, viewW, 0);
-    g.addColorStop(0.00, 'rgba(230, 240, 255, 0)');
-    g.addColorStop(0.35, 'rgba(230, 240, 255, 0.28)');
-    g.addColorStop(0.65, 'rgba(230, 240, 255, 0.28)');
-    g.addColorStop(1.00, 'rgba(230, 240, 255, 0)');
-    waterlineGrad = { ctx, w: viewW, grad: g };
-  }
-  ctx.fillStyle = waterlineGrad.grad;
-  ctx.fillRect(0, deadLineY, viewW, 1);
-  ctx.restore();
-}
+// The waterline itself is drawn by drawLivingWaterline (renderer/nature.js).
 
 // Mirror each in-air lantern across the waterline as a faded, vertically
 // flipped copy. The reflection's height-below-waterline equals the lantern's
