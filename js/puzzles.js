@@ -387,24 +387,30 @@ const HAND_CRAFTED_PUZZLES = [
     descentType: 'none',
     goalType: 'clear-targets',
     targetColor: 'green',
+    // The spear on the right is the big blue pop, and it opens nothing.
+    // Only the small shield under the spirits clears the green's one seat.
     board: [
-      '. . . T T . B B',
-      ' . . B B B . . ',
+      'P T T P . B B B',
+      ' P B B . . B . ',
+      '. . . . . B B .',
     ],
   },
   {
     id: 20,
     name: 'Keystone',
-    description: 'Six oranges, two families, one pocket that joins them all.',
+    description: 'Six oranges, two families, one pocket that joins them all — once it is clear.',
     colors: ['orange', 'paper'],
-    queue: ['orange'],
+    queue: ['paper', 'orange'],
     stencilPack: 'plain',
     descentType: 'none',
     goalType: 'clear-all',
+    // A paper cork sits in the keystone. The big paper tail on the right pops
+    // more, but it falls with the oranges anyway; pull the cork instead.
     board: [
       '. . O O . O . .',
-      ' . P . . O O P ',
-      '. P . . . . P .',
+      ' P P . P O O P ',
+      '. P . . P . P P',
+      ' . . . . . . P ',
     ],
   },
   {
@@ -418,59 +424,68 @@ const HAND_CRAFTED_PUZZLES = [
     goalType: 'clear-targets',
     targetColor: 'red',
     board: [
+      // The centre reds pop bigger and drop paper, but free no spirit.
       'P P P P P P P P',
       ' T T P . P T T ',
-      '. P P . . P P .',
+      '. P P R R P P .',
+      ' . . . P . . . ',
     ],
   },
   {
     id: 22,
     name: 'Ash Before Ember',
-    description: 'First a bed for the ash, then the veil, then the flame.',
+    description: 'First the ash on the wall, then the veil, then the flame.',
     colors: ['orange', 'paper'],
     queue: ['orange', 'paper', 'orange'],
     stencilPack: 'bugs',
     descentType: 'none',
     goalType: 'clear-all',
+    // The ash is the anchored pair on the right wall: it needs the first
+    // orange. The hanging oranges under the veil pop bigger, but the veil's
+    // fall takes them anyway. One paper seat on the left brings the veil,
+    // stones and bait down; the last orange takes the flame.
     board: [
-      '. . . O O . . .',
-      ' . . P P P . . ',
-      '. . X X . . . .',
+      '. . . O O . . O',
+      ' . . P P P . O ',
+      '. . . X X O . .',
+      ' . . . . O O . ',
     ],
   },
   {
     id: 23,
     name: 'The Ferry Crossing',
-    description: 'Blue opens green; green opens blue. Begin on the correct shore.',
+    description: 'Blue opens the crossing. Spend the green on the shore the river will not carry.',
     colors: ['green', 'blue'],
-    queue: ['blue', 'green', 'green', 'blue'],
+    queue: ['blue', 'green', 'blue'],
     stencilPack: 'plain',
     descentType: 'none',
     goalType: 'clear-all',
-    // Each pair is sealed behind a full shield of the other color: blue must
-    // open the greens, green must open the blues. Parking anywhere safe is
-    // impossible — every shot has exactly one productive use.
+    // The first blue opens the crossing. Then two greens: the hanging three
+    // pop bigger but ride down with the last blue; only the anchored pair
+    // needs the green. Every shot has exactly one productive use.
     board: [
-      '. G G . . B B .',
-      ' B B B . G G G ',
+      '. G G . B B B B',
+      ' B B B G G G . ',
+      '. . B B B B . .',
     ],
   },
   {
     id: 24,
     name: 'Three Locks',
-    description: 'A bed for the spare, a red cork in the keyhole, and one seat that joins every yellow.',
+    description: 'A red decoy, a red cork in the keyhole, and one seat that joins every yellow.',
     colors: ['yellow', 'red', 'paper'],
-    queue: ['paper', 'red', 'yellow'],
+    queue: ['red', 'yellow'],
     stencilPack: 'random',
     descentType: 'none',
     goalType: 'clear-all',
     // The red pair plugs the only pocket that bridges both yellow families.
-    // Park the paper on the doomed stones, pull the cork, take the seat.
-    // Popping either yellow family alone strands the other.
+    // The bigger red knot on the right is a decoy: it hangs from the yellows
+    // and falls with them. Pull the cork, take the seat. Popping either
+    // yellow family alone strands the other.
     board: [
       '. . Y Y . Y . .',
-      ' . X . R Y Y . ',
-      '. X . . R . . .',
+      ' . X . R Y Y R ',
+      '. X . . R . R R',
     ],
   },
 
