@@ -105,14 +105,15 @@ Why these values:
 - **Luck caps tighten from 20% to 12% to 8% to 4%.** The 8% and 4% caps for
   Chapters 6 and 7 are the existing targets from the `js/puzzles.js` header.
   The 20% and 12% caps for Chapters 4 and 5 continue the curve. Most puzzles
-  in those chapters already sit at 1–12%; the outlier is #19 (30%). (#27 and
-  #29 were 45.8% and 92.9% before the Chapter 5 rework.)
+  in those chapters sat at 1–12% in the original baseline; the outliers were
+  #19 (30%), #27 (45.8%) and #29 (92.9%). After the Chapter 4–5 reworks all
+  twelve sit at 0.1–10.3%.
 - **Depth ≥ 2 from Chapter 4 on.** Depth 1 is often only the finishing shot
   (see Caveats). Two tight decisions means the player has to plan at least one
   of them.
 - **Temptation ≥ 1 from Chapter 4 on.** This is the "won the battle, lost the
-  war" moment the design language aims for. Only #49 has one today, so this is
-  the main rework signal (all of Chapter 5 and #49 have one).
+  war" moment the design language aims for. In the original baseline only #49
+  had one, so it was the main rework signal. Chapters 4 and 5 now all do.
 - **Intent ≤ 3 from Chapter 4 on.** A puzzle should have one idea, with one or
   two variants at most. 20+ means spare shots or loose geometry let almost
   anything win.
@@ -124,21 +125,18 @@ Why these values:
 
 ## Baseline (`docs/puzzle-rubric-baseline.json`)
 
-24 of 50 puzzles pass: all of Chapters 1–3 and all of Chapter 5 (reworked
+30 of 50 puzzles pass: all of Chapters 1–5 (Chapters 4 and 5 were reworked
 with the rubric; see Reworks below). The original baseline was 18/50.
 
-- **Temptation is missing almost everywhere else.** It is 0 in every Chapter
-  4, 6 and 7 puzzle except #49. This is the dominant failure.
-- **Intent is too high:** 20+ on #37, #40 and #43; between 5 and 10 on #22,
-  #24, #39 and #49.
-- **Depth is too low (below 2):** #19, #20, #22, #23, #31, #34, #36, #37 and
-  #43.
-- **Luck is over the cap:** #19 (30%), #31 (8.3%, just over) and #43 (4.3%,
-  just over).
+- **Temptation is missing in Chapters 6–7.** It is 0 in every Chapter 6 and 7
+  puzzle except #49. This is the dominant failure.
+- **Intent is too high:** 20+ on #37, #40 and #43; between 5 and 10 on #39
+  and #49.
+- **Depth is too low (below 2):** #31, #34, #36, #37 and #43.
+- **Luck is over the cap:** #31 (8.3%, just over) and #43 (4.3%, just over).
 - **Single-shot puzzles:** #2, #4, #5, #9, #10, #12, #13 and #17 are in
-  Chapters 1–3, which have no minimum queue length, so they pass. #20 (Chapter
-  4) and #31 (Chapter 6) fail on shots, depth and temptation, and #31 also
-  fails on luck.
+  Chapters 1–3, which have no minimum queue length, so they pass. #31
+  (Chapter 6) fails on shots, depth, temptation and luck.
 - **Front-loaded in Chapters 6–7:** #34, #35, #36, #38, #42, #44, #47 and #49.
 
 ## Authoring loop
@@ -163,14 +161,18 @@ with the rubric; see Reworks below). The original baseline was 18/50.
 
 ## Reworks
 
-All of Chapter 5 was reworked. Three trap types appear:
+Chapters 4 and 5 were reworked. The traps fall into four types:
 
 - **Orphan seam** (#27, #29, from #49). An anchored single can only leave
   through the one seam that joins it to a companion. The bait is a bigger pop
   that removes the companion first, so the single is stranded.
-- **Anchored before hanging** (#25, #26, #28). Two groups of the shot's color:
+- **Anchored before hanging** (#22, #23, #25, #26, #28). Two groups of the shot's color:
   a big one that hangs and will fall later for free, and a smaller anchored
   one that only this shot can clear. The bait is the big hanging pop.
+- **The useless big pop** (#19, #20, #21, #24). The bait is the biggest pop
+  of the shot's color, but it opens nothing: a spear beside the shield (#19),
+  a paper tail beside the cork (#20), a centre red that frees no spirit (#21),
+  a red decoy beside the cork (#24).
 - **Park, don't pop** (#30). The bait pops a low pair. The right move pops
   nothing: it parks beside an anchored lantern so the next shot of that color
   clears both families at once.
@@ -207,3 +209,38 @@ All of Chapter 5 was reworked. Three trap types appear:
 #25, #26, #28 and #30 started from candidates found by a local mutation search
 over each original board, scored on this rubric. Each was then checked by hand
 for an explainable trap, and stray lanterns attached to nothing were removed.
+
+### Chapter 4
+
+Chapter 4 was mostly hand-designed. The search's passes for #19–#22 and #24
+were cluttered, had 2° key windows, or were unrecognisable; only #23 came from
+a search candidate.
+
+- **#19 Shield and Spear:** before: luck 30%, depth 0, temptation 0. After:
+  luck 3.0%, depth 2, temptation 1 (a six-blue spear pops 7 and opens nothing;
+  the two-blue shield under the spirits pops 3 and opens the green's seat),
+  intent 1. The description already promised this trap.
+- **#20 Keystone:** before: a single shot. After: queue `paper, orange`, luck
+  1.3%, depth 2, temptation 1 (a paper cork plugs the keystone; the bigger
+  paper tail falls with the oranges anyway), intent 1. The keystone itself is
+  unchanged, including its 2.0° bank-shot window.
+- **#21 Switchback:** before: temptation 0. After: luck 5.0%, temptation 2
+  (a centre red pair pops 4 with a paper drop but frees no spirit), intent 2.
+  Three lanterns added; the wall alcoves are unchanged.
+- **#22 Ash Before Ember:** before: luck 6.9%, depth 1, intent 5 (any of five
+  parks worked). After: luck 0.9%, depth 2, temptation 1, intent 1. The ash is
+  now an anchored pair on the right wall that needs the first orange; the bait
+  is the bigger hanging orange group under the veil. The description changed.
+- **#23 The Ferry Crossing:** before: 4 shots, depth 0, temptation 0. After:
+  queue `blue, green, blue`, luck 4.3%, depth 2, temptation 1 at shot 2 (three
+  hanging greens vs the anchored pair), intent 1. The description changed.
+- **#24 Three Locks:** before: intent 5 (five safe paper beds), temptation 0.
+  After: queue `red, yellow` (the paper bed was dropped: keeping it pushed
+  intent to 7), luck 1.5%, depth 2, temptation 1 (a red decoy knot pops 4; the
+  cork pops 3), intent 1. The three locks are now decoy, cork and seat; the
+  description changed.
+
+**Curve note:** Chapter 4's luck (0.9–5.0%) is now below most of Chapter 5's,
+even though its cap is looser (20% vs 12%). Blind luck overstates the
+difficulty of zero-slack boards, but play-testing should confirm that Chapter 4
+still feels easier.
