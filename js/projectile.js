@@ -16,17 +16,26 @@ export function launcherTip(layout) {
 // Find the nearest lantern that overlaps a circle of radius r centered at
 // (x, y). Returns null if none. Used for both flight collision and the
 // in-arc sweep when nudging into a pocket.
+//
+// Called once per ray step (thousands of times per aim trace), so the visitor
+// is hoisted to module scope and reads its state from these slots instead of
+// allocating a fresh closure per call. Not re-entrant, and it needn't be: the
+// visitor never calls back into lanternCollision.
+let lcOverlapSq = 0, lcBest = null, lcBestDistSq = Infinity;
+function lcVisit(l, d2) {
+  if (d2 < lcOverlapSq && d2 < lcBestDistSq) {
+    lcBest = l;
+    lcBestDistSq = d2;
+  }
+}
 export function lanternCollision(board, x, y, r) {
   const colR = 2 * r * COLLISION_TOLERANCE;
-  const overlapSq = colR * colR;
+  lcOverlapSq = colR * colR;
   const reachSq = (3 * r) * (3 * r);
-  let best = null, bestDistSq = Infinity;
-  forEachLanternWithinSq(board, x, y, reachSq, (l, d2) => {
-    if (d2 < overlapSq && d2 < bestDistSq) {
-      best = l;
-      bestDistSq = d2;
-    }
-  });
+  lcBest = null; lcBestDistSq = Infinity;
+  forEachLanternWithinSq(board, x, y, reachSq, lcVisit);
+  const best = lcBest;
+  lcBest = null;  // don't pin a lantern between calls
   return best;
 }
 
@@ -141,6 +150,11 @@ function nudgeIntoPocket(layout, board, hit, contact, vx, vy) {
 // One ray-step: advance (x, y) along (vx, vy) by up to `stepSize`, bouncing
 // off side walls. Returns the new position, possibly-flipped velocity, and a
 // `bounced` flag. Used by both projectile flight and the aim preview.
+//
+// The result is written into one shared scratch object rather than a fresh
+// one per step (an aim trace can take ~4000 steps). Callers read its fields
+// immediately and never hold on to it.
+const rayStep = { nx: 0, ny: 0, vx: 0, vy: 0, bounced: false };
 function stepRay(layout, x, y, vx, vy, stepSize) {
   const r = layout.size;
   let nx = x + vx * stepSize;
@@ -155,7 +169,10 @@ function stepRay(layout, x, y, vx, vy, stepSize) {
     vx = -vx;
     bounced = true;
   }
-  return { nx, ny, vx, vy, bounced };
+  rayStep.nx = nx; rayStep.ny = ny;
+  rayStep.vx = vx; rayStep.vy = vy;
+  rayStep.bounced = bounced;
+  return rayStep;
 }
 
 // Advance an in-flight projectile by `distance` pixels along its current

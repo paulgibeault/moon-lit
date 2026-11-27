@@ -1,4 +1,4 @@
-import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, seededConfig, ENV_PARAMS, MOON_OVERRIDE } from './constants.js';
+import { GAME_ID, SYSTEM_OVERRIDES, levelConfig, seededConfig, ENV_PARAMS, MOON_OVERRIDE, PALETTE } from './constants.js';
 import { createGame, step, PHASE, hasActiveEffects } from './game.js';
 import { puzzleConfig, PUZZLE_COUNT } from './puzzles.js';
 import { serializeGame, restoreGame } from './serialization.js';
@@ -204,7 +204,11 @@ try {
 }
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+// Opaque backbuffer: every frame starts with drawBackgroundSky's full-canvas
+// opaque fill, and every destination-out cut happens on offscreen layers, so
+// nothing ever needs to see through this canvas. alpha:false lets the
+// compositor skip blending it against the page.
+const ctx = canvas.getContext('2d', { alpha: false });
 
 // Wall-time tracker, persisted across launches via the SDK's session helper.
 // Auto-pauses on suspend; the cumulative elapsed feeds totalPlayMs in stats.
@@ -416,6 +420,12 @@ function resize() {
   canvas.width = Math.floor(w * dpr);
   canvas.height = Math.floor(h * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Resizing clears the canvas, and an opaque canvas clears to black, not to
+  // the page behind it. A capped frame (phones run at ~30fps) may not repaint
+  // before the next composite, so lay down the page's own background colour
+  // to keep that gap looking the way it did with a transparent canvas.
+  ctx.fillStyle = PALETTE.bgTop;
+  ctx.fillRect(0, 0, w, h);
   const prevLayout = layout;
   layout = computeLayout(w, h);
   layout.handedness = SYSTEM_OVERRIDES.handedness !== 'default'
@@ -1021,6 +1031,25 @@ Arcade.player.onChange(() => {
 });
 
 window.addEventListener('resize', () => { resize(); requestFrame(); });
+
+// Moving the window to a monitor with a different pixel ratio changes
+// devicePixelRatio without (always) firing 'resize', which would leave the
+// backbuffer at the old density — blurry or oversized. A resolution media
+// query matches only the current ratio, so it fires once on the change and is
+// then re-armed against the new value.
+function watchDpr() {
+  if (typeof window.matchMedia !== 'function') return;
+  const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  if (typeof mq.addEventListener !== 'function') return;  // pre-14 Safari
+  const onChange = () => {
+    mq.removeEventListener('change', onChange);
+    resize();
+    requestFrame();
+    watchDpr();
+  };
+  mq.addEventListener('change', onChange);
+}
+watchDpr();
 
 // Wrap a discrete menu / end-overlay button handler so it plays the UI-click
 // cue before running (A2/A4). Only used on deliberate button taps — the

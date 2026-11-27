@@ -111,8 +111,8 @@ export const STENCIL_PACKS = {
 // value (board position / queue ordinal) instead of drawing from the gameplay
 // RNG. Designs are purely cosmetic, so decoupling them this way keeps the board
 // layout, blockers, and queue color sequence fully deterministic to the seed
-// regardless of which stencil pack is active. Mirrors getRandomDesignForColor's
-// ~40%-plain ratio and {bugs,flowers,dragons} spread.
+// regardless of which stencil pack is active. About 40% of items come out
+// plain; the rest spread evenly across {bugs,flowers,dragons}.
 export function designForCell(seed, key, color) {
   let h = (Math.imul(((seed >>> 0) ^ 0x9E3779B9), 0x85EBCA77) ^ (key >>> 0)) >>> 0;
   h = Math.imul(h ^ (h >>> 15), 0xC2B2AE3D) >>> 0;
@@ -123,21 +123,3 @@ export function designForCell(seed, key, color) {
   const packs = ['bugs', 'flowers', 'dragons'];
   return `${packs[(h >>> 8) % packs.length]}_${color}`;
 }
-
-export function getRandomDesignForColor(color, rng) {
-  if (!rng || typeof rng !== 'function') {
-    // Fallback if rng is not provided/valid
-    if (Math.random() < 0.40) return null;
-    const packs = ['bugs', 'flowers', 'dragons'];
-    const chosenPack = packs[Math.floor(Math.random() * packs.length)];
-    return `${chosenPack}_${color}`;
-  }
-  
-  if (rng() < 0.40) {
-    return null;
-  }
-  const packs = ['bugs', 'flowers', 'dragons'];
-  const chosenPack = packs[Math.floor(rng() * packs.length)];
-  return `${chosenPack}_${color}`;
-}
-

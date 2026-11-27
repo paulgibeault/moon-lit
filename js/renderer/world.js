@@ -2149,7 +2149,11 @@ function backdropSignature(layout, game, settings, still) {
 function ensureSceneCanvas(w, h, dpr) {
   const pw = Math.max(1, Math.floor(w * dpr));
   const ph = Math.max(1, Math.floor(h * dpr));
-  if (sceneCache && sceneCache.canvas.width === pw && sceneCache.canvas.height === ph) {
+  // Reallocate only when the backing size or the DPR transform would differ
+  // (a resize, or the window moving to a monitor with another pixel ratio).
+  // Everything else reuses the buffer and just repaints it.
+  if (sceneCache && sceneCache.dpr === dpr &&
+      sceneCache.canvas.width === pw && sceneCache.canvas.height === ph) {
     return sceneCache;
   }
   const canvas = document.createElement('canvas');
@@ -2157,7 +2161,7 @@ function ensureSceneCanvas(w, h, dpr) {
   canvas.height = ph;
   const cctx = canvas.getContext('2d');
   cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  sceneCache = { canvas, ctx: cctx, key: null };
+  sceneCache = { canvas, ctx: cctx, key: null, dpr };
   return sceneCache;
 }
 
@@ -2182,10 +2186,11 @@ export function drawScene(ctx, layout, game, settings) {
   const still = ambientStill(settings);
   const field = debugFlags.noSceneCache ? null : fieldSignature(game, layout, still);
   if (field === null) {
-    // Something in the field is moving. Draw it live, and let go of the cache:
-    // holding a full-screen backbuffer through a long cascade costs memory for
-    // an image that is wrong on every frame of it.
-    sceneCache = null;
+    // Something in the field is moving. Draw it live and mark the cached image
+    // stale, but keep the buffer: motion ends with every shot, and dropping a
+    // full-DPR backbuffer here would mean reallocating it (tens of MB on a
+    // high-DPR screen) on the first still frame after each one.
+    if (sceneCache) sceneCache.key = null;
     countDebug('sceneLive');
     paintScene(ctx, layout, game, settings);
     return;

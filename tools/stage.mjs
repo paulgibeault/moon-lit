@@ -39,12 +39,17 @@ const EXCLUDE_DIRS = new Set([".github", ".claude", "node_modules",
 const EXCLUDE_ROOT = new Set(["package.json", "package-lock.json",
   ".gitignore", "go.sh", "ago"]);
 const EXCLUDE_EXT = new Set([".md", ".py", ".pid"]);
+// Source art the game never loads: the 2048² logo master (~6 MB) is what
+// tools/build-images.sh derives the shipped sizes from, and README.md /
+// docs/ link it on GitHub. It stays in the repo, out of the deploy.
+const EXCLUDE_FILES = new Set(["img/logo.png"]);
 
 export function isDevOnly(f) {
   return EXCLUDE_DIRS.has(f.split("/")[0]) ||
     (!f.includes("/") && EXCLUDE_ROOT.has(f)) ||
     (!f.includes("/") && /^test_/.test(f)) ||
-    EXCLUDE_EXT.has(path.extname(f));
+    EXCLUDE_EXT.has(path.extname(f)) ||
+    EXCLUDE_FILES.has(f);
 }
 
 /** Stage into outDir and return it. */
