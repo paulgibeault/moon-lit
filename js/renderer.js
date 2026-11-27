@@ -9,6 +9,8 @@ import {
   drawMoonriseWash,
 } from './renderer/world.js';
 import { drawBursts, drawFloats } from './renderer/effects.js';
+import { drawLivingWorld } from './renderer/nature.js';
+import { renderClock } from './clock.js';
 import {
   tweenHud, drawScoreHud, drawDescentMeter, drawComboMeter, drawEndOverlay, resetHudState,
   isHudSettled, drawModeIntroCard, drawLanternInventory, drawQuickRestartButton,
@@ -32,6 +34,9 @@ export function render(ctx, layout, game, settings, stats, scores, dtMs) {
   // settled board this is a single blit instead of several hundred blended
   // draw calls.
   drawScene(ctx, layout, game, settings);
+  // The grove's live tier — stream, rising fish, fireflies, falling leaves —
+  // on the render clock, over the cached scene. Nothing under stillness.
+  drawLivingWorld(ctx, layout, settings, renderClock());
   if (game.phase === PHASE.AIMING && game.queue.current) {
     drawAimLine(ctx, layout, game);
   }
